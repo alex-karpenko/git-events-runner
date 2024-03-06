@@ -6,6 +6,7 @@
         "gitrepos",
         "humantime",
         "Initiatilize",
+        "openapi",
         "schedulable",
         "schemars",
         "thiserror"

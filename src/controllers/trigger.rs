@@ -136,6 +136,15 @@ pub enum TriggerSchedule {
     Cron(String),
 }
 
+impl TriggerSchedule {
+    fn is_valid(&self) -> bool {
+        match self {
+            TriggerSchedule::Interval(interval) => interval.parse::<humantime::Duration>().is_ok(),
+            TriggerSchedule::Cron(cron) => CronSchedule::try_from(cron).is_ok(),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerWebhook {
@@ -208,185 +217,142 @@ impl Trigger {
         let ns = self.namespace().unwrap();
         let triggers: Api<Trigger> = Api::namespaced(client.clone(), &ns);
 
-        // Verify for:
-        //  - schedule is parsable (if present)
-        let is_schedulable = if let Some(schedule) = &self.spec.schedule {
-            let is_parsable = match schedule {
-                TriggerSchedule::Interval(interval) => {
-                    interval.parse::<humantime::Duration>().is_ok()
-                }
-                TriggerSchedule::Cron(cron) => CronSchedule::try_from(cron).is_ok(),
-            };
-            if !is_parsable {
-                self.publish_trigger_validation_event(
-                    recorder,
-                    EventType::Warning,
-                    "Unable to parse schedule expression, scheduler is disabled",
-                    "ValidateTriggerConfig",
-                )
-                .await?;
-                // wrong scheduler config
-                false
-            } else {
-                // good scheduler config
-                true
-            }
-        } else {
-            // no scheduler config at all
-            false
-        };
-        //  - webhook's auth secret exists (if enabled) and has key
-        if let Some(webhook) = &self.spec.webhook {
-            if let Some(auth_config) = &webhook.auth_config {
-                let secret_name = &auth_config.secret_ref.name;
-                let keys_to_check = [auth_config.key.clone()];
-                let result = self
-                    .check_secret_ref(
-                        client.clone(),
-                        secret_name,
-                        &keys_to_check,
-                        Error::WrongTriggerConfig,
-                    )
-                    .await;
-                if result.is_err() {
-                    self.publish_trigger_validation_event(
-                        recorder,
-                        EventType::Warning,
-                        format!(
-                            "Auth config may be wrong: secret `{secret_name}` should exist and contain `{}` key(s)", keys_to_check.join(",")
-                        ).as_str(),
-                        "ValidateTriggerConfig"
-                    ).await?;
-                }
-            }
-        }
-        //  - schedule or webhook or both should be defined, error if neither is
-        if !is_schedulable && self.spec.webhook.is_none() {
-            self.update_resource_state(TriggerState::WrongConfig, &triggers)
-                .await?;
-            self.publish_trigger_validation_event(
-                recorder,
-                EventType::Warning,
-                "At least one of `schedule` or `webhook` should be configured",
-                "ValidateTriggerConfig",
-            )
-            .await?;
-            return Err(Error::WrongTriggerConfig);
-        }
-
         // To reconcile
         let trigger_key = self.trigger_hash_key();
-        //  - check if already exists
-        if !ctx.triggers.read().await.specs.contains_key(&trigger_key) {
-            // Create new trigger since it doesn't exist and we got valid new one
+        if Some(&self.spec) != ctx.triggers.read().await.specs.get(&trigger_key) {
             let mut triggers = ctx.triggers.write().await;
-            info!("Create new Trigger: {}", trigger_key);
-            triggers
-                .specs
-                .insert(trigger_key.clone(), self.spec.clone());
+            let old_trigger = triggers.specs.get(&trigger_key);
 
-            // Add new task if schedule is present
-            if let Some(schedule) = &self.spec.schedule {
-                let scheduler = ctx.scheduler.write().await;
-                let schedule = match schedule {
-                    TriggerSchedule::Interval(interval) => TaskSchedule::Interval(
-                        interval.parse::<humantime::Duration>().unwrap().into(),
-                    ),
-                    TriggerSchedule::Cron(cron) => {
-                        let cron = CronSchedule::try_from(cron).unwrap();
-                        TaskSchedule::Cron(
-                            cron,
-                            CronOpts {
-                                at_start: true,
-                                concurrent: false,
-                            },
-                        )
-                    }
-                };
+            // Sources have been changed
+            if old_trigger.is_none() || old_trigger.unwrap().sources != self.spec.sources {
+                info!("Update sources for `{trigger_key}`");
+                //todo!();
+            }
 
-                let task = Task::new(schedule, move |id| {
-                    let trigger_key = trigger_key.clone();
-                    Box::pin(async move {
-                        info!("Start trigger job: trigger={trigger_key}, job id={id}");
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        info!("Finish trigger job: trigger={trigger_key}, job id={id}");
-                    })
-                });
-                let task_id = scheduler.add(task).await.unwrap();
-                let tasks = &mut triggers.tasks;
-                tasks.insert(self.trigger_hash_key(), task_id);
-            }
-            // Add new web-server if webhook is configured
-            if let Some(webhook) = &self.spec.webhook {
-                todo!();
-            }
-        } else if ctx.triggers.read().await.specs.get(&trigger_key).unwrap() != &self.spec {
-            // Trigger is already exists - verify each part and change if needed
-            let mut triggers = ctx.triggers.write().await;
-            let trigger = triggers.specs.get(&trigger_key).unwrap();
-            // Sources has been changed
-            if trigger.sources != self.spec.sources {
-                info!("Change sources for `{trigger_key}`");
-                todo!();
-            }
             // Action has been changed
-            if trigger.action != self.spec.action {
-                info!("Change action for `{trigger_key}`");
-                todo!();
+            if old_trigger.is_none() || old_trigger.unwrap().action != self.spec.action {
+                info!("Update action for `{trigger_key}`");
+                //todo!();
             }
+
             // Webhook has been changed
-            if trigger.webhook != self.spec.webhook {
-                info!("Change webhook for `{trigger_key}`");
-                todo!();
+            if old_trigger.is_none() || old_trigger.unwrap().webhook != self.spec.webhook {
+                info!("Update webhook for `{trigger_key}`");
+                // TODO: Drop existing server if it was
+                if let Some(webhook) = &self.spec.webhook {
+                    // TODO: Create new server
+                    if let Some(auth_config) = &webhook.auth_config {
+                        let secret_name = &auth_config.secret_ref.name;
+                        let keys_to_check = [auth_config.key.clone()];
+                        let result = self
+                            .check_secret_ref(
+                                client.clone(),
+                                secret_name,
+                                &keys_to_check,
+                                Error::WrongTriggerConfig,
+                            )
+                            .await;
+                        if result.is_err() {
+                            self.publish_trigger_validation_event(
+                                recorder,
+                                EventType::Warning,
+                                format!(
+                                    "Auth config may be wrong: secret `{secret_name}` should exist and contain `{}` key(s)",
+                                    keys_to_check.join(",")).as_str(),
+                                    "ValidateTriggerConfig"
+                                ).await?;
+                        }
+                    }
+                }
             }
+
             // Schedule has been changed
-            if trigger.schedule != self.spec.schedule {
-                info!("Change schedule for `{trigger_key}`");
+            if old_trigger.is_none() || old_trigger.unwrap().schedule != self.spec.schedule {
+                info!("Update schedule for `{trigger_key}`");
                 // drop existing task if it was
-                if triggers.tasks.contains_key(&trigger_key) {
+                let is_new_task = if triggers.tasks.contains_key(&trigger_key) {
                     let task_id = triggers.tasks.remove(&trigger_key).unwrap();
                     let scheduler = ctx.scheduler.write().await;
                     let res = scheduler.cancel(task_id, CancelOpts::Ignore).await;
                     if res.is_err() {
                         error!("Can't cancel task: {res:?}");
                     }
-                }
+                    false
+                } else {
+                    true
+                };
+
                 // Add new task if schedule is present
                 if let Some(schedule) = &self.spec.schedule {
-                    let scheduler = ctx.scheduler.write().await;
-                    let schedule = match schedule {
-                        TriggerSchedule::Interval(interval) => TaskSchedule::IntervalDelayed(
-                            interval.parse::<humantime::Duration>().unwrap().into(),
-                        ),
-                        TriggerSchedule::Cron(cron) => {
-                            let cron = CronSchedule::try_from(cron).unwrap();
-                            TaskSchedule::Cron(
-                                cron,
-                                CronOpts {
-                                    at_start: false,
-                                    concurrent: false,
-                                },
-                            )
-                        }
-                    };
+                    if schedule.is_valid() {
+                        let scheduler = ctx.scheduler.write().await;
+                        let schedule = match schedule {
+                            TriggerSchedule::Interval(interval) => {
+                                if is_new_task {
+                                    TaskSchedule::Interval(
+                                        interval.parse::<humantime::Duration>().unwrap().into(),
+                                    )
+                                } else {
+                                    TaskSchedule::IntervalDelayed(
+                                        interval.parse::<humantime::Duration>().unwrap().into(),
+                                    )
+                                }
+                            }
+                            TriggerSchedule::Cron(cron) => {
+                                let cron = CronSchedule::try_from(cron).unwrap();
+                                TaskSchedule::Cron(
+                                    cron,
+                                    CronOpts {
+                                        at_start: is_new_task,
+                                        concurrent: false,
+                                    },
+                                )
+                            }
+                        };
 
-                    let task = Task::new(schedule, move |id| {
-                        let trigger_key = trigger_key.clone();
-                        Box::pin(async move {
-                            info!("Start trigger job: trigger={trigger_key}, job id={id}");
-                            tokio::time::sleep(Duration::from_secs(5)).await;
-                            info!("Finish trigger job: trigger={trigger_key}, job id={id}");
-                        })
-                    });
-                    let task_id = scheduler.add(task).await.unwrap();
-                    let tasks = &mut triggers.tasks;
-                    tasks.insert(self.trigger_hash_key(), task_id);
+                        let task = Task::new(schedule, move |id| {
+                            let trigger_key = trigger_key.clone();
+                            Box::pin(async move {
+                                info!("Start trigger job: trigger={trigger_key}, job id={id}");
+                                tokio::time::sleep(Duration::from_secs(5)).await;
+                                info!("Finish trigger job: trigger={trigger_key}, job id={id}");
+                            })
+                        });
+                        let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
+                        let tasks = &mut triggers.tasks;
+                        tasks.insert(self.trigger_hash_key(), task_id);
+                    } else {
+                        // Invalid schedule
+                        self.publish_trigger_validation_event(
+                            recorder,
+                            EventType::Warning,
+                            "Unable to parse schedule expression, scheduler is disabled",
+                            "ValidateTriggerConfig",
+                        )
+                        .await?;
+                    }
                 }
             }
             // Update trigger spec in the map
             triggers
                 .specs
                 .insert(self.trigger_hash_key(), self.spec.clone());
+        }
+
+        //  - schedule or webhook or both should be defined, error if neither is
+        if (self.spec.webhook.is_none() && self.spec.schedule.is_none())
+            || (self.spec.schedule.is_some() && !self.spec.schedule.clone().unwrap().is_valid())
+        {
+            self.update_resource_state(TriggerState::WrongConfig, &triggers)
+                .await?;
+            self.publish_trigger_validation_event(
+                recorder,
+                EventType::Warning,
+                "At least one of `schedule` or `webhook` should be configured or valid",
+                "ValidateTriggerConfig",
+            )
+            .await?;
+            return Err(Error::WrongTriggerConfig);
         }
 
         // Always overwrite status object with what we saw
@@ -419,7 +385,7 @@ impl Trigger {
                 error!("Can't cancel task: {res:?}");
             }
         }
-        // TODO: Drop webserver and remove from servers map
+        // TODO: Drop web-server and remove from servers map
         Ok(Action::await_change())
     }
 
