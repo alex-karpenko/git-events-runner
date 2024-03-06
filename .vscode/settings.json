@@ -1,0 +1,19 @@
+{
+    "cSpell.words": [
+        "clustergitrepos",
+        "cntrlr",
+        "Finalizer",
+        "gitrepos",
+        "humantime",
+        "Initiatilize",
+        "schedulable",
+        "schemars",
+        "thiserror"
+    ],
+    "rust-analyzer.linkedProjects": [
+        "./Cargo.toml",
+        "./Cargo.toml",
+        "./Cargo.toml",
+        "./Cargo.toml"
+    ]
+}

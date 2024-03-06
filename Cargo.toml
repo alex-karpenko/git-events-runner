@@ -1,0 +1,49 @@
+[package]
+authors = ["Oleksii Karpenko <alexkarpenko@yahoo.com>"]
+description = "Kubernetes operator to run Jobs on events from Git"
+edition = "2021"
+keywords = ["kubernetes", "k8s", "kube", "operator", "controller", "git", "events", "runner", "job"]
+license = "MIT OR Apache-2.0"
+name = "git-events-runner"
+repository = "https://github.com/alex-karpenko/git-events-runner"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+doc = false
+name = "git-events-runner"
+path = "src/main.rs"
+
+[[bin]]
+doc = false
+name = "crdgen"
+path = "src/crdgen.rs"
+
+[lib]
+name = "controllers"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22.0"
+futures = "0.3.30"
+git2 = "0.18.2"
+humantime = "2.1.0"
+k8s-openapi = {version = "0.21.1", features = ["latest"]}
+regex = "1"
+sacs = {path = "../sacs", version = "0.2.1", features = ["async-trait"]}
+schemars = "0.8.16"
+serde = {version = "1", features = ["derive"]}
+serde_json = "1"
+serde_yaml = "0.9.32"
+strum = {version = "0.26.1", features = ["derive"]}
+strum_macros = "0.26.1"
+thiserror = "1"
+tokio = {version = "1", features = ["macros", "rt-multi-thread"]}
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+
+[dependencies.kube]
+features = ["runtime", "client", "derive"]
+version = "0.88.1"
