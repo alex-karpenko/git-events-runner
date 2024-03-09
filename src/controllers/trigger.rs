@@ -215,32 +215,62 @@ impl Trigger {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
-        let triggers: Api<Trigger> = Api::namespaced(client.clone(), &ns);
-
-        // To reconcile
+        let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &ns);
         let trigger_key = self.trigger_hash_key();
+
+        // Reconcile is something has been changed
         if Some(&self.spec) != ctx.triggers.read().await.specs.get(&trigger_key) {
             let mut triggers = ctx.triggers.write().await;
             let old_trigger = triggers.specs.get(&trigger_key);
+            let is_changed = old_trigger.is_none()
+                || old_trigger.unwrap().sources != self.spec.sources
+                || old_trigger.unwrap().action != self.spec.action;
 
-            // Sources have been changed
-            if old_trigger.is_none() || old_trigger.unwrap().sources != self.spec.sources {
-                info!("Update sources for `{trigger_key}`");
-                //todo!();
+            // Schedule has been changed
+            if is_changed || old_trigger.unwrap().schedule != self.spec.schedule {
+                info!("Update schedule for `{trigger_key}`");
+                // drop existing task if it was
+                let is_new_task = if triggers.tasks.contains_key(&trigger_key) {
+                    let task_id = triggers.tasks.remove(&trigger_key).unwrap();
+                    let scheduler = ctx.scheduler.write().await;
+                    let res = scheduler.cancel(task_id, CancelOpts::Ignore).await;
+                    if res.is_err() {
+                        error!("Can't cancel task: {res:?}");
+                    }
+                    false
+                } else {
+                    true
+                };
+
+                // Add new task if schedule is present
+                if self.spec.schedule.is_some() {
+                    if let Some(schedule) = self.get_task_schedule(is_new_task) {
+                        let scheduler = ctx.scheduler.write().await;
+                        let task = self.get_scheduled_task(schedule);
+                        let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
+                        let tasks = &mut triggers.tasks;
+                        tasks.insert(self.trigger_hash_key(), task_id);
+                    } else {
+                        // Invalid schedule
+                        self.publish_trigger_validation_event(
+                            recorder,
+                            EventType::Warning,
+                            "Unable to parse schedule expression, scheduler is disabled",
+                            "ValidateTriggerConfig",
+                        )
+                        .await?;
+                    }
+                }
             }
 
-            // Action has been changed
-            if old_trigger.is_none() || old_trigger.unwrap().action != self.spec.action {
-                info!("Update action for `{trigger_key}`");
-                //todo!();
-            }
-
-            // Webhook has been changed
-            if old_trigger.is_none() || old_trigger.unwrap().webhook != self.spec.webhook {
+            // TODO: Webhook has been changed
+            if is_changed || old_trigger.unwrap().webhook != self.spec.webhook {
                 info!("Update webhook for `{trigger_key}`");
                 // TODO: Drop existing server if it was
+
                 if let Some(webhook) = &self.spec.webhook {
-                    // TODO: Create new server
+                    // TODO: Create new web-server
+                    // Verify auth config
                     if let Some(auth_config) = &webhook.auth_config {
                         let secret_name = &auth_config.secret_ref.name;
                         let keys_to_check = [auth_config.key.clone()];
@@ -266,73 +296,7 @@ impl Trigger {
                 }
             }
 
-            // Schedule has been changed
-            if old_trigger.is_none() || old_trigger.unwrap().schedule != self.spec.schedule {
-                info!("Update schedule for `{trigger_key}`");
-                // drop existing task if it was
-                let is_new_task = if triggers.tasks.contains_key(&trigger_key) {
-                    let task_id = triggers.tasks.remove(&trigger_key).unwrap();
-                    let scheduler = ctx.scheduler.write().await;
-                    let res = scheduler.cancel(task_id, CancelOpts::Ignore).await;
-                    if res.is_err() {
-                        error!("Can't cancel task: {res:?}");
-                    }
-                    false
-                } else {
-                    true
-                };
 
-                // Add new task if schedule is present
-                if let Some(schedule) = &self.spec.schedule {
-                    if schedule.is_valid() {
-                        let scheduler = ctx.scheduler.write().await;
-                        let schedule = match schedule {
-                            TriggerSchedule::Interval(interval) => {
-                                if is_new_task {
-                                    TaskSchedule::Interval(
-                                        interval.parse::<humantime::Duration>().unwrap().into(),
-                                    )
-                                } else {
-                                    TaskSchedule::IntervalDelayed(
-                                        interval.parse::<humantime::Duration>().unwrap().into(),
-                                    )
-                                }
-                            }
-                            TriggerSchedule::Cron(cron) => {
-                                let cron = CronSchedule::try_from(cron).unwrap();
-                                TaskSchedule::Cron(
-                                    cron,
-                                    CronOpts {
-                                        at_start: is_new_task,
-                                        concurrent: false,
-                                    },
-                                )
-                            }
-                        };
-
-                        let task = Task::new(schedule, move |id| {
-                            let trigger_key = trigger_key.clone();
-                            Box::pin(async move {
-                                info!("Start trigger job: trigger={trigger_key}, job id={id}");
-                                tokio::time::sleep(Duration::from_secs(5)).await;
-                                info!("Finish trigger job: trigger={trigger_key}, job id={id}");
-                            })
-                        });
-                        let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
-                        let tasks = &mut triggers.tasks;
-                        tasks.insert(self.trigger_hash_key(), task_id);
-                    } else {
-                        // Invalid schedule
-                        self.publish_trigger_validation_event(
-                            recorder,
-                            EventType::Warning,
-                            "Unable to parse schedule expression, scheduler is disabled",
-                            "ValidateTriggerConfig",
-                        )
-                        .await?;
-                    }
-                }
-            }
 
             // Update trigger spec in the map
             triggers
@@ -344,7 +308,7 @@ impl Trigger {
         if (self.spec.webhook.is_none() && self.spec.schedule.is_none())
             || (self.spec.schedule.is_some() && !self.spec.schedule.clone().unwrap().is_valid())
         {
-            self.update_resource_state(TriggerState::WrongConfig, &triggers)
+            self.update_resource_state(TriggerState::WrongConfig, &triggers_api)
                 .await?;
             self.publish_trigger_validation_event(
                 recorder,
@@ -357,7 +321,7 @@ impl Trigger {
         }
 
         // Always overwrite status object with what we saw
-        self.update_resource_state(TriggerState::Ready, &triggers)
+        self.update_resource_state(TriggerState::Ready, &triggers_api)
             .await?;
         // If no events were received, check back 30 minutes
         Ok(Action::requeue(Duration::from_secs(30 * 60)))
@@ -475,5 +439,53 @@ impl Trigger {
         }
 
         Err(error)
+    }
+
+    fn get_scheduled_task(&self, schedule: TaskSchedule) -> Task {
+        let trigger_key = self.trigger_hash_key();
+        Task::new(schedule, move |id| {
+            let trigger_key = trigger_key.clone();
+            Box::pin(async move {
+                // TODO: Update to real task and move to method
+                info!("Start trigger job: trigger={trigger_key}, job id={id}");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                info!("Finish trigger job: trigger={trigger_key}, job id={id}");
+            })
+        })
+    }
+
+    fn get_task_schedule(&self, is_new_task: bool) -> Option<TaskSchedule> {
+        if let Some(schedule) = &self.spec.schedule {
+            if schedule.is_valid() {
+                let schedule = match schedule {
+                    TriggerSchedule::Interval(interval) => {
+                        if is_new_task {
+                            TaskSchedule::Interval(
+                                interval.parse::<humantime::Duration>().unwrap().into(),
+                            )
+                        } else {
+                            TaskSchedule::IntervalDelayed(
+                                interval.parse::<humantime::Duration>().unwrap().into(),
+                            )
+                        }
+                    }
+                    TriggerSchedule::Cron(cron) => {
+                        let cron = CronSchedule::try_from(cron).unwrap();
+                        TaskSchedule::Cron(
+                            cron,
+                            CronOpts {
+                                at_start: is_new_task,
+                                concurrent: false,
+                            },
+                        )
+                    }
+                };
+                Some(schedule)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 }
