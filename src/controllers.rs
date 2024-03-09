@@ -51,14 +51,6 @@ pub enum SourceState {
     WrongRepoUriFormat,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum GitRepoReferenceType {
-    Branch,
-    Tag,
-    Commit,
-}
-
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretRef {

@@ -40,6 +40,9 @@ pub enum Error {
 
     #[error("Wrong Trigger Config")]
     WrongTriggerConfig,
+
+    #[error("Trigger file access IO error: {0}")]
+    TriggerFileAccessError(#[source] std::io::Error),
 }
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 

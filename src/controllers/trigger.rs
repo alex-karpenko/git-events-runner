@@ -1,8 +1,9 @@
 use super::{Context, SecretRef};
 use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
-    Error, Result,
+    Error, GitRepo, Result,
 };
+use git2::{Oid, Repository};
 use k8s_openapi::api::core::v1::Secret;
 use kube::{
     api::{Patch, PatchParams},
@@ -21,13 +22,21 @@ use sacs::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
+    io,
     sync::Arc,
     time::Duration,
 };
 use strum_macros::{Display, EnumString};
+use tokio::{
+    fs::{create_dir_all, remove_dir_all, try_exists, File},
+    io::AsyncReadExt,
+};
 use tracing::{debug, error, info, warn};
+
+const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[cfg_attr(test, derive(Default))]
@@ -98,8 +107,7 @@ pub enum TriggerSourceKind {
 pub struct TriggerWatchOn {
     on_change_only: bool,
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reference: Option<TriggerGitRepoReference>,
+    reference: TriggerGitRepoReference,
     #[serde(rename = "file")]
     #[serde(skip_serializing_if = "Option::is_none")]
     file_: Option<String>,
@@ -112,6 +120,17 @@ impl Default for TriggerWatchOn {
             reference: Default::default(),
             file_: None,
         }
+    }
+}
+
+impl TriggerWatchOn {
+    fn reference_name(&self) -> String {
+        match &self.reference {
+            TriggerGitRepoReference::Branch(r) => r,
+            TriggerGitRepoReference::Tag(r) => r,
+            TriggerGitRepoReference::Commit(r) => r,
+        }
+        .to_string()
     }
 }
 
@@ -256,7 +275,7 @@ impl Trigger {
                 if self.spec.schedule.is_some() {
                     if let Some(schedule) = self.get_task_schedule(is_new_task) {
                         let scheduler = ctx.scheduler.write().await;
-                        let task = self.get_scheduled_task(schedule);
+                        let task = self.create_task(client.clone(), schedule);
                         let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
                         let tasks = &mut triggers.tasks;
                         tasks.insert(self.trigger_hash_key(), task_id);
@@ -449,15 +468,113 @@ impl Trigger {
         Err(error)
     }
 
-    fn get_scheduled_task(&self, schedule: TaskSchedule) -> Task {
-        let trigger_key = self.trigger_hash_key();
+    fn create_task(&self, client: Client, schedule: TaskSchedule) -> Task {
+        let trigger_name = self.name_any();
+        let trigger_ns = self.namespace().unwrap();
         Task::new(schedule, move |id| {
-            let trigger_key = trigger_key.clone();
+            let trigger_name = trigger_name.clone();
+            let trigger_ns = trigger_ns.clone();
+            let client = client.clone();
             Box::pin(async move {
-                // TODO: Update to real task and move to method
-                info!("Start trigger job: trigger={trigger_key}, job id={id}");
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                info!("Finish trigger job: trigger={trigger_key}, job id={id}");
+                info!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                // Get current trigger from API
+                let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &trigger_ns);
+                let trigger = triggers_api.get(&trigger_name).await;
+                let base_temp_dir = format!("{DEFAULT_TEMP_DIR}/{trigger_ns}/{trigger_name}");
+                if let Ok(trigger) = trigger {
+                    // For each source
+                    for source in trigger.spec.sources.names {
+                        info!(
+                            "Processing {} source {trigger_ns}/{trigger_name}/{source}",
+                            trigger.spec.sources.kind
+                        );
+                        // - Create temp dest folder
+                        let repo_path = format!("{base_temp_dir}/{source}");
+                        let _ = remove_dir_all(&repo_path).await; // to prevent error if folder exists by mistake
+                        if let Err(err) = create_dir_all(&repo_path).await {
+                            error!("Unable to create temporary folder `{repo_path}`: {err:?}");
+                        } else {
+                            // - Get GitRepo object
+                            // - Call repo.fetch_repo_ref(...) to get repository
+                            // - Call get_latest_commit_hash(...) to get latest commit
+                            // - Get file hash if it's required and present
+                            match trigger.spec.sources.kind {
+                                TriggerSourceKind::GitRepo => {
+                                    let gitrepo_api: Api<GitRepo> =
+                                        Api::namespaced(client.clone(), &trigger_ns);
+                                    let gitrepo = gitrepo_api.get(&source).await;
+                                    if let Ok(gitrepo) = gitrepo {
+                                        let repo = gitrepo
+                                            .fetch_repo_ref(
+                                                client.clone(),
+                                                &trigger.spec.sources.watch_on.reference_name(),
+                                                &repo_path,
+                                            )
+                                            .await;
+
+                                        if let Ok(repo) = repo {
+                                            let latest_commit = Self::get_latest_commit(
+                                                &repo,
+                                                &trigger.spec.sources.watch_on.reference,
+                                            );
+                                            if let Ok(latest_commit) = latest_commit {
+                                                info!("Latest commit: {:?}", latest_commit);
+                                                if let Some(path) =
+                                                    &trigger.spec.sources.watch_on.file_
+                                                {
+                                                    let full_path = format!("{repo_path}/{path}");
+                                                    let is_exists = try_exists(&full_path).await;
+                                                    if is_exists.is_ok() && is_exists.unwrap() {
+                                                        let file_hash =
+                                                            Self::get_file_hash(&full_path).await;
+                                                        if let Ok(file_hash) = file_hash {
+                                                            info!("File hash: {file_hash}");
+                                                        } else {
+                                                            error!(
+                                                                    "Unable to calc file `{path}` hash: {:?}",
+                                                                    file_hash.err()
+                                                                );
+                                                        }
+                                                    } else {
+                                                        info!("File `{path}` doesn't exits");
+                                                    }
+                                                }
+                                            } else {
+                                                error!("Unable to get latest hash from GitRepo `{source}`: {:?} ", latest_commit.err());
+                                            }
+                                        } else {
+                                            error!(
+                                                "Unable to fetch GitRepo `{}` from remote: {:?}",
+                                                source,
+                                                repo.err()
+                                            );
+                                        }
+                                    } else {
+                                        error!(
+                                            "Unable to get GitRepo {trigger_ns}/{source}: {:?}",
+                                            gitrepo.err()
+                                        );
+                                    }
+                                }
+                                TriggerSourceKind::ClusterGitRepo => todo!(),
+                            }
+                            // - Get self.status... latest processed hash for current source
+                            // - If it differs from latest commit or onCnagesOnly==false - run action
+                            // - Update self.spec.... latest processed commit
+                            // - Remove temp dir content
+                            if let Err(err) = remove_dir_all(&repo_path).await {
+                                error!("Unable to remove temporary folder `{repo_path}`: {err:?}");
+                            }
+                        }
+                    }
+                } else {
+                    error!(
+                        "Unable to get Trigger {trigger_ns}/{trigger_name}: {:?}",
+                        trigger.err()
+                    );
+                }
+
+                info!("Finish trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
             })
         })
     }
@@ -495,5 +612,45 @@ impl Trigger {
         } else {
             None
         }
+    }
+
+    fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference) -> Result<Oid> {
+        let ref_name = match reference {
+            TriggerGitRepoReference::Branch(r) => format!("origin/{r}"),
+            TriggerGitRepoReference::Tag(r) => r.to_string(),
+            TriggerGitRepoReference::Commit(r) => {
+                return Oid::from_str(r).map_err(Error::GitrepoAccessError)
+            }
+        };
+
+        let oid = repo
+            .resolve_reference_from_short_name(&ref_name)
+            .map_err(Error::GitrepoAccessError)?
+            .target()
+            .unwrap();
+
+        let ref_obj = repo.find_object(oid, None).unwrap();
+        repo.checkout_tree(&ref_obj, None)
+            .map_err(Error::GitrepoAccessError)?;
+
+        Ok(oid)
+    }
+
+    async fn get_file_hash(path: &String) -> Result<String> {
+        let mut hasher = Sha256::new();
+        let mut buf: Vec<u8> = Vec::new();
+
+        File::open(&path)
+            .await
+            .map_err(Error::TriggerFileAccessError)?
+            .read_to_end(&mut buf)
+            .await
+            .map_err(Error::TriggerFileAccessError)?;
+
+        let mut buf = buf.as_slice();
+        io::copy(&mut buf, &mut hasher).map_err(Error::TriggerFileAccessError)?;
+        let hash = hasher.finalize();
+
+        Ok(format!("{hash:x}"))
     }
 }

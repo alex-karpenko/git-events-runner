@@ -1,12 +1,9 @@
-use super::{
-    Context, GitRepoReferenceType, GitRepoStatus, SecretRef, SourceState, TlsVerifyConfig,
-};
+use super::{Context, GitRepoStatus, SecretRef, SourceState, TlsVerifyConfig};
 use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
     Error, Result,
 };
-use base64::prelude::*;
-use git2::{Cred, FetchOptions, Oid, RemoteCallbacks, Repository, RepositoryInitOptions};
+use git2::{Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions};
 use k8s_openapi::api::core::v1::Secret;
 use kube::{
     api::{Patch, PatchParams},
@@ -465,36 +462,13 @@ impl GitRepo {
         Err(error)
     }
 
-    async fn get_latest_commit_hash(
-        self,
-        repo: Repository,
-        ref_name: &str,
-        ref_type: GitRepoReferenceType,
-    ) -> Result<Oid> {
-        let ref_name = match ref_type {
-            GitRepoReferenceType::Branch => format!("origin/{ref_name}"),
-            GitRepoReferenceType::Tag => ref_name.to_string(),
-            GitRepoReferenceType::Commit => {
-                return Oid::from_str(ref_name).map_err(Error::GitrepoAccessError)
-            }
-        };
-
-        let oid = repo
-            .resolve_reference_from_short_name(&ref_name)
-            .unwrap()
-            .target()
-            .unwrap();
-
-        Ok(oid)
-    }
-
-    async fn fetch_repo_ref(
+    pub(crate) async fn fetch_repo_ref(
         &self,
         client: Client,
-        ref_name: &str,
-        path: String,
+        ref_name: &String,
+        path: &String,
     ) -> Result<Repository> {
-        // Determine which secrets are mandatory and fetch they
+        // Determine which secrets are mandatory and fetch them
         let auth_secrets: HashMap<String, String> =
             if let Some(auth_config) = &self.spec.auth_config {
                 let mut secret_keys: HashMap<&String, String> = HashMap::new();
@@ -587,7 +561,7 @@ impl GitRepo {
                     secret_name
                 ))
             })?;
-            let secret_data_b64 = secret_data_b64
+            let secret_data = secret_data_b64
                 .get(secret_key)
                 .ok_or_else(|| {
                     Error::GitrepoSecretDecodingError(format!(
@@ -596,15 +570,9 @@ impl GitRepo {
                     ))
                 })?
                 .to_owned();
-            let secret_data = BASE64_STANDARD.decode(secret_data_b64.0).map_err(|_e| {
+            let secret_data = String::from_utf8(secret_data.0).map_err(|_e| {
                 Error::GitrepoSecretDecodingError(format!(
-                    "error decoding data `{}` in the secret `{}`",
-                    secret_key, secret_name
-                ))
-            })?;
-            let secret_data = String::from_utf8(secret_data).map_err(|_e| {
-                Error::GitrepoSecretDecodingError(format!(
-                    "error decoding data `{}` in the secret `{}`",
+                    "error converting string `{}` from UTF8 in the secret `{}`",
                     secret_key, secret_name
                 ))
             })?;
