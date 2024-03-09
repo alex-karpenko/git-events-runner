@@ -220,14 +220,24 @@ impl Trigger {
 
         // Reconcile is something has been changed
         if Some(&self.spec) != ctx.triggers.read().await.specs.get(&trigger_key) {
+            // What is changed?
+            let (is_schedule_changed, is_webhook_changed) = {
+                let old_trigger = ctx.triggers.read().await;
+                let old_trigger = old_trigger.specs.get(&trigger_key);
+                let is_changed = old_trigger.is_none()
+                    || old_trigger.unwrap().sources != self.spec.sources
+                    || old_trigger.unwrap().action != self.spec.action;
+
+                (
+                    is_changed || old_trigger.unwrap().schedule != self.spec.schedule,
+                    is_changed || old_trigger.unwrap().webhook != self.spec.webhook,
+                )
+            };
+
             let mut triggers = ctx.triggers.write().await;
-            let old_trigger = triggers.specs.get(&trigger_key);
-            let is_changed = old_trigger.is_none()
-                || old_trigger.unwrap().sources != self.spec.sources
-                || old_trigger.unwrap().action != self.spec.action;
 
             // Schedule has been changed
-            if is_changed || old_trigger.unwrap().schedule != self.spec.schedule {
+            if is_schedule_changed {
                 info!("Update schedule for `{trigger_key}`");
                 // drop existing task if it was
                 let is_new_task = if triggers.tasks.contains_key(&trigger_key) {
@@ -264,7 +274,7 @@ impl Trigger {
             }
 
             // TODO: Webhook has been changed
-            if is_changed || old_trigger.unwrap().webhook != self.spec.webhook {
+            if is_webhook_changed {
                 info!("Update webhook for `{trigger_key}`");
                 // TODO: Drop existing server if it was
 
@@ -295,8 +305,6 @@ impl Trigger {
                     }
                 }
             }
-
-
 
             // Update trigger spec in the map
             triggers
