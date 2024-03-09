@@ -333,6 +333,7 @@ impl Trigger {
                     }
                 }
             }
+
             // Update trigger spec in the map
             triggers
                 .specs
