@@ -61,24 +61,43 @@ pub struct TriggerSpec {
 #[serde(rename_all = "camelCase")]
 pub struct TriggerStatus {
     state: TriggerState,
-    checked_sources: HashMap<String, CheckedSourceRef>,
+    checked_sources: HashMap<String, CheckedSourceState>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct CheckedSourceRef {
+pub struct CheckedSourceState {
     #[serde(skip_serializing_if = "Option::is_none")]
     commit_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     file_hash: Option<String>,
 }
 
+impl CheckedSourceState {
+    fn is_equal(&self, other: Option<&CheckedSourceState>, with_file: bool) -> bool {
+        if let Some(other) = other {
+            if !with_file {
+                self.commit_hash == other.commit_hash
+            } else {
+                self.file_hash == other.file_hash
+            }
+        } else {
+            if self.commit_hash.is_none() && self.file_hash.is_none() {
+                true
+            } else {
+                false
+            }
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub enum TriggerState {
     #[default]
-    Pending,
-    Ready,
+    New,
     WrongConfig,
+    Idle,
+    Running,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]
@@ -335,7 +354,7 @@ impl Trigger {
         if (self.spec.webhook.is_none() && self.spec.schedule.is_none())
             || (self.spec.schedule.is_some() && !self.spec.schedule.clone().unwrap().is_valid())
         {
-            self.update_resource_state(TriggerState::WrongConfig, &triggers_api)
+            self.update_resource_state(Some(TriggerState::WrongConfig), None, &triggers_api)
                 .await?;
             self.publish_trigger_validation_event(
                 recorder,
@@ -348,7 +367,7 @@ impl Trigger {
         }
 
         // Always overwrite status object with what we saw
-        self.update_resource_state(TriggerState::Ready, &triggers_api)
+        self.update_resource_state(None, None, &triggers_api)
             .await?;
         // If no events were received, check back 30 minutes
         Ok(Action::requeue(Duration::from_secs(30 * 60)))
@@ -381,14 +400,35 @@ impl Trigger {
         Ok(Action::await_change())
     }
 
-    async fn update_resource_state(&self, state: TriggerState, api: &Api<Trigger>) -> Result<()> {
+    async fn update_resource_state(
+        &self,
+        state: Option<TriggerState>,
+        checked_sources: Option<HashMap<String, CheckedSourceState>>,
+        api: &Api<Trigger>,
+    ) -> Result<()> {
+        if state.is_none() && checked_sources.is_none() {
+            return Ok(());
+        }
+
         let name = self.name_any();
-        let checked_sources = if let Some(status) = self.status() {
+
+        let checked_sources = if let Some(checked_sources) = checked_sources {
+            checked_sources
+        } else if let Some(status) = self.status() {
             status.checked_sources.clone()
         } else {
-            HashMap::<String, CheckedSourceRef>::new()
+            HashMap::<String, CheckedSourceState>::new()
         };
 
+        let state = if let Some(state) = state {
+            state
+        } else if let Some(status) = self.status() {
+            status.state.clone()
+        } else {
+            TriggerState::New
+        };
+
+        warn!("{checked_sources:?}");
         let new_status = Patch::Apply(json!({
             "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
             "kind": "Trigger",
@@ -480,10 +520,20 @@ impl Trigger {
                 // Get current trigger from API
                 let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &trigger_ns);
                 let trigger = triggers_api.get(&trigger_name).await;
-                let base_temp_dir = format!("{DEFAULT_TEMP_DIR}/{trigger_ns}/{trigger_name}");
                 if let Ok(trigger) = trigger {
+                    let base_temp_dir = format!("{DEFAULT_TEMP_DIR}/{trigger_ns}/{trigger_name}");
+                    if let Err(err) = trigger
+                        .update_resource_state(Some(TriggerState::Running), None, &triggers_api)
+                        .await
+                    {
+                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                    }
                     // For each source
-                    for source in trigger.spec.sources.names {
+                    for source in &trigger.spec.sources.names {
+                        let mut source_state = CheckedSourceState {
+                            commit_hash: None,
+                            file_hash: None,
+                        };
                         info!(
                             "Processing {} source {trigger_ns}/{trigger_name}/{source}",
                             trigger.spec.sources.kind
@@ -494,15 +544,13 @@ impl Trigger {
                         if let Err(err) = create_dir_all(&repo_path).await {
                             error!("Unable to create temporary folder `{repo_path}`: {err:?}");
                         } else {
-                            // - Get GitRepo object
-                            // - Call repo.fetch_repo_ref(...) to get repository
-                            // - Call get_latest_commit_hash(...) to get latest commit
-                            // - Get file hash if it's required and present
                             match trigger.spec.sources.kind {
+                                // - Get GitRepo object
                                 TriggerSourceKind::GitRepo => {
                                     let gitrepo_api: Api<GitRepo> =
                                         Api::namespaced(client.clone(), &trigger_ns);
                                     let gitrepo = gitrepo_api.get(&source).await;
+                                    // - Call repo.fetch_repo_ref(...) to get repository
                                     if let Ok(gitrepo) = gitrepo {
                                         let repo = gitrepo
                                             .fetch_repo_ref(
@@ -511,7 +559,7 @@ impl Trigger {
                                                 &repo_path,
                                             )
                                             .await;
-
+                                        // - Call get_latest_commit_hash(...) to get latest commit
                                         if let Ok(repo) = repo {
                                             let latest_commit = Self::get_latest_commit(
                                                 &repo,
@@ -519,6 +567,9 @@ impl Trigger {
                                             );
                                             if let Ok(latest_commit) = latest_commit {
                                                 info!("Latest commit: {:?}", latest_commit);
+                                                source_state.commit_hash =
+                                                    Some(latest_commit.to_string());
+                                                // - Get file hash if it's required and present
                                                 if let Some(path) =
                                                     &trigger.spec.sources.watch_on.file_
                                                 {
@@ -529,6 +580,8 @@ impl Trigger {
                                                             Self::get_file_hash(&full_path).await;
                                                         if let Ok(file_hash) = file_hash {
                                                             info!("File hash: {file_hash}");
+                                                            source_state.file_hash =
+                                                                Some(file_hash);
                                                         } else {
                                                             error!(
                                                                     "Unable to calc file `{path}` hash: {:?}",
@@ -559,13 +612,49 @@ impl Trigger {
                                 TriggerSourceKind::ClusterGitRepo => todo!(),
                             }
                             // - Get self.status... latest processed hash for current source
-                            // - If it differs from latest commit or onCnagesOnly==false - run action
-                            // - Update self.spec.... latest processed commit
+                            // - If it differs from latest commit or onChangesOnly==false - run action
+                            if let Some(status) = trigger.status() {
+                                if !source_state.is_equal(
+                                    status.checked_sources.get(source),
+                                    trigger.spec.sources.watch_on.file_.is_some(),
+                                ) || !trigger.spec.sources.watch_on.on_change_only
+                                {
+                                    // TODO: Run action
+                                    info!(
+                                        "TODO: Run {} action `{}`",
+                                        trigger.spec.action.kind, trigger.spec.action.name
+                                    );
+                                    // - Update self.spec.... latest processed commit
+                                    let mut new_sources_state =
+                                        trigger.status().unwrap().checked_sources.clone();
+                                    new_sources_state.insert(source.clone(), source_state);
+                                    if let Err(err) = trigger
+                                        .update_resource_state(
+                                            Some(TriggerState::Running),
+                                            Some(new_sources_state),
+                                            &triggers_api,
+                                        )
+                                        .await
+                                    {
+                                        error!(
+                                            "Unable to update trigger `{}` state: {err:?}",
+                                            trigger_name
+                                        );
+                                    }
+                                }
+                            }
+
                             // - Remove temp dir content
                             if let Err(err) = remove_dir_all(&repo_path).await {
                                 error!("Unable to remove temporary folder `{repo_path}`: {err:?}");
                             }
                         }
+                    }
+                    if let Err(err) = trigger
+                        .update_resource_state(Some(TriggerState::Idle), None, &triggers_api)
+                        .await
+                    {
+                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
                     }
                 } else {
                     error!(
