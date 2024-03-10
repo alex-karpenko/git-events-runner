@@ -428,7 +428,6 @@ impl Trigger {
             TriggerState::New
         };
 
-        warn!("{checked_sources:?}");
         let new_status = Patch::Apply(json!({
             "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
             "kind": "Trigger",
