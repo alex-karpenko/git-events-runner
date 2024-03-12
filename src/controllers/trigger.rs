@@ -82,11 +82,7 @@ impl CheckedSourceState {
                 self.file_hash == other.file_hash
             }
         } else {
-            if self.commit_hash.is_none() && self.file_hash.is_none() {
-                true
-            } else {
-                false
-            }
+            self.commit_hash.is_none() && self.file_hash.is_none()
         }
     }
 }
@@ -520,9 +516,18 @@ impl Trigger {
                 let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &trigger_ns);
                 let trigger = triggers_api.get(&trigger_name).await;
                 if let Ok(trigger) = trigger {
+                    let mut checked_sources = if let Some(status) = trigger.status() {
+                        status.checked_sources.clone()
+                    } else {
+                        HashMap::new()
+                    };
                     let base_temp_dir = format!("{DEFAULT_TEMP_DIR}/{trigger_ns}/{trigger_name}");
                     if let Err(err) = trigger
-                        .update_resource_state(Some(TriggerState::Running), None, &triggers_api)
+                        .update_resource_state(
+                            Some(TriggerState::Running),
+                            Some(checked_sources.clone()),
+                            &triggers_api,
+                        )
                         .await
                     {
                         error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
@@ -548,7 +553,7 @@ impl Trigger {
                                 TriggerSourceKind::GitRepo => {
                                     let gitrepo_api: Api<GitRepo> =
                                         Api::namespaced(client.clone(), &trigger_ns);
-                                    let gitrepo = gitrepo_api.get(&source).await;
+                                    let gitrepo = gitrepo_api.get(source).await;
                                     // - Call repo.fetch_repo_ref(...) to get repository
                                     if let Ok(gitrepo) = gitrepo {
                                         let repo = gitrepo
@@ -619,18 +624,16 @@ impl Trigger {
                                 ) || !trigger.spec.sources.watch_on.on_change_only
                                 {
                                     // TODO: Run action
-                                    info!(
+                                    warn!(
                                         "TODO: Run {} action `{}`",
                                         trigger.spec.action.kind, trigger.spec.action.name
                                     );
                                     // - Update self.spec.... latest processed commit
-                                    let mut new_sources_state =
-                                        trigger.status().unwrap().checked_sources.clone();
-                                    new_sources_state.insert(source.clone(), source_state);
+                                    checked_sources.insert(source.clone(), source_state);
                                     if let Err(err) = trigger
                                         .update_resource_state(
                                             Some(TriggerState::Running),
-                                            Some(new_sources_state),
+                                            Some(checked_sources.clone()),
                                             &triggers_api,
                                         )
                                         .await
@@ -650,7 +653,11 @@ impl Trigger {
                         }
                     }
                     if let Err(err) = trigger
-                        .update_resource_state(Some(TriggerState::Idle), None, &triggers_api)
+                        .update_resource_state(
+                            Some(TriggerState::Idle),
+                            Some(checked_sources.clone()),
+                            &triggers_api,
+                        )
                         .await
                     {
                         error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
