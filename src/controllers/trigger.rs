@@ -1,4 +1,4 @@
-use super::{Context, SecretRef};
+use super::{Context, SecretRef, TriggersState};
 use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
     Error, GitRepo, Result,
@@ -33,6 +33,7 @@ use strum_macros::{Display, EnumString};
 use tokio::{
     fs::{create_dir_all, remove_dir_all, try_exists, File},
     io::AsyncReadExt,
+    sync::RwLock,
 };
 use tracing::{debug, error, info, warn};
 
@@ -252,7 +253,31 @@ impl Trigger {
         let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &ns);
         let trigger_key = self.trigger_hash_key();
 
-        // Reconcile is something has been changed
+        // Create trigger status if it's not present yet
+        if !ctx
+            .triggers
+            .read()
+            .await
+            .statuses
+            .contains_key(&self.trigger_hash_key())
+        {
+            if let Some(status) = self.status() {
+                ctx.triggers
+                    .write()
+                    .await
+                    .statuses
+                    .insert(self.trigger_hash_key(), status.clone());
+            } else {
+                self.update_trigger_status(
+                    Some(TriggerState::New),
+                    None,
+                    ctx.triggers.clone(),
+                    &triggers_api,
+                )
+                .await?;
+            }
+        }
+        // Reconcile if something has been changed
         if Some(&self.spec) != ctx.triggers.read().await.specs.get(&trigger_key) {
             // What is changed?
             let (is_schedule_changed, is_webhook_changed) = {
@@ -290,7 +315,7 @@ impl Trigger {
                 if self.spec.schedule.is_some() {
                     if let Some(schedule) = self.get_task_schedule(is_new_task) {
                         let scheduler = ctx.scheduler.write().await;
-                        let task = self.create_task(client.clone(), schedule);
+                        let task = self.create_task(client.clone(), schedule, ctx.triggers.clone());
                         let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
                         let tasks = &mut triggers.tasks;
                         tasks.insert(self.trigger_hash_key(), task_id);
@@ -350,8 +375,14 @@ impl Trigger {
         if (self.spec.webhook.is_none() && self.spec.schedule.is_none())
             || (self.spec.schedule.is_some() && !self.spec.schedule.clone().unwrap().is_valid())
         {
-            self.update_resource_state(Some(TriggerState::WrongConfig), None, &triggers_api)
-                .await?;
+            self.update_trigger_status(
+                Some(TriggerState::WrongConfig),
+                None,
+                ctx.triggers.clone(),
+                &triggers_api,
+            )
+            .await?;
+
             self.publish_trigger_validation_event(
                 recorder,
                 EventType::Warning,
@@ -362,9 +393,6 @@ impl Trigger {
             return Err(Error::WrongTriggerConfig);
         }
 
-        // Always overwrite status object with what we saw
-        self.update_resource_state(None, None, &triggers_api)
-            .await?;
         // If no events were received, check back 30 minutes
         Ok(Action::requeue(Duration::from_secs(30 * 60)))
     }
@@ -381,6 +409,7 @@ impl Trigger {
         if ctx.triggers.read().await.specs.contains_key(&trigger_key) {
             let mut triggers = ctx.triggers.write().await;
             triggers.specs.remove(&trigger_key);
+            triggers.statuses.remove(&trigger_key);
         }
         // Drop task and remove from tasks map
         if ctx.triggers.read().await.tasks.contains_key(&trigger_key) {
@@ -396,47 +425,44 @@ impl Trigger {
         Ok(Action::await_change())
     }
 
-    async fn update_resource_state(
+    async fn update_trigger_status(
         &self,
         state: Option<TriggerState>,
         checked_sources: Option<HashMap<String, CheckedSourceState>>,
+        triggers: Arc<RwLock<TriggersState>>,
         api: &Api<Trigger>,
     ) -> Result<()> {
-        if state.is_none() && checked_sources.is_none() {
-            return Ok(());
-        }
-
         let name = self.name_any();
+        let trigger_key = self.trigger_hash_key();
 
-        let checked_sources = if let Some(checked_sources) = checked_sources {
-            checked_sources
-        } else if let Some(status) = self.status() {
-            status.checked_sources.clone()
+        let mut triggers = triggers.write().await;
+        let new_status = if let Some(status) = triggers.statuses.get(&trigger_key) {
+            TriggerStatus {
+                state: state.unwrap_or(status.state.clone()),
+                checked_sources: checked_sources.unwrap_or(status.checked_sources.clone()),
+            }
         } else {
-            HashMap::<String, CheckedSourceState>::new()
+            TriggerStatus {
+                state: state.unwrap_or_default(),
+                checked_sources: checked_sources.unwrap_or_default(),
+            }
         };
 
-        let state = if let Some(state) = state {
-            state
-        } else if let Some(status) = self.status() {
-            status.state.clone()
-        } else {
-            TriggerState::New
-        };
-
-        let new_status = Patch::Apply(json!({
+        let status = Patch::Apply(json!({
             "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
             "kind": "Trigger",
             "status": {
-                "state": state,
-                "checkedSources": checked_sources,
+                "state": new_status.state,
+                "checkedSources": new_status.checked_sources,
             }
         }));
-        let ps = PatchParams::apply("cntrlr").force();
+        let pp = PatchParams::apply("cntrlr").force();
         let _o = api
-            .patch_status(&name, &ps, &new_status)
+            .patch_status(&name, &pp, &status)
             .await
             .map_err(Error::KubeError)?;
+
+        triggers.statuses.insert(trigger_key, new_status);
 
         Ok(())
     }
@@ -503,10 +529,16 @@ impl Trigger {
         Err(error)
     }
 
-    fn create_task(&self, client: Client, schedule: TaskSchedule) -> Task {
+    fn create_task(
+        &self,
+        client: Client,
+        schedule: TaskSchedule,
+        triggers: Arc<RwLock<TriggersState>>,
+    ) -> Task {
         let trigger_name = self.name_any();
         let trigger_ns = self.namespace().unwrap();
         Task::new(schedule, move |id| {
+            let triggers = triggers.clone();
             let trigger_name = trigger_name.clone();
             let trigger_ns = trigger_ns.clone();
             let client = client.clone();
@@ -515,17 +547,27 @@ impl Trigger {
                 // Get current trigger from API
                 let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &trigger_ns);
                 let trigger = triggers_api.get(&trigger_name).await;
+
                 if let Ok(trigger) = trigger {
-                    let mut checked_sources = if let Some(status) = trigger.status() {
-                        status.checked_sources.clone()
-                    } else {
-                        HashMap::new()
-                    };
                     let base_temp_dir = format!("{DEFAULT_TEMP_DIR}/{trigger_ns}/{trigger_name}");
+
+                    let checked_sources: &mut HashMap<String, CheckedSourceState> = &mut triggers
+                        .read()
+                        .await
+                        .statuses
+                        .get(&trigger.trigger_hash_key())
+                        .expect("Looks like a BUG!")
+                        .checked_sources
+                        .clone()
+                        .into_iter()
+                        .filter(|(k, _v)| trigger.spec.sources.names.contains(k))
+                        .collect();
+
                     if let Err(err) = trigger
-                        .update_resource_state(
+                        .update_trigger_status(
                             Some(TriggerState::Running),
-                            Some(checked_sources.clone()),
+                            None,
+                            triggers.clone(),
                             &triggers_api,
                         )
                         .await
@@ -533,8 +575,15 @@ impl Trigger {
                         error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
                     }
                     // For each source
-                    for source in &trigger.spec.sources.names {
-                        let mut source_state = CheckedSourceState {
+                    for source in trigger
+                        .spec
+                        .sources
+                        .names
+                        .iter()
+                        .cloned()
+                        .collect::<HashSet<String>>()
+                    {
+                        let mut new_source_state = CheckedSourceState {
                             commit_hash: None,
                             file_hash: None,
                         };
@@ -553,7 +602,7 @@ impl Trigger {
                                 TriggerSourceKind::GitRepo => {
                                     let gitrepo_api: Api<GitRepo> =
                                         Api::namespaced(client.clone(), &trigger_ns);
-                                    let gitrepo = gitrepo_api.get(source).await;
+                                    let gitrepo = gitrepo_api.get(&source).await;
                                     // - Call repo.fetch_repo_ref(...) to get repository
                                     if let Ok(gitrepo) = gitrepo {
                                         let repo = gitrepo
@@ -571,7 +620,7 @@ impl Trigger {
                                             );
                                             if let Ok(latest_commit) = latest_commit {
                                                 info!("Latest commit: {:?}", latest_commit);
-                                                source_state.commit_hash =
+                                                new_source_state.commit_hash =
                                                     Some(latest_commit.to_string());
                                                 // - Get file hash if it's required and present
                                                 if let Some(path) =
@@ -584,7 +633,7 @@ impl Trigger {
                                                             Self::get_file_hash(&full_path).await;
                                                         if let Ok(file_hash) = file_hash {
                                                             info!("File hash: {file_hash}");
-                                                            source_state.file_hash =
+                                                            new_source_state.file_hash =
                                                                 Some(file_hash);
                                                         } else {
                                                             error!(
@@ -617,33 +666,35 @@ impl Trigger {
                             }
                             // - Get self.status... latest processed hash for current source
                             // - If it differs from latest commit or onChangesOnly==false - run action
-                            if let Some(status) = trigger.status() {
-                                if !source_state.is_equal(
-                                    status.checked_sources.get(source),
-                                    trigger.spec.sources.watch_on.file_.is_some(),
-                                ) || !trigger.spec.sources.watch_on.on_change_only
+                            let current_source = checked_sources.get(&source);
+                            if !new_source_state.is_equal(
+                                current_source,
+                                trigger.spec.sources.watch_on.file_.is_some(),
+                            ) || !trigger.spec.sources.watch_on.on_change_only
+                            {
+                                // TODO: Run action
+                                warn!(
+                                    "TODO: Run {} action `{}`",
+                                    trigger.spec.action.kind, trigger.spec.action.name
+                                );
+                                // - Update self.spec.... latest processed commit
+                                checked_sources.insert(source, new_source_state);
+                                if let Err(err) = trigger
+                                    .update_trigger_status(
+                                        Some(TriggerState::Running),
+                                        Some(checked_sources.clone()),
+                                        triggers.clone(),
+                                        &triggers_api,
+                                    )
+                                    .await
                                 {
-                                    // TODO: Run action
-                                    warn!(
-                                        "TODO: Run {} action `{}`",
-                                        trigger.spec.action.kind, trigger.spec.action.name
+                                    error!(
+                                        "Unable to update trigger `{}` state: {err:?}",
+                                        trigger_name
                                     );
-                                    // - Update self.spec.... latest processed commit
-                                    checked_sources.insert(source.clone(), source_state);
-                                    if let Err(err) = trigger
-                                        .update_resource_state(
-                                            Some(TriggerState::Running),
-                                            Some(checked_sources.clone()),
-                                            &triggers_api,
-                                        )
-                                        .await
-                                    {
-                                        error!(
-                                            "Unable to update trigger `{}` state: {err:?}",
-                                            trigger_name
-                                        );
-                                    }
                                 }
+                            } else {
+                                checked_sources.insert(source, new_source_state);
                             }
 
                             // - Remove temp dir content
@@ -653,9 +704,10 @@ impl Trigger {
                         }
                     }
                     if let Err(err) = trigger
-                        .update_resource_state(
+                        .update_trigger_status(
                             Some(TriggerState::Idle),
-                            Some(checked_sources.clone()),
+                            Some(checked_sources.to_owned()),
+                            triggers.clone(),
                             &triggers_api,
                         )
                         .await

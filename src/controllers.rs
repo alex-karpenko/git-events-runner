@@ -2,7 +2,7 @@ pub(crate) mod action;
 pub(crate) mod git_repo;
 pub(crate) mod trigger;
 
-use crate::TriggerSpec;
+use crate::{TriggerSpec, TriggerStatus};
 
 use self::git_repo::GitRepo;
 use self::trigger::Trigger;
@@ -62,6 +62,7 @@ pub struct SecretRef {
 pub struct TriggersState {
     tasks: HashMap<String, TaskId>,
     specs: HashMap<String, TriggerSpec>,
+    statuses: HashMap<String, TriggerStatus>,
 }
 
 /// Diagnostics to be exposed by the web server
