@@ -1,6 +1,7 @@
 use clap::Parser;
 use controllers::{GitRepo, Trigger, TriggerSourceKind};
 use kube::{Api, Client};
+use tracing::debug;
 
 #[derive(Parser)]
 #[command(version)]
@@ -28,13 +29,22 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
+    let ns = cli.source_namespace.unwrap_or("default".to_string());
     let client = Client::try_default()
         .await
         .expect("failed to create kube Client");
 
+    let display_name = match cli.source_kind {
+        TriggerSourceKind::GitRepo => format!("{}/{}", ns, cli.source_name),
+        TriggerSourceKind::ClusterGitRepo => cli.source_name.clone(),
+    };
+    debug!(
+        "Cloning source: kind={}, name={}, commit={}, destination={}",
+        cli.source_kind, display_name, cli.commit, cli.destination
+    );
+
     let repo = match cli.source_kind {
         TriggerSourceKind::GitRepo => {
-            let ns = cli.source_namespace.unwrap_or("default".to_string());
             let api = Api::<GitRepo>::namespaced(client.clone(), &ns);
             let gitrepo = api.get(&cli.source_name).await?;
             gitrepo
