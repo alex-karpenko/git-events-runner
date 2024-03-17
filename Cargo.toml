@@ -20,12 +20,18 @@ doc = false
 name = "crdgen"
 path = "src/crdgen.rs"
 
+[[bin]]
+doc = false
+name = "gitrepo-cloner"
+path = "src/gitrepo-cloner.rs"
+
 [lib]
 name = "controllers"
 path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1"
+clap = { version = "4.5.3", features = ["derive"] }
 futures = "0.3.30"
 git2 = "0.18.2"
 humantime = "2.1.0"

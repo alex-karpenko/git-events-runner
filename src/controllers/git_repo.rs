@@ -462,7 +462,7 @@ impl GitRepo {
         Err(error)
     }
 
-    pub(crate) async fn fetch_repo_ref(
+    pub async fn fetch_repo_ref(
         &self,
         client: Client,
         ref_name: &String,

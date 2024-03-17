@@ -3,6 +3,7 @@
         "clustergitrepos",
         "cntrlr",
         "Finalizer",
+        "gitrepo",
         "gitrepos",
         "humantime",
         "Initiatilize",

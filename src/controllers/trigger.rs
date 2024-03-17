@@ -761,20 +761,25 @@ impl Trigger {
         }
     }
 
-    fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference) -> Result<Oid> {
-        let ref_name = match reference {
-            TriggerGitRepoReference::Branch(r) => format!("origin/{r}"),
-            TriggerGitRepoReference::Tag(r) => r.to_string(),
+    pub fn get_latest_commit(
+        repo: &Repository,
+        reference: &TriggerGitRepoReference,
+    ) -> Result<Oid> {
+        let oid = match reference {
+            TriggerGitRepoReference::Branch(r) => repo
+                .resolve_reference_from_short_name(&format!("origin/{r}"))
+                .map_err(Error::GitrepoAccessError)?
+                .target()
+                .unwrap(),
+            TriggerGitRepoReference::Tag(r) => repo
+                .resolve_reference_from_short_name(r)
+                .map_err(Error::GitrepoAccessError)?
+                .target()
+                .unwrap(),
             TriggerGitRepoReference::Commit(r) => {
-                return Oid::from_str(r).map_err(Error::GitrepoAccessError)
+                Oid::from_str(r).map_err(Error::GitrepoAccessError)?
             }
         };
-
-        let oid = repo
-            .resolve_reference_from_short_name(&ref_name)
-            .map_err(Error::GitrepoAccessError)?
-            .target()
-            .unwrap();
 
         let ref_obj = repo.find_object(oid, None).unwrap();
         repo.checkout_tree(&ref_obj, None)
