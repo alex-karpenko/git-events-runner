@@ -48,6 +48,7 @@ jobs:
         id: build-and-push
         uses: docker/build-push-action@v5
         with:
+          file: docker-build/${{matrix.binary}}.dockerfile
           context: .
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
