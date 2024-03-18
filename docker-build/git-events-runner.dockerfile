@@ -3,11 +3,12 @@ FROM rust:1.76 as build
 
 WORKDIR /app
 COPY . /app
-RUN cargo build --release --bin git-events-runner
+ARG RUSTFLAGS='-C target-feature=+crt-static'
+RUN cargo build --target x86_64-unknown-linux-gnu --release --bin git-events-runner
 
 # Runtime stage
 FROM gcr.io/distroless/cc-debian12
-COPY --from=build /app/target/release/git-events-runner /
+COPY --from=build /app/target/x86_64-unknown-linux-gnu/release/git-events-runner /
 
 ENTRYPOINT ["/git-events-runner"]
 CMD ["--help"]
