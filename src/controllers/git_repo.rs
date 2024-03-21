@@ -8,7 +8,7 @@ use k8s_openapi::api::core::v1::Secret;
 use kube::{
     api::{Patch, PatchParams},
     runtime::{
-        controller::Action,
+        controller::Action as ReconcileAction,
         events::{Event, EventType, Recorder},
         finalizer::{finalizer, Event as Finalizer},
     },
@@ -142,7 +142,7 @@ enum RepoUriSchema {
     Git,
 }
 
-pub(crate) async fn reconcile(repo: Arc<GitRepo>, ctx: Arc<Context>) -> Result<Action> {
+pub(crate) async fn reconcile(repo: Arc<GitRepo>, ctx: Arc<Context>) -> Result<ReconcileAction> {
     let ns = repo.namespace().unwrap();
     let repos: Api<GitRepo> = Api::namespaced(ctx.client.clone(), &ns);
 
@@ -168,14 +168,18 @@ pub(crate) async fn reconcile(repo: Arc<GitRepo>, ctx: Arc<Context>) -> Result<A
     .map_err(|e| Error::FinalizerError(Box::new(e)))
 }
 
-pub(crate) fn error_policy(_repo: Arc<GitRepo>, error: &Error, _ctx: Arc<Context>) -> Action {
+pub(crate) fn error_policy(
+    _repo: Arc<GitRepo>,
+    error: &Error,
+    _ctx: Arc<Context>,
+) -> ReconcileAction {
     warn!("reconcile failed: {:?}", error);
-    Action::await_change()
+    ReconcileAction::await_change()
 }
 
 impl GitRepo {
     // Reconcile (for non-finalizer related changes)
-    async fn reconcile(&self, ctx: Arc<Context>) -> Result<Action> {
+    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
@@ -334,17 +338,17 @@ impl GitRepo {
         self.update_resource_state(SourceState::Ready, &repos)
             .await?;
         // If no events were received, check back in 30 minutes
-        Ok(Action::requeue(Duration::from_secs(30 * 60)))
+        Ok(ReconcileAction::requeue(Duration::from_secs(30 * 60)))
     }
 
     // Finalizer cleanup (the object was deleted, ensure nothing is orphaned)
-    async fn cleanup(&self, _ctx: Arc<Context>) -> Result<Action> {
+    async fn cleanup(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             "Cleanup GitRepo `{}` in {}",
             self.name_any(),
             self.namespace().unwrap()
         );
-        Ok(Action::await_change())
+        Ok(ReconcileAction::await_change())
     }
 
     fn parse_repo_uri(&self) -> Result<RepoUriSchema> {

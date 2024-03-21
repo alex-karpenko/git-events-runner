@@ -1,7 +1,7 @@
 use super::{Context, SecretRef, TriggersState};
 use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
-    Error, GitRepo, Result,
+    Action, Error, GitRepo, Result,
 };
 use git2::{Oid, Repository};
 use k8s_openapi::api::core::v1::Secret;
@@ -9,7 +9,7 @@ use kube::{
     api::{Patch, PatchParams},
     core::object::HasStatus,
     runtime::{
-        controller::Action,
+        controller::Action as ReconcileAction,
         events::{Event, EventType, Recorder},
         finalizer::{finalizer, Event as Finalizer},
     },
@@ -214,7 +214,7 @@ pub enum TriggerActionKind {
     ClusterAction,
 }
 
-pub(crate) async fn reconcile(trigger: Arc<Trigger>, ctx: Arc<Context>) -> Result<Action> {
+pub(crate) async fn reconcile(trigger: Arc<Trigger>, ctx: Arc<Context>) -> Result<ReconcileAction> {
     let ns = trigger.namespace().unwrap();
     let triggers: Api<Trigger> = Api::namespaced(ctx.client.clone(), &ns);
 
@@ -235,9 +235,13 @@ pub(crate) async fn reconcile(trigger: Arc<Trigger>, ctx: Arc<Context>) -> Resul
     .map_err(|e| Error::FinalizerError(Box::new(e)))
 }
 
-pub(crate) fn error_policy(_trigger: Arc<Trigger>, error: &Error, _ctx: Arc<Context>) -> Action {
+pub(crate) fn error_policy(
+    _trigger: Arc<Trigger>,
+    error: &Error,
+    _ctx: Arc<Context>,
+) -> ReconcileAction {
     warn!("reconcile failed: {:?}", error);
-    Action::await_change()
+    ReconcileAction::await_change()
 }
 
 impl Trigger {
@@ -246,7 +250,7 @@ impl Trigger {
     }
 
     // Reconcile (for non-finalizer related changes)
-    async fn reconcile(&self, ctx: Arc<Context>) -> Result<Action> {
+    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
@@ -394,11 +398,11 @@ impl Trigger {
         }
 
         // If no events were received, check back 30 minutes
-        Ok(Action::requeue(Duration::from_secs(30 * 60)))
+        Ok(ReconcileAction::requeue(Duration::from_secs(30 * 60)))
     }
 
     // Finalizer cleanup (the object was deleted, ensure nothing is orphaned)
-    async fn cleanup(&self, ctx: Arc<Context>) -> Result<Action> {
+    async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             "Cleanup Trigger `{}` in {}",
             self.name_any(),
@@ -422,7 +426,7 @@ impl Trigger {
             }
         }
         // TODO: Drop web-server and remove from servers map
-        Ok(Action::await_change())
+        Ok(ReconcileAction::await_change())
     }
 
     async fn update_trigger_status(
@@ -666,37 +670,68 @@ impl Trigger {
                             }
                             // - Get self.status... latest processed hash for current source
                             // - If it differs from latest commit or onChangesOnly==false - run action
-                            let current_source = checked_sources.get(&source);
+                            let current_source_state = checked_sources.get(&source);
                             if !new_source_state.is_equal(
-                                current_source,
+                                current_source_state,
                                 trigger.spec.sources.watch_on.file_.is_some(),
                             ) || !trigger.spec.sources.watch_on.on_change_only
                             {
-                                // TODO: Run action
-                                warn!(
-                                    "TODO: Run {} action `{}`",
-                                    trigger.spec.action.kind, trigger.spec.action.name
-                                );
-                                // - Update self.spec.... latest processed commit
-                                checked_sources.insert(source, new_source_state);
-                                if let Err(err) = trigger
-                                    .update_trigger_status(
-                                        Some(TriggerState::Running),
-                                        Some(checked_sources.clone()),
-                                        triggers.clone(),
-                                        &triggers_api,
-                                    )
-                                    .await
-                                {
-                                    error!(
-                                        "Unable to update trigger `{}` state: {err:?}",
-                                        trigger_name
-                                    );
+                                // get action instance
+                                let action_exec_result = match trigger.spec.action.kind {
+                                    TriggerActionKind::Action => {
+                                        let actions_api: Api<Action> =
+                                            Api::namespaced(client.clone(), &trigger_ns);
+                                        let action =
+                                            actions_api.get(&trigger.spec.action.name).await;
+                                        match action {
+                                            Ok(action) => {
+                                                // TODO: Should we retry in case of error?
+                                                action
+                                                    .execute(
+                                                        &trigger.spec.sources.kind,
+                                                        &source,
+                                                        &new_source_state
+                                                            .commit_hash
+                                                            .clone()
+                                                            .unwrap(),
+                                                    )
+                                                    .await
+                                            }
+                                            Err(err) => Err(Error::KubeError(err)),
+                                        }
+                                    }
+                                    TriggerActionKind::ClusterAction => todo!(),
+                                };
+                                // - Update self.spec.... by latest processed commit
+                                match action_exec_result {
+                                    Ok(_) => {
+                                        checked_sources.insert(source, new_source_state);
+                                        if let Err(err) = trigger
+                                            .update_trigger_status(
+                                                Some(TriggerState::Running),
+                                                Some(checked_sources.clone()),
+                                                triggers.clone(),
+                                                &triggers_api,
+                                            )
+                                            .await
+                                        {
+                                            error!(
+                                                "Unable to update trigger `{}` state: {err:?}",
+                                                trigger_name
+                                            );
+                                        }
+                                    }
+                                    Err(err) => error!(
+                                        "Unable to run {} {}/{}: {}",
+                                        trigger.spec.action.kind,
+                                        trigger_ns,
+                                        trigger.spec.action.name,
+                                        err
+                                    ),
                                 }
                             } else {
                                 checked_sources.insert(source, new_source_state);
                             }
-
                             // - Remove temp dir content
                             if let Err(err) = remove_dir_all(&repo_path).await {
                                 error!("Unable to remove temporary folder `{repo_path}`: {err:?}");

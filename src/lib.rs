@@ -1,5 +1,6 @@
 pub mod controllers;
 
+pub use crate::controllers::action::*;
 pub use crate::controllers::git_repo::*;
 pub use crate::controllers::trigger::*;
 use thiserror::Error;

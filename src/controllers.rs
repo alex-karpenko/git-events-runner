@@ -2,10 +2,8 @@ pub(crate) mod action;
 pub(crate) mod git_repo;
 pub(crate) mod trigger;
 
+use self::{action::Action, git_repo::GitRepo, trigger::Trigger};
 use crate::{TriggerSpec, TriggerStatus};
-
-use self::git_repo::GitRepo;
-use self::trigger::Trigger;
 use futures::{future::join_all, StreamExt};
 use k8s_openapi::chrono::{DateTime, Utc};
 use kube::{
@@ -153,6 +151,16 @@ pub async fn run(state: State) {
         Controller::new(triggers, Config::default().any_semantic())
             .shutdown_on_signal()
             .run(trigger::reconcile, trigger::error_policy, context.clone())
+            .filter_map(|x| async move { std::result::Result::ok(x) })
+            .for_each(|_| futures::future::ready(())),
+    ));
+
+    let actions = Api::<Action>::all(client.clone());
+    check_api_by_list(&actions, "Actions").await;
+    controllers.push(tokio::task::spawn(
+        Controller::new(actions, Config::default().any_semantic())
+            .shutdown_on_signal()
+            .run(action::reconcile, action::error_policy, context.clone())
             .filter_map(|x| async move { std::result::Result::ok(x) })
             .for_each(|_| futures::future::ready(())),
     ));
