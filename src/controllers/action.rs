@@ -3,7 +3,6 @@ use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
     Error, Result, TriggerGitRepoReference, TriggerSourceKind,
 };
-use humantime::Timestamp;
 use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
@@ -76,6 +75,8 @@ pub struct ActionJob {
     args: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    service_account: Option<String>,
 }
 
 impl Default for ActionJob {
@@ -86,6 +87,7 @@ impl Default for ActionJob {
             action_image: String::from(DEFAULT_ACTION_IMAGE),
             args: None,
             command: None,
+            service_account: None,
         }
     }
 }
@@ -215,6 +217,7 @@ impl Action {
                 template: PodTemplateSpec {
                     metadata: Default::default(),
                     spec: Some(PodSpec {
+                        service_account_name: self.spec.action_job.service_account.clone(),
                         init_containers: Some(vec![Container {
                             name: DEFAULT_ACTION_INIT_CONTAINER_NAME.into(),
                             image: Some(self.spec.action_job.cloner_image.clone()),
