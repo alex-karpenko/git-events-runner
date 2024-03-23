@@ -3,11 +3,12 @@ FROM rust:1.77 as build
 
 WORKDIR /app
 COPY . /app
-RUN cargo build --release --bin gitrepo-cloner
+ARG RUSTFLAGS='-C target-feature=+crt-static'
+RUN cargo build --target x86_64-unknown-linux-gnu --release --bin gitrepo-cloner
 
 # Runtime stage
 FROM gcr.io/distroless/cc-debian12
-COPY --from=build /app/target/release/gitrepo-cloner /
+COPY --from=build /app/target/x86_64-unknown-linux-gnu/release/gitrepo-cloner /
 
 ENTRYPOINT ["/gitrepo-cloner"]
 CMD ["--help"]
