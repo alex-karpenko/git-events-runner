@@ -301,7 +301,7 @@ impl Trigger {
 
             // Schedule has been changed
             if is_schedule_changed {
-                info!("Update schedule for `{trigger_key}`");
+                debug!("Update schedule for `{trigger_key}`");
                 // drop existing task if it was
                 let is_new_task = if triggers.tasks.contains_key(&trigger_key) {
                     let task_id = triggers.tasks.remove(&trigger_key).unwrap();
@@ -338,7 +338,7 @@ impl Trigger {
 
             // TODO: Webhook has been changed
             if is_webhook_changed {
-                info!("Update webhook for `{trigger_key}`");
+                debug!("Update webhook for `{trigger_key}`");
                 // TODO: Drop existing server if it was
 
                 if let Some(webhook) = &self.spec.webhook {
@@ -547,7 +547,7 @@ impl Trigger {
             let trigger_ns = trigger_ns.clone();
             let client = client.clone();
             Box::pin(async move {
-                info!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                debug!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
                 // Get current trigger from API
                 let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &trigger_ns);
                 let trigger = triggers_api.get(&trigger_name).await;
@@ -591,7 +591,7 @@ impl Trigger {
                             commit_hash: None,
                             file_hash: None,
                         };
-                        info!(
+                        debug!(
                             "Processing {} source {trigger_ns}/{trigger_name}/{source}",
                             trigger.spec.sources.kind
                         );
@@ -623,7 +623,7 @@ impl Trigger {
                                                 &trigger.spec.sources.watch_on.reference,
                                             );
                                             if let Ok(latest_commit) = latest_commit {
-                                                info!("Latest commit: {:?}", latest_commit);
+                                                debug!("Latest commit: {:?}", latest_commit);
                                                 new_source_state.commit_hash =
                                                     Some(latest_commit.to_string());
                                                 // - Get file hash if it's required and present
@@ -636,7 +636,7 @@ impl Trigger {
                                                         let file_hash =
                                                             Self::get_file_hash(&full_path).await;
                                                         if let Ok(file_hash) = file_hash {
-                                                            info!("File hash: {file_hash}");
+                                                            debug!("File hash: {file_hash}");
                                                             new_source_state.file_hash =
                                                                 Some(file_hash);
                                                         } else {
@@ -646,7 +646,7 @@ impl Trigger {
                                                                 );
                                                         }
                                                     } else {
-                                                        info!("File `{path}` doesn't exits");
+                                                        warn!("File `{path}` doesn't exits");
                                                     }
                                                 }
                                             } else {
@@ -694,6 +694,7 @@ impl Trigger {
                                                             .commit_hash
                                                             .clone()
                                                             .unwrap(),
+                                                            client.clone(),
                                                     )
                                                     .await
                                             }
@@ -756,7 +757,7 @@ impl Trigger {
                     );
                 }
 
-                info!("Finish trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                debug!("Finish trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
             })
         })
     }

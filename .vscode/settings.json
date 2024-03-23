@@ -10,7 +10,8 @@
         "openapi",
         "schedulable",
         "schemars",
-        "thiserror"
+        "thiserror",
+        "workdir"
     ],
     "rust-analyzer.linkedProjects": [
         "./Cargo.toml",
