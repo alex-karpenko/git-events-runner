@@ -214,7 +214,7 @@ pub enum TriggerActionKind {
 }
 
 impl Reconcilable for Trigger {
-    async fn reconcile_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
@@ -365,7 +365,7 @@ impl Reconcilable for Trigger {
         Ok(ReconcileAction::requeue(Duration::from_secs(30 * 60)))
     }
 
-    async fn cleanup_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             "Cleanup Trigger `{}` in {}",
             self.name_any(),
@@ -392,8 +392,8 @@ impl Reconcilable for Trigger {
         Ok(ReconcileAction::await_change())
     }
 
-    fn finalizer_name(&self) -> &str {
-        "triggers.git-events-runner.rs"
+    fn finalizer_name(&self) -> String {
+        String::from("triggers.git-events-runner.rs")
     }
 
     fn kind(&self) -> &str {

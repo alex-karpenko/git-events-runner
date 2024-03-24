@@ -200,14 +200,18 @@ where
 }
 
 pub(crate) trait Reconcilable {
-    async fn reconcile_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
-    async fn cleanup_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
-    fn finalizer_name(&self) -> &str;
+    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
+    async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
+    fn finalizer_name(&self) -> String;
     fn kind(&self) -> &str;
 }
 
 // TODO: restrict K to Reconcilable trait
-fn error_policy<K>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context>) -> ReconcileAction {
+fn error_policy<K: Reconcilable>(
+    _resource: Arc<K>,
+    error: &Error,
+    _ctx: Arc<Context>,
+) -> ReconcileAction {
     warn!("reconcile failed: {:?}", error);
     ReconcileAction::await_change()
 }
@@ -223,19 +227,19 @@ where
     let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
 
     info!(
-        "Reconciling {} `{}` in {}",
+        "Reconciling {} `{}/{}`",
         resource.kind(),
         resource.name_any(),
         ns
     );
     finalizer(
         &resource_api,
-        resource.finalizer_name(),
-        resource.clone(),
+        resource.finalizer_name().as_str(),
+        resource,
         |event| async {
             match event {
-                Finalizer::Apply(resource) => resource.reconcile_2(ctx.clone()).await,
-                Finalizer::Cleanup(resource) => resource.cleanup_2(ctx.clone()).await,
+                Finalizer::Apply(resource) => resource.reconcile(ctx.clone()).await,
+                Finalizer::Cleanup(resource) => resource.cleanup(ctx.clone()).await,
             }
         },
     )

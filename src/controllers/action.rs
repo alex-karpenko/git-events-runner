@@ -100,12 +100,12 @@ impl ActionJob {
 }
 
 impl Reconcilable for Action {
-    async fn reconcile_2(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn reconcile(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
         // If no events were received, check back 30 minutes
         Ok(ReconcileAction::await_change())
     }
 
-    async fn cleanup_2(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn cleanup(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             "Cleanup Action `{}` in {}",
             self.name_any(),
@@ -114,8 +114,8 @@ impl Reconcilable for Action {
         Ok(ReconcileAction::await_change())
     }
 
-    fn finalizer_name(&self) -> &str {
-        "actions.git-events-runner.rs"
+    fn finalizer_name(&self) -> String {
+        String::from("actions.git-events-runner.rs")
     }
 
     fn kind(&self) -> &str {

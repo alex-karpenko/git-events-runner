@@ -142,7 +142,7 @@ enum RepoUriSchema {
 }
 
 impl Reconcilable for GitRepo {
-    async fn reconcile_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
@@ -304,7 +304,7 @@ impl Reconcilable for GitRepo {
         Ok(ReconcileAction::requeue(Duration::from_secs(30 * 60)))
     }
 
-    async fn cleanup_2(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn cleanup(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             "Cleanup GitRepo `{}` in {}",
             self.name_any(),
@@ -313,8 +313,8 @@ impl Reconcilable for GitRepo {
         Ok(ReconcileAction::await_change())
     }
 
-    fn finalizer_name(&self) -> &str {
-        "gitrepos.git-events-runner.rs"
+    fn finalizer_name(&self) -> String {
+        String::from("gitrepos.git-events-runner.rs")
     }
 
     fn kind(&self) -> &str {
