@@ -1,4 +1,4 @@
-use super::Context;
+use super::{Context, Reconcilable};
 use crate::{Error, Result, TriggerGitRepoReference, TriggerSourceKind};
 use k8s_openapi::{
     api::{
@@ -11,17 +11,14 @@ use k8s_openapi::{
 };
 use kube::{
     api::{ObjectMeta, PostParams},
-    runtime::{
-        controller::Action as ReconcileAction,
-        finalizer::{finalizer, Event as Finalizer},
-    },
+    runtime::controller::Action as ReconcileAction,
     Api, Client, CustomResource, Resource, ResourceExt,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
-use tracing::{debug, info, warn};
+use tracing::info;
 
 // TODO: this should be config
 const DEFAULT_ACTION_WORKDIR: &str = "/action_workdir";
@@ -102,45 +99,13 @@ impl ActionJob {
     }
 }
 
-pub(crate) async fn reconcile(action: Arc<Action>, ctx: Arc<Context>) -> Result<ReconcileAction> {
-    let ns = action.namespace().unwrap();
-    let actions: Api<Action> = Api::namespaced(ctx.client.clone(), &ns);
-
-    debug!("{:#?}", action);
-    info!("Reconciling action `{}` in {}", action.name_any(), ns);
-    finalizer(
-        &actions,
-        "actions.git-events-runner.rs",
-        action,
-        |event| async {
-            match event {
-                Finalizer::Apply(action) => action.reconcile(ctx.clone()).await,
-                Finalizer::Cleanup(action) => action.cleanup(ctx.clone()).await,
-            }
-        },
-    )
-    .await
-    .map_err(|e| Error::FinalizerError(Box::new(e)))
-}
-
-pub(crate) fn error_policy(
-    _action: Arc<Action>,
-    error: &Error,
-    _ctx: Arc<Context>,
-) -> ReconcileAction {
-    warn!("reconcile failed: {:?}", error);
-    ReconcileAction::await_change()
-}
-
-impl Action {
-    // Reconcile (for non-finalizer related changes)
-    async fn reconcile(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
+impl Reconcilable for Action {
+    async fn reconcile_2(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
         // If no events were received, check back 30 minutes
         Ok(ReconcileAction::await_change())
     }
 
-    // Finalizer cleanup (the object was deleted, ensure nothing is orphaned)
-    async fn cleanup(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn cleanup_2(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             "Cleanup Action `{}` in {}",
             self.name_any(),
@@ -149,6 +114,16 @@ impl Action {
         Ok(ReconcileAction::await_change())
     }
 
+    fn finalizer_name(&self) -> &str {
+        "actions.git-events-runner.rs"
+    }
+
+    fn kind(&self) -> &str {
+        "Action"
+    }
+}
+
+impl Action {
     pub(crate) async fn execute(
         &self,
         source_kind: &TriggerSourceKind,

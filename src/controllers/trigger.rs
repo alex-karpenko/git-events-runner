@@ -1,4 +1,4 @@
-use super::{Context, SecretRef, TriggersState};
+use super::{Context, Reconcilable, SecretRef, TriggersState};
 use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
     Action, Error, GitRepo, Result,
@@ -11,7 +11,6 @@ use kube::{
     runtime::{
         controller::Action as ReconcileAction,
         events::{Event, EventType, Recorder},
-        finalizer::{finalizer, Event as Finalizer},
     },
     Api, Client, CustomResource, ResourceExt,
 };
@@ -214,43 +213,8 @@ pub enum TriggerActionKind {
     ClusterAction,
 }
 
-pub(crate) async fn reconcile(trigger: Arc<Trigger>, ctx: Arc<Context>) -> Result<ReconcileAction> {
-    let ns = trigger.namespace().unwrap();
-    let triggers: Api<Trigger> = Api::namespaced(ctx.client.clone(), &ns);
-
-    debug!("{:#?}", trigger);
-    info!("Reconciling Trigger `{}` in {}", trigger.name_any(), ns);
-    finalizer(
-        &triggers,
-        "triggers.git-events-runner.rs",
-        trigger,
-        |event| async {
-            match event {
-                Finalizer::Apply(trigger) => trigger.reconcile(ctx.clone()).await,
-                Finalizer::Cleanup(trigger) => trigger.cleanup(ctx.clone()).await,
-            }
-        },
-    )
-    .await
-    .map_err(|e| Error::FinalizerError(Box::new(e)))
-}
-
-pub(crate) fn error_policy(
-    _trigger: Arc<Trigger>,
-    error: &Error,
-    _ctx: Arc<Context>,
-) -> ReconcileAction {
-    warn!("reconcile failed: {:?}", error);
-    ReconcileAction::await_change()
-}
-
-impl Trigger {
-    fn trigger_hash_key(&self) -> String {
-        format!("{}/{}", self.namespace().unwrap(), self.name_any())
-    }
-
-    // Reconcile (for non-finalizer related changes)
-    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
+impl Reconcilable for Trigger {
+    async fn reconcile_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
@@ -401,8 +365,7 @@ impl Trigger {
         Ok(ReconcileAction::requeue(Duration::from_secs(30 * 60)))
     }
 
-    // Finalizer cleanup (the object was deleted, ensure nothing is orphaned)
-    async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn cleanup_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             "Cleanup Trigger `{}` in {}",
             self.name_any(),
@@ -427,6 +390,20 @@ impl Trigger {
         }
         // TODO: Drop web-server and remove from servers map
         Ok(ReconcileAction::await_change())
+    }
+
+    fn finalizer_name(&self) -> &str {
+        "triggers.git-events-runner.rs"
+    }
+
+    fn kind(&self) -> &str {
+        "Trigger"
+    }
+}
+
+impl Trigger {
+    fn trigger_hash_key(&self) -> String {
+        format!("{}/{}", self.namespace().unwrap(), self.name_any())
     }
 
     async fn update_trigger_status(

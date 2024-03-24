@@ -3,24 +3,29 @@ pub(crate) mod git_repo;
 pub(crate) mod trigger;
 
 use self::{action::Action, git_repo::GitRepo, trigger::Trigger};
-use crate::{TriggerSpec, TriggerStatus};
+use crate::{Error, Result, TriggerSpec, TriggerStatus};
 use futures::{future::join_all, StreamExt};
-use k8s_openapi::chrono::{DateTime, Utc};
+use k8s_openapi::{
+    chrono::{DateTime, Utc},
+    NamespaceResourceScope,
+};
 use kube::{
     api::ListParams,
     runtime::{
+        controller::Action as ReconcileAction,
         events::{Recorder, Reporter},
+        finalizer::{finalizer, Event as Finalizer},
         watcher::Config,
         Controller,
     },
-    Api, Client,
+    Api, Client, Resource, ResourceExt,
 };
 use sacs::{scheduler::Scheduler, task::TaskId};
 use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 const API_GROUP: &str = "git-events-runner.rs";
 const CURRENT_API_VERSION: &str = "v1alpha1";
@@ -83,7 +88,7 @@ impl Default for Diagnostics {
 impl Diagnostics {
     fn recorder<K>(&self, client: Client, res: &K) -> Recorder
     where
-        K: kube::Resource<DynamicType = ()>,
+        K: Resource<DynamicType = ()>,
     {
         Recorder::new(client, self.reporter.clone(), res.object_ref(&()))
     }
@@ -140,7 +145,11 @@ pub async fn run(state: State) {
     controllers.push(tokio::task::spawn(
         Controller::new(git_repos, Config::default().any_semantic())
             .shutdown_on_signal()
-            .run(git_repo::reconcile, git_repo::error_policy, context.clone())
+            .run(
+                reconcile_namespaced::<GitRepo>,
+                error_policy::<GitRepo>,
+                context.clone(),
+            )
             .filter_map(|x| async move { std::result::Result::ok(x) })
             .for_each(|_| futures::future::ready(())),
     ));
@@ -150,7 +159,11 @@ pub async fn run(state: State) {
     controllers.push(tokio::task::spawn(
         Controller::new(triggers, Config::default().any_semantic())
             .shutdown_on_signal()
-            .run(trigger::reconcile, trigger::error_policy, context.clone())
+            .run(
+                reconcile_namespaced::<Trigger>,
+                error_policy::<Trigger>,
+                context.clone(),
+            )
             .filter_map(|x| async move { std::result::Result::ok(x) })
             .for_each(|_| futures::future::ready(())),
     ));
@@ -160,7 +173,11 @@ pub async fn run(state: State) {
     controllers.push(tokio::task::spawn(
         Controller::new(actions, Config::default().any_semantic())
             .shutdown_on_signal()
-            .run(action::reconcile, action::error_policy, context.clone())
+            .run(
+                reconcile_namespaced::<Action>,
+                error_policy::<Action>,
+                context.clone(),
+            )
             .filter_map(|x| async move { std::result::Result::ok(x) })
             .for_each(|_| futures::future::ready(())),
     ));
@@ -170,7 +187,7 @@ pub async fn run(state: State) {
 
 async fn check_api_by_list<K>(api: &Api<K>, api_name: &str)
 where
-    K: Clone + DeserializeOwned + std::fmt::Debug,
+    K: Clone + DeserializeOwned + Debug,
 {
     if let Err(e) = api.list(&ListParams::default().limit(1)).await {
         error!(
@@ -180,4 +197,48 @@ where
         info!("Installation: cargo run --bin crdgen | kubectl apply -f -");
         std::process::exit(1);
     }
+}
+
+pub(crate) trait Reconcilable {
+    async fn reconcile_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
+    async fn cleanup_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
+    fn finalizer_name(&self) -> &str;
+    fn kind(&self) -> &str;
+}
+
+// TODO: restrict K to Reconcilable trait
+fn error_policy<K>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context>) -> ReconcileAction {
+    warn!("reconcile failed: {:?}", error);
+    ReconcileAction::await_change()
+}
+
+async fn reconcile_namespaced<K>(resource: Arc<K>, ctx: Arc<Context>) -> Result<ReconcileAction>
+where
+    K: Resource + Reconcilable,
+    K: Debug + Clone + DeserializeOwned + Serialize,
+    <K as Resource>::DynamicType: Default,
+    K: Resource<Scope = NamespaceResourceScope>,
+{
+    let ns = resource.namespace().unwrap();
+    let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
+
+    info!(
+        "Reconciling {} `{}` in {}",
+        resource.kind(),
+        resource.name_any(),
+        ns
+    );
+    finalizer(
+        &resource_api,
+        resource.finalizer_name(),
+        resource.clone(),
+        |event| async {
+            match event {
+                Finalizer::Apply(resource) => resource.reconcile_2(ctx.clone()).await,
+                Finalizer::Cleanup(resource) => resource.cleanup_2(ctx.clone()).await,
+            }
+        },
+    )
+    .await
+    .map_err(|e| Error::FinalizerError(Box::new(e)))
 }

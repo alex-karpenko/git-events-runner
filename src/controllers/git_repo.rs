@@ -1,4 +1,4 @@
-use super::{Context, GitRepoStatus, SecretRef, SourceState, TlsVerifyConfig};
+use super::{Context, GitRepoStatus, Reconcilable, SecretRef, SourceState, TlsVerifyConfig};
 use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
     Error, Result,
@@ -10,7 +10,6 @@ use kube::{
     runtime::{
         controller::Action as ReconcileAction,
         events::{Event, EventType, Recorder},
-        finalizer::{finalizer, Event as Finalizer},
     },
     Api, Client, CustomResource, ResourceExt,
 };
@@ -25,7 +24,7 @@ use std::{
 };
 use strum_macros::{Display, EnumString};
 use tokio::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[cfg_attr(test, derive(Default))]
@@ -142,44 +141,8 @@ enum RepoUriSchema {
     Git,
 }
 
-pub(crate) async fn reconcile(repo: Arc<GitRepo>, ctx: Arc<Context>) -> Result<ReconcileAction> {
-    let ns = repo.namespace().unwrap();
-    let repos: Api<GitRepo> = Api::namespaced(ctx.client.clone(), &ns);
-
-    debug!("{:#?}", repo);
-    info!(
-        "Reconciling GitRepo `{}` in {}, repoUri={}",
-        repo.name_any(),
-        ns,
-        repo.spec.repo_uri
-    );
-    finalizer(
-        &repos,
-        "gitrepos.git-events-runner.rs",
-        repo,
-        |event| async {
-            match event {
-                Finalizer::Apply(repo) => repo.reconcile(ctx.clone()).await,
-                Finalizer::Cleanup(repo) => repo.cleanup(ctx.clone()).await,
-            }
-        },
-    )
-    .await
-    .map_err(|e| Error::FinalizerError(Box::new(e)))
-}
-
-pub(crate) fn error_policy(
-    _repo: Arc<GitRepo>,
-    error: &Error,
-    _ctx: Arc<Context>,
-) -> ReconcileAction {
-    warn!("reconcile failed: {:?}", error);
-    ReconcileAction::await_change()
-}
-
-impl GitRepo {
-    // Reconcile (for non-finalizer related changes)
-    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
+impl Reconcilable for GitRepo {
+    async fn reconcile_2(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
@@ -341,8 +304,7 @@ impl GitRepo {
         Ok(ReconcileAction::requeue(Duration::from_secs(30 * 60)))
     }
 
-    // Finalizer cleanup (the object was deleted, ensure nothing is orphaned)
-    async fn cleanup(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
+    async fn cleanup_2(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             "Cleanup GitRepo `{}` in {}",
             self.name_any(),
@@ -351,6 +313,16 @@ impl GitRepo {
         Ok(ReconcileAction::await_change())
     }
 
+    fn finalizer_name(&self) -> &str {
+        "gitrepos.git-events-runner.rs"
+    }
+
+    fn kind(&self) -> &str {
+        "GitRepo"
+    }
+}
+
+impl GitRepo {
     fn parse_repo_uri(&self) -> Result<RepoUriSchema> {
         // 1 - r#"^(?P<schema>git)@(?P<host>[\w.-]+):(?P<owner>[\w.-]+)/(?P<repo>[/\w.-]+)$"#
         // git@host.name:owner/repo.git
