@@ -10,6 +10,7 @@
         "humantime",
         "Initiatilize",
         "openapi",
+        "printcolumn",
         "schedulable",
         "schemars",
         "thiserror",

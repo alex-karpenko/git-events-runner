@@ -68,12 +68,8 @@ pub struct TriggersState {
     statuses: HashMap<String, TriggerStatus>,
 }
 
-/// Diagnostics to be exposed by the web server
-#[derive(Clone, Serialize)]
 pub struct Diagnostics {
-    #[serde(deserialize_with = "from_ts")]
     pub last_event: DateTime<Utc>,
-    #[serde(skip)]
     pub reporter: Reporter,
 }
 

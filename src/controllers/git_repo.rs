@@ -32,7 +32,8 @@ use tracing::{debug, info};
     kind = "GitRepo",
     group = "git-events-runner.rs",
     version = "v1alpha1",
-    namespaced
+    namespaced,
+    printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#,
 )]
 #[kube(status = "GitRepoStatus")]
 #[serde(rename_all = "camelCase")]
