@@ -1,8 +1,5 @@
 use super::Context;
-use crate::{
-    controllers::{API_GROUP, CURRENT_API_VERSION},
-    Error, Result, TriggerGitRepoReference, TriggerSourceKind,
-};
+use crate::{Error, Result, TriggerGitRepoReference, TriggerSourceKind};
 use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
@@ -13,10 +10,9 @@ use k8s_openapi::{
     chrono::{DateTime, Local},
 };
 use kube::{
-    api::{ObjectMeta, Patch, PatchParams, PostParams},
+    api::{ObjectMeta, PostParams},
     runtime::{
         controller::Action as ReconcileAction,
-        events::{Event, EventType, Recorder},
         finalizer::{finalizer, Event as Finalizer},
     },
     Api, Client, CustomResource, Resource, ResourceExt,
@@ -24,7 +20,6 @@ use kube::{
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 use tracing::{debug, info, warn};
 
@@ -68,8 +63,11 @@ pub struct ActionSourceOverride {
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionJob {
+    #[serde(default = "ActionJob::default_workdir")]
     workdir: String,
+    #[serde(default = "ActionJob::default_cloner_image")]
     cloner_image: String,
+    #[serde(default = "ActionJob::default_action_image")]
     action_image: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     args: Option<Vec<String>>,
@@ -89,6 +87,18 @@ impl Default for ActionJob {
             command: None,
             service_account: None,
         }
+    }
+}
+
+impl ActionJob {
+    fn default_workdir() -> String {
+        String::from(DEFAULT_ACTION_WORKDIR)
+    }
+    fn default_action_image() -> String {
+        String::from(DEFAULT_ACTION_IMAGE)
+    }
+    fn default_cloner_image() -> String {
+        String::from(DEFAULT_CLONER_IMAGE)
     }
 }
 
@@ -123,17 +133,8 @@ pub(crate) fn error_policy(
 }
 
 impl Action {
-    fn hash_key(&self) -> String {
-        format!("{}/{}", self.namespace().unwrap(), self.name_any())
-    }
-
     // Reconcile (for non-finalizer related changes)
-    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
-        let client = ctx.client.clone();
-        let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
-        let ns = self.namespace().unwrap();
-        let actions_api: Api<Action> = Api::namespaced(client.clone(), &ns);
-
+    async fn reconcile(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
         // If no events were received, check back 30 minutes
         Ok(ReconcileAction::await_change())
     }

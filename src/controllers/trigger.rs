@@ -694,7 +694,7 @@ impl Trigger {
                                                             .commit_hash
                                                             .clone()
                                                             .unwrap(),
-                                                            client.clone(),
+                                                        client.clone(),
                                                     )
                                                     .await
                                             }
