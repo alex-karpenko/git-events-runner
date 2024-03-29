@@ -3,7 +3,9 @@ use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
     Error, Result,
 };
-use git2::{Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions};
+use git2::{
+    CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions,
+};
 use k8s_openapi::api::core::v1::Secret;
 use kube::{
     api::{Patch, PatchParams},
@@ -33,7 +35,7 @@ use tracing::{debug, info};
     group = "git-events-runner.rs",
     version = "v1alpha1",
     namespaced,
-    printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#,
+    printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#
 )]
 #[kube(status = "GitRepoStatus")]
 #[serde(rename_all = "camelCase")]
@@ -62,12 +64,14 @@ pub struct TlsConfig {
 #[serde(rename_all = "camelCase")]
 pub struct TlsCaConfig {
     secret_ref: SecretRef,
-    #[serde(default = "default_ca_data_key")]
+    #[serde(default = "TlsCaConfig::default_ca_data_key")]
     key: String,
 }
 
-fn default_ca_data_key() -> String {
-    String::from("ca.crt")
+impl TlsCaConfig {
+    fn default_ca_data_key() -> String {
+        String::from("ca.crt")
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
@@ -500,6 +504,20 @@ impl GitRepo {
                 }
             }
         }
+
+        if let Some(tls_config) = &self.spec.tls_config {
+            match &tls_config.verify {
+                TlsVerifyConfig::Ignore => {
+                    callbacks.certificate_check(move |_, _| {
+                        debug!("certificate check callback: verify=ignore");
+                        Ok(CertificateCheckStatus::CertificateOk)
+                    });
+                }
+                TlsVerifyConfig::Ca => todo!(),
+                TlsVerifyConfig::Full => todo!(),
+            }
+        }
+
         fetch_opt.remote_callbacks(callbacks);
         fetch_opt.depth(1);
         init_opts.origin_url(&self.spec.repo_uri);

@@ -1,35 +1,13 @@
-targets = []
-#exclude = []
-all-features = false
-no-default-features = false
-#features = []
-feature-depth = 1
-
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "deny"
-unsound = "deny"
 yanked = "deny"
-notice = "deny"
-ignore = [
-    #"RUSTSEC-0000-0000",
-]
-#severity-threshold =
-
-#git-fetch-with-cli = true
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
 ]
-deny = []
-copyleft = "deny"
-allow-osi-fsf-free = "neither"
-default = "deny"
 confidence-threshold = 0.93
 exceptions = [
     { allow = ["ISC"], name = "untrusted" },
@@ -60,41 +38,11 @@ wildcards = "allow"
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
-allow = [
-    #{ name = "ansi_term", version = "=0.11.0" },
-]
-deny = [
-    # Each entry the name of a crate and a version range. If version is
-    # not specified, all versions will be matched.
-    #{ name = "ansi_term", version = "=0.11.0" },
-    #
-    # Wrapper crates can optionally be specified to allow the crate when it
-    # is a direct dependency of the otherwise banned crate
-    #{ name = "ansi_term", version = "=0.11.0", wrappers = [] },
-]
+allow = []
+deny = []
 
-#[[bans.features]]
-#name = "reqwest"
-#deny = ["json"]
-#allow = [
-#    "rustls",
-#    "__rustls",
-#    "__tls",
-#    "hyper-rustls",
-#    "rustls",
-#    "rustls-pemfile",
-#    "rustls-tls-webpki-roots",
-#    "tokio-rustls",
-#    "webpki-roots",
-#]
-#exact = true
-
-skip = [
-    #{ name = "ansi_term", version = "=0.11.0" },
-]
-skip-tree = [
-    #{ name = "ansi_term", version = "=0.11.0", depth = 20 },
-]
+skip = []
+skip-tree = []
 
 [sources]
 unknown-registry = "deny"
@@ -106,3 +54,11 @@ allow-git = []
 #github = [""]
 #gitlab = [""]
 #bitbucket = [""]
+
+[graph]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+

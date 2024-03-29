@@ -4,7 +4,7 @@ use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
         core::v1::{
-            Container, EmptyDirVolumeSource, PodSpec, PodTemplateSpec, Volume, VolumeMount,
+            Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount,
         },
     },
     chrono::{DateTime, Local},
@@ -198,6 +198,12 @@ impl Action {
                             name: DEFAULT_ACTION_INIT_CONTAINER_NAME.into(),
                             image: Some(self.spec.action_job.cloner_image.clone()),
                             args: Some(args),
+                            // TODO: remove this or make debug level configurable
+                            env: Some(vec![EnvVar {
+                                name: "RUST_LOG".into(),
+                                value: Some("debug".into()),
+                                value_from: None,
+                            }]),
                             volume_mounts: Some(vec![VolumeMount {
                                 name: DEFAULT_ACTION_WORKDIR_VOLUME_NAME.into(),
                                 mount_path: self.spec.action_job.workdir.clone(),
