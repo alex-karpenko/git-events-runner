@@ -45,7 +45,7 @@ const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
     group = "git-events-runner.rs",
     version = "v1alpha1",
     namespaced,
-    printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#,
+    printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#
 )]
 #[kube(status = "TriggerStatus")]
 #[serde(rename_all = "camelCase")]
@@ -629,6 +629,7 @@ impl Trigger {
                                                 }
                                             } else {
                                                 error!("Unable to get latest hash from GitRepo `{source}`: {:?} ", latest_commit.err());
+                                                continue;
                                             }
                                         } else {
                                             error!(
@@ -636,12 +637,14 @@ impl Trigger {
                                                 source,
                                                 repo.err()
                                             );
+                                            continue;
                                         }
                                     } else {
                                         error!(
                                             "Unable to get GitRepo {trigger_ns}/{source}: {:?}",
                                             gitrepo.err()
                                         );
+                                        continue;
                                     }
                                 }
                                 TriggerSourceKind::ClusterGitRepo => todo!(),
