@@ -7,13 +7,16 @@
         "Finalizer",
         "gitrepo",
         "gitrepos",
+        "hasher",
         "humantime",
         "Initiatilize",
         "openapi",
         "printcolumn",
+        "rustls",
         "schedulable",
         "schemars",
         "thiserror",
+        "userpass",
         "workdir"
     ],
     "rust-analyzer.linkedProjects": [

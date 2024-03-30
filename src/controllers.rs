@@ -31,15 +31,6 @@ const API_GROUP: &str = "git-events-runner.rs";
 const CURRENT_API_VERSION: &str = "v1alpha1";
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum TlsVerifyConfig {
-    Ignore,
-    #[default]
-    Ca,
-    Full,
-}
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct GitRepoStatus {
     pub state: SourceState,
 }

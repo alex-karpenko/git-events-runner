@@ -1,4 +1,4 @@
-use super::{Context, GitRepoStatus, Reconcilable, SecretRef, SourceState, TlsVerifyConfig};
+use super::{Context, GitRepoStatus, Reconcilable, SecretRef, SourceState};
 use crate::{
     controllers::{API_GROUP, CURRENT_API_VERSION},
     Error, Result,
@@ -16,6 +16,11 @@ use kube::{
     Api, Client, CustomResource, ResourceExt,
 };
 use regex::Regex;
+use rustls::{
+    client::{danger::ServerCertVerifier, WebPkiServerVerifier},
+    pki_types::{CertificateDer, ServerName, UnixTime},
+    RootCertStore,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -26,7 +31,7 @@ use std::{
 };
 use strum_macros::{Display, EnumString};
 use tokio::time::Duration;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[cfg_attr(test, derive(Default))]
@@ -51,13 +56,9 @@ pub struct GitRepoSpec {
 #[serde(rename_all = "camelCase")]
 pub struct TlsConfig {
     #[serde(default)]
-    verify: TlsVerifyConfig,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    servers: Option<Vec<String>>,
+    no_verify_ssl: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     ca_cert: Option<TlsCaConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    client_cert: Option<TlsCertConfig>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
@@ -71,30 +72,6 @@ pub struct TlsCaConfig {
 impl TlsCaConfig {
     fn default_ca_data_key() -> String {
         String::from("ca.crt")
-    }
-}
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct TlsCertConfig {
-    secret_ref: SecretRef,
-    #[serde(default)]
-    keys: CertKeysConfig,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CertKeysConfig {
-    cert: String,
-    key: String,
-}
-
-impl Default for CertKeysConfig {
-    fn default() -> Self {
-        Self {
-            cert: String::from("tls.crt"),
-            key: String::from("tls.key"),
-        }
     }
 }
 
@@ -261,27 +238,6 @@ impl Reconcilable for GitRepo {
             if let Some(ca) = tls_config.ca_cert {
                 let secret_name = ca.secret_ref.name;
                 let keys_to_check = vec![ca.key];
-                let result = self
-                    .check_secret_ref(
-                        client.clone(),
-                        &secret_name,
-                        &keys_to_check,
-                        Error::WrongTlsConfig,
-                    )
-                    .await;
-                if result.is_err() {
-                    self.publish_source_validation_event(
-                        recorder,
-                        EventType::Warning,
-                        format!("Auth config may be wrong: secret `{secret_name}` should exist and contain `{}` key(s)", keys_to_check.join(",")).as_str(),
-                        "ValidateSourceAuthConfig",
-                    )
-                    .await?;
-                }
-            }
-            if let Some(cert) = tls_config.client_cert {
-                let secret_name = cert.secret_ref.name;
-                let keys_to_check = vec![cert.keys.cert, cert.keys.key];
                 let result = self
                     .check_secret_ref(
                         client.clone(),
@@ -471,6 +427,19 @@ impl GitRepo {
                 HashMap::new()
             };
 
+        let tls_secrets: HashMap<String, String> = if let Some(tls_config) = &self.spec.tls_config {
+            let mut secret_keys: HashMap<&String, String> = HashMap::new();
+            if let Some(ca_cert) = &tls_config.ca_cert {
+                secret_keys.insert(&ca_cert.key, "ca.crt".into());
+                self.get_secret_strings(client.clone(), &ca_cert.secret_ref.name, secret_keys)
+                    .await?
+            } else {
+                HashMap::new()
+            }
+        } else {
+            HashMap::new()
+        };
+
         // Create callback object with necessary secrets
         let mut callbacks = RemoteCallbacks::new();
         let mut init_opts = RepositoryInitOptions::new();
@@ -506,15 +475,51 @@ impl GitRepo {
         }
 
         if let Some(tls_config) = &self.spec.tls_config {
-            match &tls_config.verify {
-                TlsVerifyConfig::Ignore => {
+            if tls_config.no_verify_ssl {
+                callbacks.certificate_check(move |_cert, _hostname| {
+                    debug!("certificate check callback: no_verify_ssl=true");
+                    Ok(CertificateCheckStatus::CertificateOk)
+                });
+            } else {
+                debug!("certificate check callback: no_verify_ssl=false");
+                if tls_config.ca_cert.is_some() {
+                    let mut ca = tls_secrets.get("ca.crt").unwrap().as_bytes();
+                    let ca = rustls_pemfile::certs(&mut ca).flatten();
+                    // TODO: make system trust store global
+                    let mut root_cert_store = RootCertStore::empty();
+                    root_cert_store.add_parsable_certificates(
+                        rustls_native_certs::load_native_certs()
+                            .expect("could not load platform certs"),
+                    );
+                    root_cert_store.add_parsable_certificates(ca);
+                    let root_cert_store = Arc::new(root_cert_store);
+                    callbacks.certificate_check(move |cert, hostname| {
+                        let cert_verifier =
+                            WebPkiServerVerifier::builder(root_cert_store.clone())
+                                .build()
+                                .unwrap();
+                        let end_entity = CertificateDer::from(cert.as_x509().unwrap().data());
+                        let hostname = ServerName::try_from(hostname).unwrap();
+                        let result = cert_verifier.verify_server_cert(
+                            &end_entity,
+                            &[],
+                            &hostname,
+                            &[],
+                            UnixTime::now(),
+                        );
+                        match result {
+                            Ok(_) => Ok(CertificateCheckStatus::CertificateOk),
+                            Err(err) => {
+                                warn!("unable to verify server certificate with custom CA: {err}");
+                                Ok(CertificateCheckStatus::CertificatePassthrough)
+                            }
+                        }
+                    });
+                } else {
                     callbacks.certificate_check(move |_, _| {
-                        debug!("certificate check callback: verify=ignore");
-                        Ok(CertificateCheckStatus::CertificateOk)
+                        Ok(CertificateCheckStatus::CertificatePassthrough)
                     });
                 }
-                TlsVerifyConfig::Ca => todo!(),
-                TlsVerifyConfig::Full => todo!(),
             }
         }
 
