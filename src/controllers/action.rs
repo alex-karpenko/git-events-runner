@@ -4,7 +4,7 @@ use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
         core::v1::{
-            Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount,
+            Container, EmptyDirVolumeSource, PodSpec, PodTemplateSpec, Volume, VolumeMount,
         },
     },
     chrono::{DateTime, Local},
@@ -22,7 +22,7 @@ use tracing::info;
 
 // TODO: this should be config
 const DEFAULT_ACTION_WORKDIR: &str = "/action_workdir";
-const DEFAULT_CLONER_IMAGE: &str = "ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:v0.0.0";
+const DEFAULT_CLONER_IMAGE: &str = "ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:latest";
 const DEFAULT_ACTION_IMAGE: &str = "docker.io/bash:latest";
 const DEFAULT_ACTION_WORKDIR_VOLUME_NAME: &str = "action-workdir";
 const DEFAULT_ACTION_INIT_CONTAINER_NAME: &str = "action-init";
@@ -72,6 +72,10 @@ pub struct ActionJob {
     command: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     service_account: Option<String>,
+    #[serde(default)]
+    enable_cloner_debug: bool,
+    #[serde(default)]
+    preserve_git_folder: bool,
 }
 
 impl Default for ActionJob {
@@ -83,6 +87,8 @@ impl Default for ActionJob {
             args: None,
             command: None,
             service_account: None,
+            enable_cloner_debug: false,
+            preserve_git_folder: false,
         }
     }
 }
@@ -142,6 +148,45 @@ impl Action {
             .map_err(Error::KubeError)
     }
 
+    fn get_gitrepo_cloner_args(
+        &self,
+        source_kind: &TriggerSourceKind,
+        source_name: &str,
+        source_ref: &TriggerGitRepoReference,
+    ) -> Vec<String> {
+        let mut args = vec![
+            "--kind".into(),
+            source_kind.to_string(),
+            "--source".into(),
+            source_name.into(),
+            "--destination".into(),
+            self.spec.action_job.workdir.clone(),
+        ];
+
+        let (ref_type, ref_name) = match source_ref {
+            TriggerGitRepoReference::Branch(branch) => ("--branch", branch),
+            TriggerGitRepoReference::Tag(tag) => ("--tag", tag),
+            TriggerGitRepoReference::Commit(commit) => ("--commit", commit),
+        };
+        args.push(ref_type.into());
+        args.push(ref_name.clone());
+
+        if source_kind == &TriggerSourceKind::GitRepo {
+            args.push("--namespace".into());
+            args.push(self.namespace().unwrap());
+        }
+
+        if self.spec.action_job.preserve_git_folder {
+            args.push("--preserve-git-folder".into());
+        }
+
+        if self.spec.action_job.enable_cloner_debug {
+            args.push("--debug".into());
+        }
+
+        args
+    }
+
     fn create_job_spec(
         &self,
         source_kind: &TriggerSourceKind,
@@ -161,21 +206,19 @@ impl Action {
             source_name.into(),
         );
 
-        let mut args = vec![
-            "--kind".into(),
-            source_kind.to_string(),
-            "--source".into(),
-            source_name.into(),
-            "--commit".into(),
-            source_commit.into(),
-            "--destination".into(),
-            self.spec.action_job.workdir.clone(),
-        ];
-
-        if source_kind == &TriggerSourceKind::GitRepo {
-            args.push("--namespace".into());
-            args.push(self.namespace().unwrap());
-        }
+        let args = if let Some(source_override) = &self.spec.source_override {
+            self.get_gitrepo_cloner_args(
+                &source_override.kind,
+                &source_override.name,
+                &source_override.reference,
+            )
+        } else {
+            self.get_gitrepo_cloner_args(
+                source_kind,
+                source_name,
+                &TriggerGitRepoReference::Commit(source_commit.into()),
+            )
+        };
 
         let job = Job {
             metadata: ObjectMeta {
@@ -198,12 +241,6 @@ impl Action {
                             name: DEFAULT_ACTION_INIT_CONTAINER_NAME.into(),
                             image: Some(self.spec.action_job.cloner_image.clone()),
                             args: Some(args),
-                            // TODO: remove this or make debug level configurable
-                            env: Some(vec![EnvVar {
-                                name: "RUST_LOG".into(),
-                                value: Some("debug".into()),
-                                value_from: None,
-                            }]),
                             volume_mounts: Some(vec![VolumeMount {
                                 name: DEFAULT_ACTION_WORKDIR_VOLUME_NAME.into(),
                                 mount_path: self.spec.action_job.workdir.clone(),
@@ -214,6 +251,7 @@ impl Action {
                         containers: vec![Container {
                             name: DEFAULT_ACTION_WORKER_CONTAINER_NAME.into(),
                             image: Some(self.spec.action_job.action_image.clone()),
+                            working_dir: Some(self.spec.action_job.workdir.clone()),
                             command: self.spec.action_job.command.clone(),
                             args: self.spec.action_job.args.clone(),
                             volume_mounts: Some(vec![VolumeMount {
