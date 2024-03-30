@@ -494,10 +494,9 @@ impl GitRepo {
                     root_cert_store.add_parsable_certificates(ca);
                     let root_cert_store = Arc::new(root_cert_store);
                     callbacks.certificate_check(move |cert, hostname| {
-                        let cert_verifier =
-                            WebPkiServerVerifier::builder(root_cert_store.clone())
-                                .build()
-                                .unwrap();
+                        let cert_verifier = WebPkiServerVerifier::builder(root_cert_store.clone())
+                            .build()
+                            .unwrap();
                         let end_entity = CertificateDer::from(cert.as_x509().unwrap().data());
                         let hostname = ServerName::try_from(hostname).unwrap();
                         let result = cert_verifier.verify_server_cert(
