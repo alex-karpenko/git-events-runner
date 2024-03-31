@@ -1,10 +1,10 @@
 use super::{Context, Reconcilable, SecretRef, TriggersState};
 use crate::{
-    controllers::{API_GROUP, CURRENT_API_VERSION},
+    controllers::{DateTime, Utc, API_GROUP, CURRENT_API_VERSION},
     Action, Error, GitRepo, Result,
 };
 use git2::{Oid, Repository};
-use k8s_openapi::api::core::v1::Secret;
+use k8s_openapi::{api::core::v1::Secret, chrono::SecondsFormat};
 use kube::{
     api::{Patch, PatchParams},
     core::object::HasStatus,
@@ -26,7 +26,7 @@ use std::{
     collections::{HashMap, HashSet},
     io,
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 use strum_macros::{Display, EnumString};
 use tokio::{
@@ -45,7 +45,8 @@ const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
     group = "git-events-runner.rs",
     version = "v1alpha1",
     namespaced,
-    printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#
+    printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#,
+    printcolumn = r#"{"name":"Last Run", "type":"date", "format":"date-time", "description":"time of last trigger run", "jsonPath":".status.lastRun"}"#
 )]
 #[kube(status = "TriggerStatus")]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +63,8 @@ pub struct TriggerSpec {
 #[serde(rename_all = "camelCase")]
 pub struct TriggerStatus {
     state: TriggerState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_run: Option<String>,
     checked_sources: HashMap<String, CheckedSourceState>,
 }
 
@@ -251,6 +254,7 @@ impl Reconcilable for Trigger {
                 self.update_trigger_status(
                     Some(TriggerState::New),
                     None,
+                    None,
                     ctx.triggers.clone(),
                     &triggers_api,
                 )
@@ -358,6 +362,7 @@ impl Reconcilable for Trigger {
             self.update_trigger_status(
                 Some(TriggerState::WrongConfig),
                 None,
+                None,
                 ctx.triggers.clone(),
                 &triggers_api,
             )
@@ -422,6 +427,7 @@ impl Trigger {
         &self,
         state: Option<TriggerState>,
         checked_sources: Option<HashMap<String, CheckedSourceState>>,
+        last_run: Option<SystemTime>,
         triggers: Arc<RwLock<TriggersState>>,
         api: &Api<Trigger>,
     ) -> Result<()> {
@@ -432,11 +438,19 @@ impl Trigger {
         let new_status = if let Some(status) = triggers.statuses.get(&trigger_key) {
             TriggerStatus {
                 state: state.unwrap_or(status.state.clone()),
+                last_run: if let Some(last_run) = last_run {
+                    Some(DateTime::<Utc>::from(last_run).to_rfc3339_opts(SecondsFormat::Secs, true))
+                } else {
+                    status.last_run.clone()
+                },
                 checked_sources: checked_sources.unwrap_or(status.checked_sources.clone()),
             }
         } else {
             TriggerStatus {
                 state: state.unwrap_or_default(),
+                last_run: last_run.map(|last_run| {
+                    DateTime::<Utc>::from(last_run).to_rfc3339_opts(SecondsFormat::Secs, true)
+                }),
                 checked_sources: checked_sources.unwrap_or_default(),
             }
         };
@@ -446,6 +460,7 @@ impl Trigger {
             "kind": "Trigger",
             "status": {
                 "state": new_status.state,
+                "lastRun": new_status.last_run,
                 "checkedSources": new_status.checked_sources,
             }
         }));
@@ -559,6 +574,7 @@ impl Trigger {
                     if let Err(err) = trigger
                         .update_trigger_status(
                             Some(TriggerState::Running),
+                            None,
                             None,
                             triggers.clone(),
                             &triggers_api,
@@ -704,6 +720,7 @@ impl Trigger {
                                             .update_trigger_status(
                                                 Some(TriggerState::Running),
                                                 Some(checked_sources.clone()),
+                                                Some(SystemTime::now()),
                                                 triggers.clone(),
                                                 &triggers_api,
                                             )
@@ -736,6 +753,7 @@ impl Trigger {
                         .update_trigger_status(
                             Some(TriggerState::Idle),
                             Some(checked_sources.to_owned()),
+                            Some(SystemTime::now()),
                             triggers.clone(),
                             &triggers_api,
                         )
