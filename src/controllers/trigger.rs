@@ -164,6 +164,17 @@ impl Default for TriggerGitRepoReference {
     }
 }
 
+impl TriggerGitRepoReference {
+    pub fn to_refname(&self, prefix: Option<&str>) -> (String, &String) {
+        let prefix = prefix.unwrap_or("");
+        match self {
+            TriggerGitRepoReference::Branch(branch) => (format!("{prefix}branch"), branch),
+            TriggerGitRepoReference::Tag(tag) => (format!("{prefix}tag"), tag),
+            TriggerGitRepoReference::Commit(commit) => (format!("{prefix}commit"), commit),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum TriggerSchedule {
@@ -675,6 +686,7 @@ impl Trigger {
                                                             .commit_hash
                                                             .clone()
                                                             .unwrap(),
+                                                        &trigger.spec.sources.watch_on.reference,
                                                         client.clone(),
                                                     )
                                                     .await
