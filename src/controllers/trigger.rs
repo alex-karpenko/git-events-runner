@@ -26,7 +26,7 @@ use std::{
     collections::{HashMap, HashSet},
     io,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 use strum_macros::{Display, EnumString};
 use tokio::{
@@ -75,6 +75,8 @@ pub struct CheckedSourceState {
     commit_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     file_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    changed: Option<String>,
 }
 
 impl CheckedSourceState {
@@ -427,7 +429,7 @@ impl Trigger {
         &self,
         state: Option<TriggerState>,
         checked_sources: Option<HashMap<String, CheckedSourceState>>,
-        last_run: Option<SystemTime>,
+        last_run: Option<DateTime<Utc>>,
         triggers: Arc<RwLock<TriggersState>>,
         api: &Api<Trigger>,
     ) -> Result<()> {
@@ -439,7 +441,7 @@ impl Trigger {
             TriggerStatus {
                 state: state.unwrap_or(status.state.clone()),
                 last_run: if let Some(last_run) = last_run {
-                    Some(DateTime::<Utc>::from(last_run).to_rfc3339_opts(SecondsFormat::Secs, true))
+                    Some(last_run.to_rfc3339_opts(SecondsFormat::Secs, true))
                 } else {
                     status.last_run.clone()
                 },
@@ -448,9 +450,8 @@ impl Trigger {
         } else {
             TriggerStatus {
                 state: state.unwrap_or_default(),
-                last_run: last_run.map(|last_run| {
-                    DateTime::<Utc>::from(last_run).to_rfc3339_opts(SecondsFormat::Secs, true)
-                }),
+                last_run: last_run
+                    .map(|last_run| last_run.to_rfc3339_opts(SecondsFormat::Secs, true)),
                 checked_sources: checked_sources.unwrap_or_default(),
             }
         };
@@ -595,6 +596,7 @@ impl Trigger {
                         let mut new_source_state = CheckedSourceState {
                             commit_hash: None,
                             file_hash: None,
+                            changed: None,
                         };
                         debug!(
                             "Processing {} source {trigger_ns}/{trigger_name}/{source}",
@@ -684,7 +686,6 @@ impl Trigger {
                                 trigger.spec.sources.watch_on.file_.is_some(),
                             ) || !trigger.spec.sources.watch_on.on_change_only
                             {
-                                // get action instance
                                 let action_exec_result = match trigger.spec.action.kind {
                                     TriggerActionKind::Action => {
                                         let actions_api: Api<Action> =
@@ -715,12 +716,15 @@ impl Trigger {
                                 // - Update self.spec.... by latest processed commit
                                 match action_exec_result {
                                     Ok(_) => {
+                                        new_source_state.changed = Some(
+                                            Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+                                        );
                                         checked_sources.insert(source, new_source_state);
                                         if let Err(err) = trigger
                                             .update_trigger_status(
                                                 Some(TriggerState::Running),
                                                 Some(checked_sources.clone()),
-                                                Some(SystemTime::now()),
+                                                Some(Utc::now()),
                                                 triggers.clone(),
                                                 &triggers_api,
                                             )
@@ -741,6 +745,9 @@ impl Trigger {
                                     ),
                                 }
                             } else {
+                                if let Some(current_source_state) = current_source_state {
+                                    new_source_state.changed = current_source_state.changed.clone();
+                                }
                                 checked_sources.insert(source, new_source_state);
                             }
                             // - Remove temp dir content
@@ -753,7 +760,7 @@ impl Trigger {
                         .update_trigger_status(
                             Some(TriggerState::Idle),
                             Some(checked_sources.to_owned()),
-                            Some(SystemTime::now()),
+                            Some(Utc::now()),
                             triggers.clone(),
                             &triggers_api,
                         )
