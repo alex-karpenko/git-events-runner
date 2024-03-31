@@ -4,7 +4,7 @@ use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
         core::v1::{
-            Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount,
+            Container, EmptyDirVolumeSource, PodSpec, PodTemplateSpec, Volume, VolumeMount,
         },
     },
     chrono::{DateTime, Local},
