@@ -746,7 +746,9 @@ impl Trigger {
                                 }
                             } else {
                                 if let Some(current_source_state) = current_source_state {
-                                    new_source_state.changed = current_source_state.changed.clone();
+                                    new_source_state
+                                        .changed
+                                        .clone_from(&current_source_state.changed);
                                 }
                                 checked_sources.insert(source, new_source_state);
                             }
