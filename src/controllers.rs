@@ -2,8 +2,8 @@ pub(crate) mod action;
 pub(crate) mod git_repo;
 pub(crate) mod trigger;
 
-use self::{action::Action, git_repo::GitRepo, trigger::Trigger};
-use crate::{Error, Result, TriggerSpec, TriggerStatus};
+use self::{action::Action, git_repo::GitRepo, trigger::ScheduleTrigger};
+use crate::{Error, Result, ScheduleTriggerSpec, TriggerStatus};
 use futures::{future::join_all, StreamExt};
 use k8s_openapi::{
     chrono::{DateTime, Utc},
@@ -55,7 +55,7 @@ pub struct SecretRef {
 #[derive(Default)]
 pub struct TriggersState {
     tasks: HashMap<String, TaskId>,
-    specs: HashMap<String, TriggerSpec>,
+    specs: HashMap<String, ScheduleTriggerSpec>,
     statuses: HashMap<String, TriggerStatus>,
 }
 
@@ -141,14 +141,14 @@ pub async fn run(state: State) {
             .for_each(|_| futures::future::ready(())),
     ));
 
-    let triggers = Api::<Trigger>::all(client.clone());
-    check_api_by_list(&triggers, "Triggers").await;
+    let triggers = Api::<ScheduleTrigger>::all(client.clone());
+    check_api_by_list(&triggers, "ScheduleTriggers").await;
     controllers.push(tokio::task::spawn(
         Controller::new(triggers, Config::default().any_semantic())
             .shutdown_on_signal()
             .run(
-                reconcile_namespaced::<Trigger>,
-                error_policy::<Trigger>,
+                reconcile_namespaced::<ScheduleTrigger>,
+                error_policy::<ScheduleTrigger>,
                 context.clone(),
             )
             .filter_map(|x| async move { std::result::Result::ok(x) })

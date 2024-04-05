@@ -4,7 +4,7 @@ use crate::{
     Action, Error, GitRepo, Result,
 };
 use git2::{Oid, Repository};
-use k8s_openapi::{api::core::v1::Secret, chrono::SecondsFormat};
+use k8s_openapi::chrono::SecondsFormat;
 use kube::{
     api::{Patch, PatchParams},
     core::object::HasStatus,
@@ -39,9 +39,8 @@ use tracing::{debug, error, info, warn};
 const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
-#[cfg_attr(test, derive(Default))]
 #[kube(
-    kind = "Trigger",
+    kind = "ScheduleTrigger",
     group = "git-events-runner.rs",
     version = "v1alpha1",
     namespaced,
@@ -50,12 +49,9 @@ const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
 )]
 #[kube(status = "TriggerStatus")]
 #[serde(rename_all = "camelCase")]
-pub struct TriggerSpec {
+pub struct ScheduleTriggerSpec {
     sources: TriggerSources,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    schedule: Option<TriggerSchedule>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    webhook: Option<TriggerWebhook>,
+    schedule: TriggerSchedule,
     action: TriggerAction,
 }
 
@@ -230,12 +226,12 @@ pub enum TriggerActionKind {
     ClusterAction,
 }
 
-impl Reconcilable for Trigger {
+impl Reconcilable for ScheduleTrigger {
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
-        let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &ns);
+        let triggers_api: Api<ScheduleTrigger> = Api::namespaced(client.clone(), &ns);
         let trigger_key = self.trigger_hash_key();
 
         // Create trigger status if it's not present yet
@@ -266,23 +262,19 @@ impl Reconcilable for Trigger {
         // Reconcile if something has been changed
         if Some(&self.spec) != ctx.triggers.read().await.specs.get(&trigger_key) {
             // What is changed?
-            let (is_schedule_changed, is_webhook_changed) = {
+            let is_changed = {
                 let old_trigger = ctx.triggers.read().await;
                 let old_trigger = old_trigger.specs.get(&trigger_key);
-                let is_changed = old_trigger.is_none()
+                old_trigger.is_none()
                     || old_trigger.unwrap().sources != self.spec.sources
-                    || old_trigger.unwrap().action != self.spec.action;
-
-                (
-                    is_changed || old_trigger.unwrap().schedule != self.spec.schedule,
-                    is_changed || old_trigger.unwrap().webhook != self.spec.webhook,
-                )
+                    || old_trigger.unwrap().action != self.spec.action
+                    || old_trigger.unwrap().schedule != self.spec.schedule
             };
 
             let mut triggers = ctx.triggers.write().await;
 
             // Schedule has been changed
-            if is_schedule_changed {
+            if is_changed {
                 debug!("Update schedule for `{trigger_key}`");
                 // drop existing task if it was
                 let is_new_task = if triggers.tasks.contains_key(&trigger_key) {
@@ -297,57 +289,22 @@ impl Reconcilable for Trigger {
                     true
                 };
 
-                // Add new task if schedule is present
-                if self.spec.schedule.is_some() {
-                    if let Some(schedule) = self.get_task_schedule(is_new_task) {
-                        let scheduler = ctx.scheduler.write().await;
-                        let task = self.create_task(client.clone(), schedule, ctx.triggers.clone());
-                        let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
-                        let tasks = &mut triggers.tasks;
-                        tasks.insert(self.trigger_hash_key(), task_id);
-                    } else {
-                        // Invalid schedule
-                        self.publish_trigger_validation_event(
-                            recorder,
-                            EventType::Warning,
-                            "Unable to parse schedule expression, scheduler is disabled",
-                            "ValidateTriggerConfig",
-                        )
-                        .await?;
-                    }
-                }
-            }
-
-            // TODO: Webhook has been changed
-            if is_webhook_changed {
-                debug!("Update webhook for `{trigger_key}`");
-                // TODO: Drop existing server if it was
-
-                if let Some(webhook) = &self.spec.webhook {
-                    // TODO: Create new web-server
-                    // Verify auth config
-                    if let Some(auth_config) = &webhook.auth_config {
-                        let secret_name = &auth_config.secret_ref.name;
-                        let keys_to_check = [auth_config.key.clone()];
-                        let result = self
-                            .check_secret_ref(
-                                client.clone(),
-                                secret_name,
-                                &keys_to_check,
-                                Error::WrongTriggerConfig,
-                            )
-                            .await;
-                        if result.is_err() {
-                            self.publish_trigger_validation_event(
-                                recorder,
-                                EventType::Warning,
-                                format!(
-                                    "Auth config may be wrong: secret `{secret_name}` should exist and contain `{}` key(s)",
-                                    keys_to_check.join(",")).as_str(),
-                                    "ValidateTriggerConfig"
-                                ).await?;
-                        }
-                    }
+                // Add new task
+                if let Some(schedule) = self.get_task_schedule(is_new_task) {
+                    let scheduler = ctx.scheduler.write().await;
+                    let task = self.create_task(client.clone(), schedule, ctx.triggers.clone());
+                    let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
+                    let tasks = &mut triggers.tasks;
+                    tasks.insert(self.trigger_hash_key(), task_id);
+                } else {
+                    // Invalid schedule
+                    self.publish_trigger_validation_event(
+                        recorder,
+                        EventType::Warning,
+                        "Unable to parse schedule expression, scheduler is disabled",
+                        "ValidateTriggerConfig",
+                    )
+                    .await?;
                 }
             }
 
@@ -357,36 +314,13 @@ impl Reconcilable for Trigger {
                 .insert(self.trigger_hash_key(), self.spec.clone());
         }
 
-        //  - schedule or webhook or both should be defined, error if neither is
-        if (self.spec.webhook.is_none() && self.spec.schedule.is_none())
-            || (self.spec.schedule.is_some() && !self.spec.schedule.clone().unwrap().is_valid())
-        {
-            self.update_trigger_status(
-                Some(TriggerState::WrongConfig),
-                None,
-                None,
-                ctx.triggers.clone(),
-                &triggers_api,
-            )
-            .await?;
-
-            self.publish_trigger_validation_event(
-                recorder,
-                EventType::Warning,
-                "At least one of `schedule` or `webhook` should be configured or valid",
-                "ValidateTriggerConfig",
-            )
-            .await?;
-            return Err(Error::WrongTriggerConfig);
-        }
-
         // If no events were received, check back 30 minutes
         Ok(ReconcileAction::requeue(Duration::from_secs(30 * 60)))
     }
 
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
-            "Cleanup Trigger `{}` in {}",
+            "Cleanup ScheduleTrigger `{}` in {}",
             self.name_any(),
             self.namespace().unwrap()
         );
@@ -412,15 +346,15 @@ impl Reconcilable for Trigger {
     }
 
     fn finalizer_name(&self) -> String {
-        String::from("triggers.git-events-runner.rs")
+        String::from("scheduletriggers.git-events-runner.rs")
     }
 
     fn kind(&self) -> &str {
-        "Trigger"
+        "ScheduleTrigger"
     }
 }
 
-impl Trigger {
+impl ScheduleTrigger {
     fn trigger_hash_key(&self) -> String {
         format!("{}/{}", self.namespace().unwrap(), self.name_any())
     }
@@ -431,7 +365,7 @@ impl Trigger {
         checked_sources: Option<HashMap<String, CheckedSourceState>>,
         last_run: Option<DateTime<Utc>>,
         triggers: Arc<RwLock<TriggersState>>,
-        api: &Api<Trigger>,
+        api: &Api<ScheduleTrigger>,
     ) -> Result<()> {
         let name = self.name_any();
         let trigger_key = self.trigger_hash_key();
@@ -458,7 +392,7 @@ impl Trigger {
 
         let status = Patch::Apply(json!({
             "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
-            "kind": "Trigger",
+            "kind": "ScheduleTrigger",
             "status": {
                 "state": new_status.state,
                 "lastRun": new_status.last_run,
@@ -497,47 +431,6 @@ impl Trigger {
         Ok(())
     }
 
-    // TODO: remove Duplicate with GitRepo
-    async fn check_secret_ref(
-        &self,
-        client: Client,
-        secret_name: &str,
-        keys: &[String],
-        error: Error,
-    ) -> Result<()> {
-        let ns = self.namespace().unwrap();
-        let secret_api: Api<Secret> = Api::namespaced(client, &ns);
-        let expected_keys: HashSet<&String> = keys.iter().collect();
-
-        let secret_ref = secret_api
-            .get(secret_name)
-            .await
-            .map_err(Error::KubeError)?;
-
-        debug!("secret_ref={secret_ref:#?}");
-        debug!("expected_keys={expected_keys:?}");
-
-        if let Some(data) = secret_ref.data {
-            // Check data field
-            let secret_keys: HashSet<&String> = data.keys().collect();
-            debug!("data_keys={secret_keys:?}");
-            if secret_keys.intersection(&expected_keys).count() == expected_keys.len() {
-                return Ok(());
-            };
-        }
-
-        if let Some(data) = secret_ref.string_data {
-            // Check string_data field
-            let secret_keys: HashSet<&String> = data.keys().collect();
-            debug!("string_data_keys={secret_keys:?}");
-            if secret_keys.intersection(&expected_keys).count() == expected_keys.len() {
-                return Ok(());
-            };
-        }
-
-        Err(error)
-    }
-
     fn create_task(
         &self,
         client: Client,
@@ -552,9 +445,12 @@ impl Trigger {
             let trigger_ns = trigger_ns.clone();
             let client = client.clone();
             Box::pin(async move {
-                debug!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                debug!(
+                    "Start schedule trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}"
+                );
                 // Get current trigger from API
-                let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &trigger_ns);
+                let triggers_api: Api<ScheduleTrigger> =
+                    Api::namespaced(client.clone(), &trigger_ns);
                 let trigger = triggers_api.get(&trigger_name).await;
 
                 if let Ok(trigger) = trigger {
@@ -582,7 +478,10 @@ impl Trigger {
                         )
                         .await
                     {
-                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                        error!(
+                            "Unable to update schedule trigger `{}` state: {err:?}",
+                            trigger_name
+                        );
                     }
                     // For each source
                     for source in trigger
@@ -731,7 +630,7 @@ impl Trigger {
                                             .await
                                         {
                                             error!(
-                                                "Unable to update trigger `{}` state: {err:?}",
+                                                "Unable to update schedule trigger `{}` state: {err:?}",
                                                 trigger_name
                                             );
                                         }
@@ -768,50 +667,52 @@ impl Trigger {
                         )
                         .await
                     {
-                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                        error!(
+                            "Unable to update schedule trigger `{}` state: {err:?}",
+                            trigger_name
+                        );
                     }
                 } else {
                     error!(
-                        "Unable to get Trigger {trigger_ns}/{trigger_name}: {:?}",
+                        "Unable to get ScheduleTrigger {trigger_ns}/{trigger_name}: {:?}",
                         trigger.err()
                     );
                 }
 
-                debug!("Finish trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                debug!(
+                    "Finish schedule trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}"
+                );
             })
         })
     }
 
     fn get_task_schedule(&self, is_new_task: bool) -> Option<TaskSchedule> {
-        if let Some(schedule) = &self.spec.schedule {
-            if schedule.is_valid() {
-                let schedule = match schedule {
-                    TriggerSchedule::Interval(interval) => {
-                        if is_new_task {
-                            TaskSchedule::Interval(
-                                interval.parse::<humantime::Duration>().unwrap().into(),
-                            )
-                        } else {
-                            TaskSchedule::IntervalDelayed(
-                                interval.parse::<humantime::Duration>().unwrap().into(),
-                            )
-                        }
-                    }
-                    TriggerSchedule::Cron(cron) => {
-                        let cron = CronSchedule::try_from(cron).unwrap();
-                        TaskSchedule::Cron(
-                            cron,
-                            CronOpts {
-                                at_start: is_new_task,
-                                concurrent: false,
-                            },
+        let schedule = &self.spec.schedule;
+        if schedule.is_valid() {
+            let schedule = match schedule {
+                TriggerSchedule::Interval(interval) => {
+                    if is_new_task {
+                        TaskSchedule::Interval(
+                            interval.parse::<humantime::Duration>().unwrap().into(),
+                        )
+                    } else {
+                        TaskSchedule::IntervalDelayed(
+                            interval.parse::<humantime::Duration>().unwrap().into(),
                         )
                     }
-                };
-                Some(schedule)
-            } else {
-                None
-            }
+                }
+                TriggerSchedule::Cron(cron) => {
+                    let cron = CronSchedule::try_from(cron).unwrap();
+                    TaskSchedule::Cron(
+                        cron,
+                        CronOpts {
+                            at_start: is_new_task,
+                            concurrent: false,
+                        },
+                    )
+                }
+            };
+            Some(schedule)
         } else {
             None
         }

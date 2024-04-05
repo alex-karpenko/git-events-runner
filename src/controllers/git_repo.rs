@@ -40,7 +40,7 @@ use tracing::{debug, info, warn};
     group = "git-events-runner.rs",
     version = "v1alpha1",
     namespaced,
-    printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#
+    printcolumn = r#"{"name":"State", "type":"string", "description":"current gitrepo state", "jsonPath":".status.state"}"#
 )]
 #[kube(status = "GitRepoStatus")]
 #[serde(rename_all = "camelCase")]
