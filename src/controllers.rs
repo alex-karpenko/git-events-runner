@@ -20,12 +20,13 @@ use kube::{
     },
     Api, Client, Resource, ResourceExt,
 };
+use sacs::scheduler::TaskScheduler;
 use sacs::{scheduler::Scheduler, task::TaskId};
 use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc};
-use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tokio::sync::{watch, RwLock};
+use tracing::{debug, error, info, warn};
 
 const API_GROUP: &str = "git-events-runner.rs";
 const CURRENT_API_VERSION: &str = "v1alpha1";
@@ -57,6 +58,13 @@ pub struct TriggersState {
     tasks: HashMap<String, TaskId>,
     specs: HashMap<String, ScheduleTriggerSpec>,
     statuses: HashMap<String, TriggerStatus>,
+}
+
+/// State shared between the controllers and the web server
+#[derive(Default, Clone)]
+pub struct State {
+    /// Diagnostics read by the web server
+    pub diagnostics: Arc<RwLock<Diagnostics>>,
 }
 
 pub struct Diagnostics {
@@ -94,82 +102,89 @@ pub struct Context {
     pub triggers: Arc<RwLock<TriggersState>>,
 }
 
-/// State shared between the controllers and the web server
-#[derive(Clone, Default)]
-pub struct State {
-    /// Diagnostics read by the web server
-    pub diagnostics: Arc<RwLock<Diagnostics>>,
-    /// SACS Scheduler to run periodic tasks
-    pub scheduler: Arc<RwLock<Scheduler>>,
-    /// Actual state of all Triggers
-    pub triggers: Arc<RwLock<TriggersState>>,
-}
-
 /// State wrapper around the controller outputs for the web server
 impl State {
     /// Create a Controller Context that can update State
-    pub fn to_context(&self, client: Client) -> Arc<Context> {
+    pub fn to_context(
+        &self,
+        client: Client,
+        scheduler: Arc<RwLock<Scheduler>>,
+        triggers: Arc<RwLock<TriggersState>>,
+    ) -> Arc<Context> {
         Arc::new(Context {
             client,
             diagnostics: self.diagnostics.clone(),
-            scheduler: self.scheduler.clone(),
-            triggers: self.triggers.clone(),
+            scheduler,
+            triggers,
         })
     }
 }
 
 /// Initialize the controllers and shared state (given the crd is installed)
-pub async fn run(state: State) {
-    let client = Client::try_default()
+pub async fn run(client: Client, state: State, shutdown_channel: watch::Receiver<bool>) {
+    let scheduler = Arc::new(RwLock::new(Scheduler::default()));
+
+    {
+        let mut controllers = vec![];
+        let triggers = Arc::new(RwLock::new(TriggersState::default()));
+        let context = state.to_context(client.clone(), scheduler.clone(), triggers);
+
+        let git_repos = Api::<GitRepo>::all(client.clone());
+        check_api_by_list(&git_repos, "GitRepos").await;
+        let mut shutdown = shutdown_channel.clone();
+        controllers.push(tokio::task::spawn(
+            Controller::new(git_repos, Config::default().any_semantic())
+                .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
+                .run(
+                    reconcile_namespaced::<GitRepo>,
+                    error_policy::<GitRepo>,
+                    context.clone(),
+                )
+                .filter_map(|x| async move { std::result::Result::ok(x) })
+                .for_each(|_| futures::future::ready(())),
+        ));
+
+        let triggers = Api::<ScheduleTrigger>::all(client.clone());
+        check_api_by_list(&triggers, "ScheduleTriggers").await;
+        let mut shutdown = shutdown_channel.clone();
+        controllers.push(tokio::task::spawn(
+            Controller::new(triggers, Config::default().any_semantic())
+                .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
+                .run(
+                    reconcile_namespaced::<ScheduleTrigger>,
+                    error_policy::<ScheduleTrigger>,
+                    context.clone(),
+                )
+                .filter_map(|x| async move { std::result::Result::ok(x) })
+                .for_each(|_| futures::future::ready(())),
+        ));
+
+        let actions = Api::<Action>::all(client.clone());
+        check_api_by_list(&actions, "Actions").await;
+        let mut shutdown = shutdown_channel.clone();
+        controllers.push(tokio::task::spawn(
+            Controller::new(actions, Config::default().any_semantic())
+                .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
+                .run(
+                    reconcile_namespaced::<Action>,
+                    error_policy::<Action>,
+                    context.clone(),
+                )
+                .filter_map(|x| async move { std::result::Result::ok(x) })
+                .for_each(|_| futures::future::ready(())),
+        ));
+
+        debug!("starting controllers main loop");
+        join_all(controllers).await;
+        debug!("controllers main loop finished");
+    }
+
+    info!("Shutting down task scheduler");
+    let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
+    scheduler
+        .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
         .await
-        .expect("failed to create kube Client");
-    let mut controllers = vec![];
-
-    let context = state.to_context(client.clone());
-
-    let git_repos = Api::<GitRepo>::all(client.clone());
-    check_api_by_list(&git_repos, "GitRepos").await;
-    controllers.push(tokio::task::spawn(
-        Controller::new(git_repos, Config::default().any_semantic())
-            .shutdown_on_signal()
-            .run(
-                reconcile_namespaced::<GitRepo>,
-                error_policy::<GitRepo>,
-                context.clone(),
-            )
-            .filter_map(|x| async move { std::result::Result::ok(x) })
-            .for_each(|_| futures::future::ready(())),
-    ));
-
-    let triggers = Api::<ScheduleTrigger>::all(client.clone());
-    check_api_by_list(&triggers, "ScheduleTriggers").await;
-    controllers.push(tokio::task::spawn(
-        Controller::new(triggers, Config::default().any_semantic())
-            .shutdown_on_signal()
-            .run(
-                reconcile_namespaced::<ScheduleTrigger>,
-                error_policy::<ScheduleTrigger>,
-                context.clone(),
-            )
-            .filter_map(|x| async move { std::result::Result::ok(x) })
-            .for_each(|_| futures::future::ready(())),
-    ));
-
-    let actions = Api::<Action>::all(client.clone());
-    check_api_by_list(&actions, "Actions").await;
-    controllers.push(tokio::task::spawn(
-        Controller::new(actions, Config::default().any_semantic())
-            .shutdown_on_signal()
-            .run(
-                reconcile_namespaced::<Action>,
-                error_policy::<Action>,
-                context.clone(),
-            )
-            .filter_map(|x| async move { std::result::Result::ok(x) })
-            .for_each(|_| futures::future::ready(())),
-    ));
-
-    join_all(controllers).await;
+        .unwrap_or(())
 }
 
 async fn check_api_by_list<K>(api: &Api<K>, api_name: &str)

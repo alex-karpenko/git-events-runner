@@ -1,4 +1,5 @@
 pub mod controllers;
+pub mod signals;
 
 pub use crate::controllers::action::*;
 pub use crate::controllers::git_repo::*;
