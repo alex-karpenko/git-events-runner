@@ -36,7 +36,10 @@ futures = "0.3.30"
 git2 = "0.18.3"
 humantime = "2.1.0"
 k8s-openapi = {version = "0.21.1", features = ["v1_27"]}
-kubert = {version = "0.21.1", features = ["lease"]}
+kube = {version = "0.90.0", features = ["runtime", "client", "derive"]}
+kubert = {version = "0.21.1", features = ["lease"], default-features = false}
+kubert-k8s-openapi = {package = "k8s-openapi", version = "0.20.0", features = ["v1_27"]}
+kubert-kube = {package = "kube", version = "0.87.1", features = ["client"]}
 rand = "0.8.5"
 regex = "1"
 rustls = {version = "0.23.4", features = ["std", "ring"], default-features = false}
@@ -54,7 +57,4 @@ thiserror = "1"
 tokio = {version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "sync"]}
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-
-[dependencies.kube]
-features = ["runtime", "client", "derive"]
-version = "0.90.0"
+uuid = {version = "1.8.0", features = ["v4"]}

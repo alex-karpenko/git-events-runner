@@ -40,7 +40,7 @@ impl SignalHandler {
     }
 
     pub async fn shutdown_on_signal(&mut self) {
-        info!("Signal handler has been installed");
+        debug!("Signal handler has been installed");
         let signal = self.wait_for_signal().await;
 
         info!("{signal} signal has been received, shutting down");

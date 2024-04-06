@@ -1,4 +1,5 @@
 pub mod controllers;
+pub mod lock;
 pub mod signals;
 
 pub use crate::controllers::action::*;
