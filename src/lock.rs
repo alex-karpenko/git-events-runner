@@ -11,8 +11,8 @@ use tokio::{sync::watch, task::JoinHandle};
 use tracing::{debug, info};
 
 const DEFAULT_LEADER_LOCK_LEASE_NAME: &str = "git-events-runner-leader-lock";
-const DEFAULT_LEADER_LOCK_LEASE_DERATION_SEC: u64 = 10;
-const DEFAULT_LEADER_LOCK_LEASE_GRACE_SEC: u64 = 5;
+const DEFAULT_LEADER_LOCK_LEASE_DERATION_SEC: u64 = 30;
+const DEFAULT_LEADER_LOCK_LEASE_GRACE_SEC: u64 = 20;
 
 pub async fn new(
     identity: &String,
