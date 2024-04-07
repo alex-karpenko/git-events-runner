@@ -10,7 +10,7 @@ use kube::{
     core::object::HasStatus,
     runtime::{
         controller::Action as ReconcileAction,
-        events::{Event, EventType, Recorder},
+        events::{Event, EventType, Recorder}, wait::delete,
     },
     Api, Client, CustomResource, ResourceExt,
 };
@@ -696,9 +696,9 @@ impl ScheduleTrigger {
                             interval.parse::<humantime::Duration>().unwrap().into(),
                         )
                     } else {
-                        TaskSchedule::IntervalDelayed(
-                            interval.parse::<humantime::Duration>().unwrap().into(),
-                        )
+                        let interval = interval.parse::<humantime::Duration>().unwrap().into();
+                        let delay = interval; // TODO: Set delay with respect to last time of run
+                        TaskSchedule::IntervalDelayed(interval, delay)
                     }
                 }
                 TriggerSchedule::Cron(cron) => {

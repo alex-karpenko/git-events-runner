@@ -1697,8 +1697,8 @@ checksum = "e86697c916019a8588c99b5fac3cead74ec0b4b819707a682fd4d23fa0ce1ba1"
 
 [[package]]
 name = "sacs"
-version = "0.2.1"
-source = "git+https://github.com/alex-karpenko/sacs.git#b2495ad8ed85f01ddd12204d28e9cb309529378d"
+version = "0.3.0"
+source = "git+https://github.com/alex-karpenko/sacs.git#3e50dab50ccaed1800af29c7d9f33e474d95a3af"
 dependencies = [
  "chrono",
  "cron",
