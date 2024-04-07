@@ -10,7 +10,7 @@ use kube::{
     core::object::HasStatus,
     runtime::{
         controller::Action as ReconcileAction,
-        events::{Event, EventType, Recorder}, wait::delete,
+        events::{Event, EventType, Recorder},
     },
     Api, Client, CustomResource, ResourceExt,
 };
@@ -26,7 +26,7 @@ use std::{
     collections::{HashMap, HashSet},
     io,
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 use strum_macros::{Display, EnumString};
 use tokio::{
@@ -277,20 +277,28 @@ impl Reconcilable for ScheduleTrigger {
             if is_changed {
                 debug!("Update schedule for `{trigger_key}`");
                 // drop existing task if it was
-                let is_new_task = if triggers.tasks.contains_key(&trigger_key) {
+                if triggers.tasks.contains_key(&trigger_key) {
                     let task_id = triggers.tasks.remove(&trigger_key).unwrap();
                     let scheduler = ctx.scheduler.write().await;
                     let res = scheduler.cancel(task_id, CancelOpts::Ignore).await;
                     if res.is_err() {
                         error!("Can't cancel task: {res:?}");
                     }
-                    false
+                }
+
+                // Get time of trigger last run, if it was run
+                let last_run: Option<SystemTime> = if let Some(status) = self.status() {
+                    status.last_run.as_ref().map(|last_run| {
+                        DateTime::parse_from_rfc3339(last_run)
+                            .expect("Incorrect time format in LastRun field, looks like a BUG.")
+                            .into()
+                    })
                 } else {
-                    true
+                    None
                 };
 
                 // Add new task
-                if let Some(schedule) = self.get_task_schedule(is_new_task) {
+                if let Some(schedule) = self.get_task_schedule(last_run) {
                     let scheduler = ctx.scheduler.write().await;
                     let task = self.create_task(client.clone(), schedule, ctx.triggers.clone());
                     let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
@@ -686,19 +694,25 @@ impl ScheduleTrigger {
         })
     }
 
-    fn get_task_schedule(&self, is_new_task: bool) -> Option<TaskSchedule> {
+    fn get_task_schedule(&self, last_run: Option<SystemTime>) -> Option<TaskSchedule> {
         let schedule = &self.spec.schedule;
         if schedule.is_valid() {
             let schedule = match schedule {
                 TriggerSchedule::Interval(interval) => {
-                    if is_new_task {
-                        TaskSchedule::Interval(
-                            interval.parse::<humantime::Duration>().unwrap().into(),
-                        )
-                    } else {
-                        let interval = interval.parse::<humantime::Duration>().unwrap().into();
-                        let delay = interval; // TODO: Set delay with respect to last time of run
+                    let interval: Duration = interval
+                        .parse::<humantime::Duration>()
+                        .expect("unable to parse time interval, looks like a BUG")
+                        .into();
+                    if let Some(last_run) = last_run {
+                        let since_last_run = SystemTime::now()
+                            .duration_since(last_run)
+                            .expect("wrong time of trigger last run, looks like a BUG");
+                        let delay = interval
+                            .checked_sub(since_last_run)
+                            .unwrap_or(Duration::from_secs(0));
                         TaskSchedule::IntervalDelayed(interval, delay)
+                    } else {
+                        TaskSchedule::Interval(interval)
                     }
                 }
                 TriggerSchedule::Cron(cron) => {
@@ -706,7 +720,7 @@ impl ScheduleTrigger {
                     TaskSchedule::Cron(
                         cron,
                         CronOpts {
-                            at_start: is_new_task,
+                            at_start: last_run.is_none(),
                             concurrent: false,
                         },
                     )
