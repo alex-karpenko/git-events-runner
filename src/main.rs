@@ -1,49 +1,60 @@
 use controllers::{
-    controllers::{run, State},
-    lock::LeaderLock,
+    controllers::{run_leader_controllers, State},
+    lock,
     signals::SignalHandler,
 };
-use kube::Client;
-use tracing::info;
+use tokio::sync::watch;
+use tracing::{error, info};
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    // Initiatilize Kubernetes controller state
     let state = State::default();
-    let client = Client::try_default()
-        .await
-        .expect("failed to create kube Client");
-    let mut lock = LeaderLock::new(Some("default".into())).await;
+    let identity = Uuid::new_v4().to_string();
+    let (mut lock_channel, lock_task) = lock::new(&identity, Some("default".into())).await;
     let mut signal_handler = SignalHandler::new().expect("unable to create signal handler");
-    let shutdown_channel = signal_handler.get_rx_channel();
     let mut shutdown = false;
 
     while !shutdown {
-        let controllers = if lock.is_locked() {
-            info!("Leader lock has bene acquired");
-            Some(tokio::spawn(run(
-                client.clone(),
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let is_leader = lock_channel.borrow_and_update().is_current_for(&identity);
+        let controllers = if is_leader {
+            info!("Leader lock has been acquired, identity={identity}");
+            Some(tokio::spawn(run_leader_controllers(
                 state.clone(),
-                shutdown_channel.clone(),
+                shutdown_rx.clone(),
             )))
         } else {
             None
         };
 
         tokio::select! {
-            _ = signal_handler.shutdown_on_signal() => {
-                shutdown = true;
-            },
-            _ = lock.wait_for_change(shutdown_channel.clone()) => {},
+            _ = signal_handler.wait_for_signal() => {
+                    shutdown = true;
+                },
+            _ = async {
+                    while lock_channel.borrow_and_update().is_current_for(&identity) == is_leader {
+                        if let Err(err) = lock_channel.changed().await {
+                            error!("Error while process leader lock changes: {err}");
+                            shutdown = true;
+                        }
+                    }
+                } => {},
         }
 
         if let Some(controllers) = controllers {
+            if let Err(err) = shutdown_tx.send(true) {
+                error!("Unable to send shutdown request: {err}");
+            }
             let _ = tokio::join!(controllers);
-            info!("Leader lock has been lost");
+            info!("Leader lock has been released");
         }
     }
+
+    drop(lock_channel);
+    let _ = tokio::join!(lock_task);
 
     Ok(())
 }

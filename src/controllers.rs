@@ -121,8 +121,12 @@ impl State {
 }
 
 /// Initialize the controllers and shared state (given the crd is installed)
-pub async fn run(client: Client, state: State, shutdown_channel: watch::Receiver<bool>) {
+pub async fn run_leader_controllers(state: State, shutdown_channel: watch::Receiver<bool>) {
+    info!("Starting all leader controllers");
     let scheduler = Arc::new(RwLock::new(Scheduler::default()));
+    let client = Client::try_default()
+        .await
+        .expect("failed to create kube Client");
 
     {
         let mut controllers = vec![];
