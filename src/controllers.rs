@@ -65,6 +65,8 @@ pub struct TriggersState {
 pub struct State {
     /// Diagnostics read by the web server
     pub diagnostics: Arc<RwLock<Diagnostics>>,
+    /// Web servers readiness
+    pub ready: Arc<RwLock<bool>>,
 }
 
 pub struct Diagnostics {

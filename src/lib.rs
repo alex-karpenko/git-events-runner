@@ -1,6 +1,7 @@
 pub mod controllers;
 pub mod lock;
 pub mod signals;
+pub mod web;
 
 pub use crate::controllers::action::*;
 pub use crate::controllers::git_repo::*;
