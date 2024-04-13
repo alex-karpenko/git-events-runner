@@ -7,7 +7,7 @@ use axum::{
 };
 use futures::Future;
 use tokio::{net::TcpListener, sync::watch};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub const DEFAULT_HOOKS_WEB_BIND_ADDRESS: &str = "0.0.0.0:8080";
 pub const DEFAULT_UTILS_WEB_BIND_ADDRESS: &str = "0.0.0.0:3000";
@@ -17,7 +17,7 @@ pub async fn build_utils_web(
     mut shutdown: watch::Receiver<bool>,
 ) -> impl Future<Output = ()> {
     let app = Router::new()
-        .route("/", get(handle_root))
+        .route("/", get(handle_info))
         .route("/ready", get(handle_ready))
         .route("/alive", get(|| async { (StatusCode::OK, "Alive") }))
         .route("/metrics", get(handle_metrics))
@@ -55,7 +55,7 @@ pub async fn build_hooks_web(
         .with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
 
     async move {
-        info!("Starting Webhooks server on {DEFAULT_UTILS_WEB_BIND_ADDRESS}");
+        info!("Starting Webhooks server on {DEFAULT_HOOKS_WEB_BIND_ADDRESS}");
         if let Err(err) = web.await {
             error!("Error while Webhooks server running: {err}");
         }
@@ -63,19 +63,23 @@ pub async fn build_hooks_web(
     }
 }
 
-async fn handle_root(State(_state): State<AppState>) -> (StatusCode, String) {
+async fn handle_info(State(_state): State<AppState>) -> (StatusCode, String) {
+    warn!("utility web: info endpoint isn't implemented");
     (StatusCode::NOT_IMPLEMENTED, "Not implemented".into())
 }
 
 async fn handle_ready(State(state): State<AppState>) -> (StatusCode, &'static str) {
     if *state.ready.read().await {
+        debug!("utility web: ready");
         (StatusCode::OK, "Ready")
     } else {
+        debug!("utility web: not ready");
         (StatusCode::INTERNAL_SERVER_ERROR, "Not ready")
     }
 }
 
 async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) {
+    warn!("utility web: metrics endpoint isn't implemented");
     (StatusCode::NOT_IMPLEMENTED, "Not implemented".into())
 }
 
@@ -83,7 +87,8 @@ async fn handle_webhook_all_sources(
     State(_state): State<AppState>,
     Path((namespace, trigger)): Path<(String, String)>,
 ) -> (StatusCode, &'static str) {
-    warn!("namespace={namespace}, trigger={trigger}");
+    warn!("webhook: trigger hook isn't implemented");
+    warn!("webhook: namespace={namespace}, trigger={trigger}");
     (StatusCode::NOT_IMPLEMENTED, "Not implemented")
 }
 
@@ -91,6 +96,7 @@ async fn handle_webhook_single_source(
     State(_state): State<AppState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
 ) -> (StatusCode, &'static str) {
-    warn!("namespace={namespace}, trigger={trigger}, source={source}");
+    warn!("webhook: source hook isn't implemented");
+    warn!("webhook: namespace={namespace}, trigger={trigger}, source={source}");
     (StatusCode::NOT_IMPLEMENTED, "Not implemented")
 }

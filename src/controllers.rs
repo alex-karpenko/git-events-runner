@@ -2,8 +2,8 @@ pub(crate) mod action;
 pub(crate) mod git_repo;
 pub(crate) mod trigger;
 
-use self::{action::Action, git_repo::GitRepo, trigger::ScheduleTrigger};
-use crate::{Error, Result, ScheduleTriggerSpec, TriggerStatus};
+use self::{action::Action, git_repo::GitRepo, trigger::Trigger};
+use crate::{Error, Result, TriggerSpec, TriggerStatus};
 use futures::{future::join_all, StreamExt};
 use k8s_openapi::{
     chrono::{DateTime, Utc},
@@ -56,7 +56,7 @@ pub struct SecretRef {
 #[derive(Default)]
 pub struct TriggersState {
     tasks: HashMap<String, TaskId>,
-    specs: HashMap<String, ScheduleTriggerSpec>,
+    specs: HashMap<String, TriggerSpec>,
     statuses: HashMap<String, TriggerStatus>,
 }
 
@@ -150,15 +150,15 @@ pub async fn run_leader_controllers(state: State, shutdown_channel: watch::Recei
                 .for_each(|_| futures::future::ready(())),
         ));
 
-        let triggers = Api::<ScheduleTrigger>::all(client.clone());
-        check_api_by_list(&triggers, "ScheduleTriggers").await;
+        let triggers = Api::<Trigger>::all(client.clone());
+        check_api_by_list(&triggers, "Triggers").await;
         let mut shutdown = shutdown_channel.clone();
         controllers.push(tokio::task::spawn(
             Controller::new(triggers, Config::default().any_semantic())
                 .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
                 .run(
-                    reconcile_namespaced::<ScheduleTrigger>,
-                    error_policy::<ScheduleTrigger>,
+                    reconcile_namespaced::<Trigger>,
+                    error_policy::<Trigger>,
                     context.clone(),
                 )
                 .filter_map(|x| async move { std::result::Result::ok(x) })

@@ -40,7 +40,7 @@ const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
-    kind = "ScheduleTrigger",
+    kind = "Trigger",
     group = "git-events-runner.rs",
     version = "v1alpha1",
     namespaced,
@@ -49,10 +49,19 @@ const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
 )]
 #[kube(status = "TriggerStatus")]
 #[serde(rename_all = "camelCase")]
-pub struct ScheduleTriggerSpec {
+pub struct TriggerSpec {
     sources: TriggerSources,
-    schedule: TriggerSchedule,
+    #[schemars(flatten)]
+    #[serde(flatten)]
+    trigger: TriggerType,
     action: TriggerAction,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum TriggerType {
+    Schedule(TriggerSchedule),
+    Webhook(TriggerWebhook),
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
@@ -226,12 +235,12 @@ pub enum TriggerActionKind {
     ClusterAction,
 }
 
-impl Reconcilable for ScheduleTrigger {
+impl Reconcilable for Trigger {
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
         let ns = self.namespace().unwrap();
-        let triggers_api: Api<ScheduleTrigger> = Api::namespaced(client.clone(), &ns);
+        let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &ns);
         let trigger_key = self.trigger_hash_key();
 
         // Create trigger status if it's not present yet
@@ -268,7 +277,7 @@ impl Reconcilable for ScheduleTrigger {
                 old_trigger.is_none()
                     || old_trigger.unwrap().sources != self.spec.sources
                     || old_trigger.unwrap().action != self.spec.action
-                    || old_trigger.unwrap().schedule != self.spec.schedule
+                    || old_trigger.unwrap().trigger != self.spec.trigger
             };
 
             let mut triggers = ctx.triggers.write().await;
@@ -328,7 +337,7 @@ impl Reconcilable for ScheduleTrigger {
 
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
-            "Cleanup ScheduleTrigger `{}` in {}",
+            "Cleanup Trigger `{}` in {}",
             self.name_any(),
             self.namespace().unwrap()
         );
@@ -354,15 +363,15 @@ impl Reconcilable for ScheduleTrigger {
     }
 
     fn finalizer_name(&self) -> String {
-        String::from("scheduletriggers.git-events-runner.rs")
+        String::from("triggers.git-events-runner.rs")
     }
 
     fn kind(&self) -> &str {
-        "ScheduleTrigger"
+        "Trigger"
     }
 }
 
-impl ScheduleTrigger {
+impl Trigger {
     fn trigger_hash_key(&self) -> String {
         format!("{}/{}", self.namespace().unwrap(), self.name_any())
     }
@@ -373,7 +382,7 @@ impl ScheduleTrigger {
         checked_sources: Option<HashMap<String, CheckedSourceState>>,
         last_run: Option<DateTime<Utc>>,
         triggers: Arc<RwLock<TriggersState>>,
-        api: &Api<ScheduleTrigger>,
+        api: &Api<Trigger>,
     ) -> Result<()> {
         let name = self.name_any();
         let trigger_key = self.trigger_hash_key();
@@ -400,7 +409,7 @@ impl ScheduleTrigger {
 
         let status = Patch::Apply(json!({
             "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
-            "kind": "ScheduleTrigger",
+            "kind": "Trigger",
             "status": {
                 "state": new_status.state,
                 "lastRun": new_status.last_run,
@@ -453,12 +462,9 @@ impl ScheduleTrigger {
             let trigger_ns = trigger_ns.clone();
             let client = client.clone();
             Box::pin(async move {
-                debug!(
-                    "Start schedule trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}"
-                );
+                debug!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
                 // Get current trigger from API
-                let triggers_api: Api<ScheduleTrigger> =
-                    Api::namespaced(client.clone(), &trigger_ns);
+                let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &trigger_ns);
                 let trigger = triggers_api.get(&trigger_name).await;
 
                 if let Ok(trigger) = trigger {
@@ -486,10 +492,7 @@ impl ScheduleTrigger {
                         )
                         .await
                     {
-                        error!(
-                            "Unable to update schedule trigger `{}` state: {err:?}",
-                            trigger_name
-                        );
+                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
                     }
                     // For each source
                     for source in trigger
@@ -638,7 +641,7 @@ impl ScheduleTrigger {
                                             .await
                                         {
                                             error!(
-                                                "Unable to update schedule trigger `{}` state: {err:?}",
+                                                "Unable to update trigger `{}` state: {err:?}",
                                                 trigger_name
                                             );
                                         }
@@ -675,60 +678,59 @@ impl ScheduleTrigger {
                         )
                         .await
                     {
-                        error!(
-                            "Unable to update schedule trigger `{}` state: {err:?}",
-                            trigger_name
-                        );
+                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
                     }
                 } else {
                     error!(
-                        "Unable to get ScheduleTrigger {trigger_ns}/{trigger_name}: {:?}",
+                        "Unable to get Trigger {trigger_ns}/{trigger_name}: {:?}",
                         trigger.err()
                     );
                 }
 
-                debug!(
-                    "Finish schedule trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}"
-                );
+                debug!("Finish trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
             })
         })
     }
 
     fn get_task_schedule(&self, last_run: Option<SystemTime>) -> Option<TaskSchedule> {
-        let schedule = &self.spec.schedule;
-        if schedule.is_valid() {
-            let schedule = match schedule {
-                TriggerSchedule::Interval(interval) => {
-                    let interval: Duration = interval
-                        .parse::<humantime::Duration>()
-                        .expect("unable to parse time interval, looks like a BUG")
-                        .into();
-                    if let Some(last_run) = last_run {
-                        let since_last_run = SystemTime::now()
-                            .duration_since(last_run)
-                            .expect("wrong time of trigger last run, looks like a BUG");
-                        let delay = interval
-                            .checked_sub(since_last_run)
-                            .unwrap_or(Duration::from_secs(0));
-                        TaskSchedule::IntervalDelayed(interval, delay)
-                    } else {
-                        TaskSchedule::Interval(interval)
-                    }
+        match &self.spec.trigger {
+            TriggerType::Schedule(schedule) => {
+                if schedule.is_valid() {
+                    let schedule = match schedule {
+                        TriggerSchedule::Interval(interval) => {
+                            let interval: Duration = interval
+                                .parse::<humantime::Duration>()
+                                .expect("unable to parse time interval, looks like a BUG")
+                                .into();
+                            if let Some(last_run) = last_run {
+                                let since_last_run = SystemTime::now()
+                                    .duration_since(last_run)
+                                    .expect("wrong time of trigger last run, looks like a BUG");
+                                let delay = interval
+                                    .checked_sub(since_last_run)
+                                    .unwrap_or(Duration::from_secs(0));
+                                TaskSchedule::IntervalDelayed(interval, delay)
+                            } else {
+                                TaskSchedule::Interval(interval)
+                            }
+                        }
+                        TriggerSchedule::Cron(cron) => {
+                            let cron = CronSchedule::try_from(cron).unwrap();
+                            TaskSchedule::Cron(
+                                cron,
+                                CronOpts {
+                                    at_start: last_run.is_none(),
+                                    concurrent: false,
+                                },
+                            )
+                        }
+                    };
+                    Some(schedule)
+                } else {
+                    None
                 }
-                TriggerSchedule::Cron(cron) => {
-                    let cron = CronSchedule::try_from(cron).unwrap();
-                    TaskSchedule::Cron(
-                        cron,
-                        CronOpts {
-                            at_start: last_run.is_none(),
-                            concurrent: false,
-                        },
-                    )
-                }
-            };
-            Some(schedule)
-        } else {
-            None
+            }
+            TriggerType::Webhook(_) => None,
         }
     }
 

@@ -33,6 +33,8 @@ use strum_macros::{Display, EnumString};
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
 
+const URI_VALIDATION_REGEX: &str = r#"^git@[\w.-]+:[\w.-]+/[/\w.-]+$|^ssh://([\w.-]+@)?[\w.-]+(:[\d]{1,5})?(/([/\w.-]+)?)?$|^https?://[\w.-]+(:[\d]{1,5})?(/([/%&=\?\w.-]+)?)?$"#;
+
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[cfg_attr(test, derive(Default))]
 #[kube(
@@ -45,6 +47,7 @@ use tracing::{debug, info, warn};
 #[kube(status = "GitRepoStatus")]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoSpec {
+    #[schemars(regex = "URI_VALIDATION_REGEX")]
     pub repo_uri: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls_config: Option<TlsConfig>,
@@ -285,6 +288,9 @@ impl Reconcilable for GitRepo {
 
 impl GitRepo {
     fn parse_repo_uri(&self) -> Result<RepoUriSchema> {
+        //
+        // r#"^git@[\w.-]+:[\w.-]+\/[\/\w.-]+$|^ssh:\/\/([\w.-]+@)?[\w.-]+(:[\d]{1,5})?(\/([\/\w.-]+)?)?$|^https?:\/\/[\w.-]+(:[\d]{1,5})?(\/([\/%&=\?\w.-]+)?)?$"#
+        //
         // 1 - r#"^(?P<schema>git)@(?P<host>[\w.-]+):(?P<owner>[\w.-]+)/(?P<repo>[/\w.-]+)$"#
         // git@host.name:owner/repo.git
         //

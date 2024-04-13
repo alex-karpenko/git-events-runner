@@ -1,5 +1,5 @@
 use clap::{Args, Parser};
-use controllers::{GitRepo, ScheduleTrigger, TriggerGitRepoReference, TriggerSourceKind};
+use controllers::{GitRepo, Trigger, TriggerGitRepoReference, TriggerSourceKind};
 use kube::{Api, Client};
 use tracing::debug;
 
@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
         TriggerSourceKind::ClusterGitRepo => todo!(),
     };
 
-    ScheduleTrigger::get_latest_commit(&repo, &reference)?;
+    Trigger::get_latest_commit(&repo, &reference)?;
     if !cli.preserve_git_folder {
         debug!("remove .git folder form cloned content");
         tokio::fs::remove_dir_all(format!("{}/.git", cli.destination)).await?;
