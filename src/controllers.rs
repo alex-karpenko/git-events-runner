@@ -2,7 +2,7 @@ pub(crate) mod action;
 pub(crate) mod git_repo;
 pub(crate) mod trigger;
 
-use self::{action::Action, git_repo::GitRepo, trigger::Trigger};
+use self::trigger::Trigger;
 use crate::{Error, Result, TriggerSpec, TriggerStatus};
 use futures::{future::join_all, StreamExt};
 use k8s_openapi::{
@@ -20,6 +20,7 @@ use kube::{
     },
     Api, Client, Resource, ResourceExt,
 };
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sacs::scheduler::TaskScheduler;
 use sacs::{scheduler::Scheduler, task::TaskId};
 use schemars::JsonSchema;
@@ -30,21 +31,6 @@ use tracing::{debug, error, info, warn};
 
 const API_GROUP: &str = "git-events-runner.rs";
 const CURRENT_API_VERSION: &str = "v1alpha1";
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
-pub struct GitRepoStatus {
-    pub state: SourceState,
-}
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
-pub enum SourceState {
-    #[default]
-    Pending,
-    Ready,
-    TlsConfigError,
-    AuthConfigError,
-    WrongRepoUriFormat,
-}
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -132,48 +118,18 @@ pub async fn run_leader_controllers(state: State, shutdown_channel: watch::Recei
 
     {
         let mut controllers = vec![];
-        let triggers = Arc::new(RwLock::new(TriggersState::default()));
-        let context = state.to_context(client.clone(), scheduler.clone(), triggers);
+        let triggers_state = Arc::new(RwLock::new(TriggersState::default()));
+        let context = state.to_context(client.clone(), scheduler.clone(), triggers_state);
 
-        let git_repos = Api::<GitRepo>::all(client.clone());
-        check_api_by_list(&git_repos, "GitRepos").await;
+        let triggers_api = Api::<Trigger>::all(client.clone());
+        check_api_by_list(&triggers_api, "Triggers").await;
         let mut shutdown = shutdown_channel.clone();
         controllers.push(tokio::task::spawn(
-            Controller::new(git_repos, Config::default().any_semantic())
-                .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
-                .run(
-                    reconcile_namespaced::<GitRepo>,
-                    error_policy::<GitRepo>,
-                    context.clone(),
-                )
-                .filter_map(|x| async move { std::result::Result::ok(x) })
-                .for_each(|_| futures::future::ready(())),
-        ));
-
-        let triggers = Api::<Trigger>::all(client.clone());
-        check_api_by_list(&triggers, "Triggers").await;
-        let mut shutdown = shutdown_channel.clone();
-        controllers.push(tokio::task::spawn(
-            Controller::new(triggers, Config::default().any_semantic())
+            Controller::new(triggers_api, Config::default().any_semantic())
                 .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
                 .run(
                     reconcile_namespaced::<Trigger>,
                     error_policy::<Trigger>,
-                    context.clone(),
-                )
-                .filter_map(|x| async move { std::result::Result::ok(x) })
-                .for_each(|_| futures::future::ready(())),
-        ));
-
-        let actions = Api::<Action>::all(client.clone());
-        check_api_by_list(&actions, "Actions").await;
-        let mut shutdown = shutdown_channel.clone();
-        controllers.push(tokio::task::spawn(
-            Controller::new(actions, Config::default().any_semantic())
-                .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
-                .run(
-                    reconcile_namespaced::<Action>,
-                    error_policy::<Action>,
                     context.clone(),
                 )
                 .filter_map(|x| async move { std::result::Result::ok(x) })
@@ -214,7 +170,6 @@ pub(crate) trait Reconcilable {
     fn kind(&self) -> &str;
 }
 
-// TODO: restrict K to Reconcilable trait
 fn error_policy<K: Reconcilable>(
     _resource: Arc<K>,
     error: &Error,
@@ -253,4 +208,13 @@ where
     )
     .await
     .map_err(|e| Error::FinalizerError(Box::new(e)))
+}
+
+pub(crate) fn random_string(len: usize) -> String {
+    let rand: String = thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(len)
+        .map(char::from)
+        .collect();
+    rand
 }

@@ -42,10 +42,13 @@ pub async fn build_hooks_web(
     mut shutdown: watch::Receiver<bool>,
 ) -> impl Future<Output = ()> {
     let app = Router::new()
-        .route("/:namespace/:trigger", get(handle_webhook_all_sources))
+        .route(
+            "/:namespace/:trigger",
+            get(handle_trigger_webhook).post(handle_trigger_webhook),
+        )
         .route(
             "/:namespace/:trigger/:source",
-            get(handle_webhook_single_source),
+            get(handle_source_webhook).post(handle_source_webhook),
         )
         .with_state(state);
     let listener = TcpListener::bind(DEFAULT_HOOKS_WEB_BIND_ADDRESS)
@@ -83,7 +86,7 @@ async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) 
     (StatusCode::NOT_IMPLEMENTED, "Not implemented".into())
 }
 
-async fn handle_webhook_all_sources(
+async fn handle_trigger_webhook(
     State(_state): State<AppState>,
     Path((namespace, trigger)): Path<(String, String)>,
 ) -> (StatusCode, &'static str) {
@@ -92,7 +95,7 @@ async fn handle_webhook_all_sources(
     (StatusCode::NOT_IMPLEMENTED, "Not implemented")
 }
 
-async fn handle_webhook_single_source(
+async fn handle_source_webhook(
     State(_state): State<AppState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
 ) -> (StatusCode, &'static str) {

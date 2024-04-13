@@ -1,4 +1,3 @@
-use super::{Context, Reconcilable};
 use crate::{Error, Result, TriggerGitRepoReference, TriggerSourceKind};
 use k8s_openapi::{
     api::{
@@ -11,14 +10,14 @@ use k8s_openapi::{
 };
 use kube::{
     api::{ObjectMeta, PostParams},
-    runtime::controller::Action as ReconcileAction,
     Api, Client, CustomResource, Resource, ResourceExt,
 };
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
+use std::{collections::BTreeMap, time::SystemTime};
 use tracing::info;
+
+use super::random_string;
 
 // TODO: this should be config
 const DEFAULT_ACTION_WORKDIR: &str = "/action_workdir";
@@ -37,7 +36,6 @@ const DEFAULT_ACTION_JOB_ENV_VARS_PREFIX: &str = "ACTION_JOB_";
     version = "v1alpha1",
     namespaced
 )]
-#[kube(status = "ActionStatus")]
 #[serde(rename_all = "camelCase")]
 pub struct ActionSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,10 +43,6 @@ pub struct ActionSpec {
     #[serde(default)]
     action_job: ActionJob,
 }
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ActionStatus {}
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -103,30 +97,6 @@ impl ActionJob {
     }
     fn default_cloner_image() -> String {
         String::from(DEFAULT_CLONER_IMAGE)
-    }
-}
-
-impl Reconcilable for Action {
-    async fn reconcile(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
-        // If no events were received, check back 30 minutes
-        Ok(ReconcileAction::await_change())
-    }
-
-    async fn cleanup(&self, _ctx: Arc<Context>) -> Result<ReconcileAction> {
-        info!(
-            "Cleanup Action `{}` in {}",
-            self.name_any(),
-            self.namespace().unwrap()
-        );
-        Ok(ReconcileAction::await_change())
-    }
-
-    fn finalizer_name(&self) -> String {
-        String::from("actions.git-events-runner.rs")
-    }
-
-    fn kind(&self) -> &str {
-        "Action"
     }
 }
 
@@ -351,21 +321,6 @@ impl Action {
             .format("%Y%m%d-%H%M%S")
             .to_string();
 
-        format!(
-            "{}-{}-{}",
-            self.name_any(),
-            timestamp,
-            Self::random_string(2)
-        )
-        .to_lowercase()
-    }
-
-    fn random_string(len: usize) -> String {
-        let rand: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(len)
-            .map(char::from)
-            .collect();
-        rand
+        format!("{}-{}-{}", self.name_any(), timestamp, random_string(2)).to_lowercase()
     }
 }
