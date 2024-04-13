@@ -1,4 +1,4 @@
-use super::{Context, Reconcilable, SecretRef, TriggersState};
+use super::{Context, ControllerType, Reconcilable, SecretRef, TriggersState};
 use crate::{
     controllers::{random_string, DateTime, Utc, API_GROUP, CURRENT_API_VERSION},
     Action, Error, GitRepo, Result,
@@ -53,7 +53,7 @@ pub struct TriggerSpec {
     sources: TriggerSources,
     #[schemars(flatten)]
     #[serde(flatten)]
-    trigger: TriggerType,
+    pub(crate) trigger: TriggerType,
     action: TriggerAction,
 }
 
@@ -62,6 +62,15 @@ pub struct TriggerSpec {
 pub enum TriggerType {
     Schedule(TriggerSchedule),
     Webhook(TriggerWebhook),
+}
+
+impl TriggerType {
+    fn is_processable(&self, cntrl_type: ControllerType) -> bool {
+        match self {
+            TriggerType::Schedule(_) => cntrl_type == ControllerType::Leader,
+            TriggerType::Webhook(_) => cntrl_type == ControllerType::Web,
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
@@ -203,7 +212,7 @@ impl TriggerSchedule {
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerWebhook {
-    multi_source: bool,
+    pub(crate) multi_source: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     auth_config: Option<TriggerWebhookAuthConfig>,
 }
@@ -241,64 +250,64 @@ impl Reconcilable for Trigger {
         let triggers_api: Api<Trigger> = Api::namespaced(client.clone(), &ns);
         let trigger_key = self.trigger_hash_key();
 
-        // Create trigger status if it's not present yet
-        if !ctx
-            .triggers
-            .read()
-            .await
-            .statuses
-            .contains_key(&self.trigger_hash_key())
-        {
-            if let Some(status) = self.status() {
-                ctx.triggers
-                    .write()
-                    .await
-                    .statuses
-                    .insert(self.trigger_hash_key(), status.clone());
-            } else {
-                self.update_trigger_status(
-                    Some(TriggerState::Idle),
-                    None,
-                    None,
-                    ctx.triggers.clone(),
-                    &triggers_api,
-                )
-                .await?;
-            }
-        }
-
-        // Reconcile if something has been changed
-        if Some(&self.spec) != ctx.triggers.read().await.specs.get(&trigger_key) {
-            // What is changed?
-            let is_changed = {
-                let old_trigger = ctx.triggers.read().await;
-                let old_trigger = old_trigger.specs.get(&trigger_key);
-                old_trigger.is_none()
-                    || old_trigger.unwrap().sources != self.spec.sources
-                    || old_trigger.unwrap().action != self.spec.action
-                    || old_trigger.unwrap().trigger != self.spec.trigger
-            };
-
-            // Trigger has been changed
-            if is_changed {
-                debug!("Update Trigger `{trigger_key}`");
-                let mut triggers = ctx.triggers.write().await;
-
-                // drop existing task if it was
-                if triggers.tasks.contains_key(&trigger_key) {
-                    let task_id = triggers.tasks.remove(&trigger_key).unwrap();
-                    let scheduler = ctx.scheduler.write().await;
-                    let res = scheduler.cancel(task_id, CancelOpts::Ignore).await;
-                    if res.is_err() {
-                        error!("Can't cancel task: {res:?}");
-                    }
+        if self.spec.trigger.is_processable(ctx.cntrl_type.clone()) {
+            // Create trigger status if it's not present yet
+            if !ctx
+                .triggers
+                .read()
+                .await
+                .statuses
+                .contains_key(&self.trigger_hash_key())
+            {
+                if let Some(status) = self.status() {
+                    ctx.triggers
+                        .write()
+                        .await
+                        .statuses
+                        .insert(self.trigger_hash_key(), status.clone());
+                } else {
+                    self.update_trigger_status(
+                        None,
+                        None,
+                        None,
+                        ctx.triggers.clone(),
+                        &triggers_api,
+                    )
+                    .await?;
                 }
+            }
 
-                match &self.spec.trigger {
-                    TriggerType::Schedule(_) => {
-                        // Get time of trigger last run, if it was run
-                        let last_run: Option<SystemTime> =
-                            if let Some(status) = self.status() {
+            // Reconcile if something has been changed
+            if Some(&self.spec) != ctx.triggers.read().await.specs.get(&trigger_key) {
+                // What is changed?
+                let is_changed = {
+                    let old_trigger = ctx.triggers.read().await;
+                    let old_trigger = old_trigger.specs.get(&trigger_key);
+                    old_trigger.is_none()
+                        || old_trigger.unwrap().sources != self.spec.sources
+                        || old_trigger.unwrap().action != self.spec.action
+                        || old_trigger.unwrap().trigger != self.spec.trigger
+                };
+
+                // Trigger has been changed
+                if is_changed {
+                    debug!("Update Trigger `{trigger_key}`");
+                    let mut triggers = ctx.triggers.write().await;
+
+                    // drop existing task if it was
+                    if triggers.tasks.contains_key(&trigger_key) {
+                        let task_id = triggers.tasks.remove(&trigger_key).unwrap();
+                        let scheduler = ctx.scheduler.write().await;
+                        let res = scheduler.cancel(task_id, CancelOpts::Ignore).await;
+                        if res.is_err() {
+                            error!("Can't cancel task: {res:?}");
+                        }
+                    }
+
+                    match &self.spec.trigger {
+                        TriggerType::Schedule(_) => {
+                            // Get time of trigger last run, if it was run
+                            let last_run: Option<SystemTime> = if let Some(status) = self.status() {
                                 status.last_run.as_ref().map(|last_run| {
                                     DateTime::parse_from_rfc3339(last_run)
                                 .expect("Incorrect time format in LastRun field, looks like a BUG.")
@@ -308,39 +317,49 @@ impl Reconcilable for Trigger {
                                 None
                             };
 
-                        // Add new task
-                        if let Some(schedule) = self.get_task_schedule(last_run) {
-                            let scheduler = ctx.scheduler.write().await;
-                            let task =
-                                self.create_task(client.clone(), schedule, ctx.triggers.clone());
-                            let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
-                            let tasks = &mut triggers.tasks;
-                            tasks.insert(self.trigger_hash_key(), task_id);
-                        } else {
-                            // Invalid schedule
-                            self.publish_trigger_validation_event(
-                                recorder,
-                                EventType::Warning,
-                                "Unable to parse schedule expression, scheduler is disabled",
-                                "ValidateTriggerConfig",
-                            )
-                            .await?;
+                            // Add new task
+                            if let Some(schedule) = self.get_task_schedule(last_run) {
+                                let scheduler = ctx.scheduler.write().await;
+                                let task = self.create_task(
+                                    client.clone(),
+                                    schedule,
+                                    ctx.triggers.clone(),
+                                );
+                                let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
+                                let tasks = &mut triggers.tasks;
+                                tasks.insert(self.trigger_hash_key(), task_id);
+                            } else {
+                                // Invalid schedule
+                                self.publish_trigger_validation_event(
+                                    recorder,
+                                    EventType::Warning,
+                                    "Unable to parse schedule expression, scheduler is disabled",
+                                    "ValidateTriggerConfig",
+                                )
+                                .await?;
+                            }
+                        }
+                        TriggerType::Webhook(_) => {
+                            debug!("nothing to reconcile because this's Webhook trigger")
                         }
                     }
-                    TriggerType::Webhook(_) => {
-                        debug!("nothing to reconcile because this's Webhook trigger")
-                    }
+                    // Update trigger spec in the map
+                    triggers
+                        .specs
+                        .insert(self.trigger_hash_key(), self.spec.clone());
                 }
+            }
 
-                // Update trigger spec in the map
-                triggers
-                    .specs
-                    .insert(self.trigger_hash_key(), self.spec.clone());
+            Ok(ReconcileAction::await_change())
+        } else {
+            // If it's not our controller type but we have this trigger in the state -
+            // remove it because it means we changes type between scheduled and webhook
+            if ctx.triggers.read().await.specs.contains_key(&trigger_key) {
+                self.cleanup(ctx).await
+            } else {
+                Ok(ReconcileAction::await_change())
             }
         }
-
-        // If no events were received, check back 30 minutes
-        Ok(ReconcileAction::await_change())
     }
 
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
@@ -380,7 +399,7 @@ impl Reconcilable for Trigger {
 }
 
 impl Trigger {
-    fn trigger_hash_key(&self) -> String {
+    pub fn trigger_hash_key(&self) -> String {
         format!("{}/{}", self.namespace().unwrap(), self.name_any())
     }
 
@@ -456,7 +475,7 @@ impl Trigger {
         Ok(())
     }
 
-    fn create_task(
+    pub fn create_task(
         &self,
         client: Client,
         schedule: TaskSchedule,

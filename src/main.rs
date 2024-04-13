@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
 use controllers::{
-    controllers::{run_leader_controllers, State},
+    controllers::{run_controllers, ControllerType, State, TriggersState},
     lock,
     signals::SignalHandler,
     web,
 };
-use tokio::sync::watch;
+use sacs::scheduler::Scheduler;
+use tokio::sync::{watch, RwLock};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -22,7 +25,19 @@ async fn main() -> anyhow::Result<()> {
     let utils_web = web::build_utils_web(state.clone(), shutdown_rx.clone()).await;
     let utils_web = tokio::spawn(utils_web);
 
-    let hooks_web = web::build_hooks_web(state.clone(), shutdown_rx.clone()).await;
+    let (hooks_web, hooks_controller) = {
+        let scheduler = Arc::new(RwLock::new(Scheduler::default()));
+        let triggers_state = Arc::new(RwLock::new(TriggersState::default()));
+        let hooks_controller = tokio::spawn(run_controllers(
+            ControllerType::Web,
+            state.clone(),
+            shutdown_rx.clone(),
+            Some(scheduler.clone()),
+            Some(triggers_state.clone()),
+        ));
+        let hooks_web = web::build_hooks_web(shutdown_rx.clone(), scheduler, triggers_state).await;
+        (hooks_web, hooks_controller)
+    };
     let hooks_web = tokio::spawn(hooks_web);
 
     while !shutdown {
@@ -30,16 +45,17 @@ async fn main() -> anyhow::Result<()> {
         let is_leader = lock_channel.borrow_and_update().is_current_for(&identity);
         let controllers = if is_leader {
             info!("Leader lock has been acquired, identity={identity}");
-            Some(tokio::spawn(run_leader_controllers(
+            Some(tokio::spawn(run_controllers(
+                ControllerType::Leader,
                 state.clone(),
                 changed_rx.clone(),
+                None,
+                None,
             )))
         } else {
             None
         };
 
-        // TODO: Move readiness update to WebhookTrigger controller
-        // update ready state right after successful reconciling
         {
             let mut ready = state.ready.write().await;
             *ready = true;
@@ -72,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     drop(lock_channel);
-    let _ = tokio::join!(lock_task, utils_web, hooks_web);
+    let _ = tokio::join!(lock_task, utils_web, hooks_web, hooks_controller);
 
     Ok(())
 }

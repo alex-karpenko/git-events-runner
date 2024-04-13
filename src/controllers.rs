@@ -41,7 +41,7 @@ pub struct SecretRef {
 /// Actual triggers state
 #[derive(Default)]
 pub struct TriggersState {
-    tasks: HashMap<String, TaskId>,
+    pub(crate) tasks: HashMap<String, TaskId>,
     specs: HashMap<String, TriggerSpec>,
     statuses: HashMap<String, TriggerStatus>,
 }
@@ -88,6 +88,8 @@ pub struct Context {
     pub scheduler: Arc<RwLock<Scheduler>>,
     /// Actual state of all Triggers
     pub triggers: Arc<RwLock<TriggersState>>,
+    /// Type of controller
+    pub cntrl_type: ControllerType,
 }
 
 /// State wrapper around the controller outputs for the web server
@@ -98,28 +100,47 @@ impl State {
         client: Client,
         scheduler: Arc<RwLock<Scheduler>>,
         triggers: Arc<RwLock<TriggersState>>,
+        cntrl_type: ControllerType,
     ) -> Arc<Context> {
         Arc::new(Context {
             client,
             diagnostics: self.diagnostics.clone(),
             scheduler,
             triggers,
+            cntrl_type,
         })
     }
 }
 
+#[derive(Clone, PartialEq)]
+pub enum ControllerType {
+    Leader,
+    Web,
+}
 /// Initialize the controllers and shared state (given the crd is installed)
-pub async fn run_leader_controllers(state: State, shutdown_channel: watch::Receiver<bool>) {
+pub async fn run_controllers(
+    cntrl_type: ControllerType,
+    state: State,
+    shutdown_channel: watch::Receiver<bool>,
+    outer_scheduler: Option<Arc<RwLock<Scheduler>>>,
+    outer_triggers_state: Option<Arc<RwLock<TriggersState>>>,
+) {
     info!("Starting all leader controllers");
-    let scheduler = Arc::new(RwLock::new(Scheduler::default()));
+    let scheduler = outer_scheduler.unwrap_or(Arc::new(RwLock::new(Scheduler::default())));
     let client = Client::try_default()
         .await
         .expect("failed to create kube Client");
 
     {
         let mut controllers = vec![];
-        let triggers_state = Arc::new(RwLock::new(TriggersState::default()));
-        let context = state.to_context(client.clone(), scheduler.clone(), triggers_state);
+        let triggers_state =
+            outer_triggers_state.unwrap_or(Arc::new(RwLock::new(TriggersState::default())));
+        let context = state.to_context(
+            client.clone(),
+            scheduler.clone(),
+            triggers_state,
+            cntrl_type,
+        );
 
         let triggers_api = Api::<Trigger>::all(client.clone());
         check_api_by_list(&triggers_api, "Triggers").await;
@@ -141,12 +162,14 @@ pub async fn run_leader_controllers(state: State, shutdown_channel: watch::Recei
         debug!("controllers main loop finished");
     }
 
-    info!("Shutting down task scheduler");
-    let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
-    scheduler
-        .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
-        .await
-        .unwrap_or(())
+    if Arc::strong_count(&scheduler) <= 1 {
+        info!("Shutting down Triggers task scheduler");
+        let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
+        scheduler
+            .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
+            .await
+            .unwrap_or(())
+    }
 }
 
 async fn check_api_by_list<K>(api: &Api<K>, api_name: &str)
