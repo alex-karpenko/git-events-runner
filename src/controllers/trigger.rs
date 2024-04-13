@@ -354,35 +354,51 @@ impl Reconcilable for Trigger {
         } else {
             // If it's not our controller type but we have this trigger in the state -
             // remove it because it means we changes type between scheduled and webhook
+
+            // Remove from triggers map
             if ctx.triggers.read().await.specs.contains_key(&trigger_key) {
-                self.cleanup(ctx).await
-            } else {
-                Ok(ReconcileAction::await_change())
+                let mut triggers = ctx.triggers.write().await;
+                triggers.specs.remove(&trigger_key);
+                triggers.statuses.remove(&trigger_key);
             }
+            // Drop task and remove from tasks map
+            if ctx.triggers.read().await.tasks.contains_key(&trigger_key) {
+                let mut triggers = ctx.triggers.write().await;
+                let task_id = triggers.tasks.remove(&trigger_key).unwrap();
+                let scheduler = ctx.scheduler.write().await;
+                let res = scheduler.cancel(task_id, CancelOpts::Kill).await;
+                if res.is_err() {
+                    error!("Can't cancel task: {res:?}");
+                }
+            }
+
+            Ok(ReconcileAction::await_change())
         }
     }
 
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
-        info!(
-            "Cleanup Trigger `{}` in {}",
-            self.name_any(),
-            self.namespace().unwrap()
-        );
-        let trigger_key = self.trigger_hash_key();
-        // Remove from triggers map
-        if ctx.triggers.read().await.specs.contains_key(&trigger_key) {
-            let mut triggers = ctx.triggers.write().await;
-            triggers.specs.remove(&trigger_key);
-            triggers.statuses.remove(&trigger_key);
-        }
-        // Drop task and remove from tasks map
-        if ctx.triggers.read().await.tasks.contains_key(&trigger_key) {
-            let mut triggers = ctx.triggers.write().await;
-            let task_id = triggers.tasks.remove(&trigger_key).unwrap();
-            let scheduler = ctx.scheduler.write().await;
-            let res = scheduler.cancel(task_id, CancelOpts::Kill).await;
-            if res.is_err() {
-                error!("Can't cancel task: {res:?}");
+        if self.spec.trigger.is_processable(ctx.cntrl_type.clone()) {
+            info!(
+                "Cleanup Trigger `{}` in {}",
+                self.name_any(),
+                self.namespace().unwrap()
+            );
+            let trigger_key = self.trigger_hash_key();
+            // Remove from triggers map
+            if ctx.triggers.read().await.specs.contains_key(&trigger_key) {
+                let mut triggers = ctx.triggers.write().await;
+                triggers.specs.remove(&trigger_key);
+                triggers.statuses.remove(&trigger_key);
+            }
+            // Drop task and remove from tasks map
+            if ctx.triggers.read().await.tasks.contains_key(&trigger_key) {
+                let mut triggers = ctx.triggers.write().await;
+                let task_id = triggers.tasks.remove(&trigger_key).unwrap();
+                let scheduler = ctx.scheduler.write().await;
+                let res = scheduler.cancel(task_id, CancelOpts::Kill).await;
+                if res.is_err() {
+                    error!("Can't cancel task: {res:?}");
+                }
             }
         }
 

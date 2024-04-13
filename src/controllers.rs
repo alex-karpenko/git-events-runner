@@ -26,6 +26,7 @@ use sacs::{scheduler::Scheduler, task::TaskId};
 use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc};
+use strum::Display;
 use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
@@ -112,7 +113,7 @@ impl State {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Display)]
 pub enum ControllerType {
     Leader,
     Web,
@@ -125,7 +126,7 @@ pub async fn run_controllers(
     outer_scheduler: Option<Arc<RwLock<Scheduler>>>,
     outer_triggers_state: Option<Arc<RwLock<TriggersState>>>,
 ) {
-    info!("Starting all leader controllers");
+    info!("Starting {} controllers", cntrl_type);
     let scheduler = outer_scheduler.unwrap_or(Arc::new(RwLock::new(Scheduler::default())));
     let client = Client::try_default()
         .await

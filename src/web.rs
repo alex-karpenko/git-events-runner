@@ -131,8 +131,7 @@ async fn handle_post_trigger_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    warn!("webhook: post trigger hook isn't implemented");
-    warn!("webhook: POST, namespace={namespace}, trigger={trigger}");
+    debug!("webhook: POST, namespace={namespace}, trigger={trigger}");
 
     let triggers_api: Api<Trigger> = Api::namespaced(state.client.clone(), &namespace);
     match triggers_api.get(&trigger).await {
@@ -140,7 +139,7 @@ async fn handle_post_trigger_webhook(
             let trigger_hash_key = trigger.trigger_hash_key();
             if let TriggerType::Webhook(hook) = &trigger.spec.trigger {
                 if hook.multi_source {
-                    warn!("run all sources task for trigger {trigger_hash_key}");
+                    info!("Run all sources task for trigger {trigger_hash_key}");
                     let task = trigger.create_task(
                         state.client.clone(),
                         sacs::task::TaskSchedule::Once,
