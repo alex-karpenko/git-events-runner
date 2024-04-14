@@ -68,7 +68,7 @@ pub struct ScheduleTriggerSpec {
 #[kube(status = "TriggerStatus")]
 #[serde(rename_all = "camelCase")]
 pub struct WebhookTriggerSpec {
-    sources: TriggerSources,
+    pub(crate) sources: TriggerSources,
     pub(crate) webhook: TriggerWebhook,
     action: TriggerAction,
 }
@@ -79,6 +79,7 @@ pub struct TriggerStatus {
     state: TriggerState,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_run: Option<String>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     checked_sources: HashMap<String, CheckedSourceState>,
 }
 
@@ -120,7 +121,7 @@ pub enum TriggerState {
 pub struct TriggerSources {
     #[serde(default)]
     kind: TriggerSourceKind,
-    names: Vec<String>,
+    pub(crate) names: Vec<String>,
     #[serde(default)]
     watch_on: TriggerWatchOn,
 }

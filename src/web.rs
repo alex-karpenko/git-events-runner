@@ -181,10 +181,44 @@ async fn handle_get_source_webhook(
 }
 
 async fn handle_post_source_webhook(
-    State(_state): State<WebState>,
+    State(state): State<WebState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
-) -> (StatusCode, &'static str) {
-    warn!("webhook: post source hook isn't implemented");
-    warn!("webhook: POST, namespace={namespace}, trigger={trigger}, source={source}");
-    (StatusCode::NOT_IMPLEMENTED, "Not implemented")
+) -> (StatusCode, Json<serde_json::Value>) {
+    debug!("webhook: POST, namespace={namespace}, trigger={trigger}, source={source}");
+
+    let triggers_api: Api<WebhookTrigger> = Api::namespaced(state.client.clone(), &namespace);
+    match triggers_api.get(&trigger).await {
+        Ok(trigger) => {
+            let trigger_hash_key = trigger.trigger_hash_key();
+            if trigger.spec.sources.names.contains(&source) {
+                info!("Run source task {trigger_hash_key}/{source}");
+                let task = trigger.create_trigger_task(
+                    state.client.clone(),
+                    sacs::task::TaskSchedule::Once,
+                    Some(source.clone()),
+                    state.triggers.clone(),
+                );
+                let scheduler = state.scheduler.write().await;
+                let mut triggers = state.triggers.write().await;
+                let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
+                let tasks = &mut triggers.tasks;
+                let task_hash_key = format!("{trigger_hash_key}/{source}");
+                tasks.insert(task_hash_key, task_id);
+
+                (
+                    StatusCode::ACCEPTED,
+                    Json(serde_json::json!({"status": "ok", "message": "Accepted"})),
+                )
+            } else {
+                warn!("source `{source}` doesn't exist in trigger {trigger_hash_key}");
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(
+                        serde_json::json!({"status": "error", "message": "Multi-source hooks isn't allowed"}),
+                    ),
+                )
+            }
+        }
+        Err(_err) => todo!(),
+    }
 }
