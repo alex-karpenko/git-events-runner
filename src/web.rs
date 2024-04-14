@@ -1,6 +1,8 @@
+use crate::controllers::trigger::Trigger;
+use crate::WebhookTriggerSpec;
 use crate::{
     controllers::{State as AppState, TriggersState},
-    Trigger, TriggerType,
+    WebhookTrigger,
 };
 use axum::{
     extract::{Path, State},
@@ -24,7 +26,7 @@ pub const DEFAULT_UTILS_WEB_BIND_ADDRESS: &str = "0.0.0.0:3000";
 #[derive(Clone)]
 struct WebState {
     scheduler: Arc<RwLock<Scheduler>>,
-    triggers: Arc<RwLock<TriggersState>>,
+    triggers: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
     client: Client,
 }
 
@@ -55,7 +57,7 @@ pub async fn build_utils_web(
 pub async fn build_hooks_web(
     mut shutdown: watch::Receiver<bool>,
     scheduler: Arc<RwLock<Scheduler>>,
-    triggers_state: Arc<RwLock<TriggersState>>,
+    triggers_state: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
 ) -> impl Future<Output = ()> {
     let client = Client::try_default()
         .await
@@ -133,43 +135,33 @@ async fn handle_post_trigger_webhook(
 ) -> (StatusCode, Json<serde_json::Value>) {
     debug!("webhook: POST, namespace={namespace}, trigger={trigger}");
 
-    let triggers_api: Api<Trigger> = Api::namespaced(state.client.clone(), &namespace);
+    let triggers_api: Api<WebhookTrigger> = Api::namespaced(state.client.clone(), &namespace);
     match triggers_api.get(&trigger).await {
         Ok(trigger) => {
             let trigger_hash_key = trigger.trigger_hash_key();
-            if let TriggerType::Webhook(hook) = &trigger.spec.trigger {
-                if hook.multi_source {
-                    info!("Run all sources task for trigger {trigger_hash_key}");
-                    let task = trigger.create_task(
-                        state.client.clone(),
-                        sacs::task::TaskSchedule::Once,
-                        state.triggers.clone(),
-                    );
-                    let scheduler = state.scheduler.write().await;
-                    let mut triggers = state.triggers.write().await;
-                    let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
-                    let tasks = &mut triggers.tasks;
-                    tasks.insert(trigger_hash_key, task_id);
+            if trigger.spec.webhook.multi_source {
+                info!("Run all sources task for trigger {trigger_hash_key}");
+                let task = trigger.create_trigger_task(
+                    state.client.clone(),
+                    sacs::task::TaskSchedule::Once,
+                    state.triggers.clone(),
+                );
+                let scheduler = state.scheduler.write().await;
+                let mut triggers = state.triggers.write().await;
+                let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
+                let tasks = &mut triggers.tasks;
+                tasks.insert(trigger_hash_key, task_id);
 
-                    (
-                        StatusCode::ACCEPTED,
-                        Json(serde_json::json!({"status": "ok", "message": "Accepted"})),
-                    )
-                } else {
-                    warn!("try to run multi-source hook on trigger {trigger_hash_key}");
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(
-                            serde_json::json!({"status": "error", "message": "Multi-source hooks isn't allowed"}),
-                        ),
-                    )
-                }
+                (
+                    StatusCode::ACCEPTED,
+                    Json(serde_json::json!({"status": "ok", "message": "Accepted"})),
+                )
             } else {
-                warn!("try to run hook on schedule trigger {trigger_hash_key}");
+                warn!("try to run multi-source hook on trigger {trigger_hash_key}");
                 (
                     StatusCode::BAD_REQUEST,
                     Json(
-                        serde_json::json!({"status": "error", "message": "Incorrect trigger type"}),
+                        serde_json::json!({"status": "error", "message": "Multi-source hooks isn't allowed"}),
                     ),
                 )
             }

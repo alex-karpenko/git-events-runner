@@ -2,8 +2,10 @@ pub(crate) mod action;
 pub(crate) mod git_repo;
 pub(crate) mod trigger;
 
-use self::trigger::Trigger;
-use crate::{Error, Result, TriggerSpec, TriggerStatus};
+use self::trigger::ScheduleTrigger;
+use crate::{
+    Error, Result, ScheduleTriggerSpec, TriggerStatus, WebhookTrigger, WebhookTriggerSpec,
+};
 use futures::{future::join_all, StreamExt};
 use k8s_openapi::{
     chrono::{DateTime, Utc},
@@ -26,7 +28,6 @@ use sacs::{scheduler::Scheduler, task::TaskId};
 use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc};
-use strum::Display;
 use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
@@ -40,11 +41,20 @@ pub struct SecretRef {
 }
 
 /// Actual triggers state
-#[derive(Default)]
-pub struct TriggersState {
+pub struct TriggersState<S> {
     pub(crate) tasks: HashMap<String, TaskId>,
-    specs: HashMap<String, TriggerSpec>,
+    specs: HashMap<String, S>,
     statuses: HashMap<String, TriggerStatus>,
+}
+
+impl<S> Default for TriggersState<S> {
+    fn default() -> Self {
+        Self {
+            tasks: Default::default(),
+            specs: HashMap::<String, S>::new(),
+            statuses: Default::default(),
+        }
+    }
 }
 
 /// State shared between the controllers and the web server
@@ -80,7 +90,7 @@ impl Diagnostics {
 
 // Context for our reconcilers
 #[derive(Clone)]
-pub struct Context {
+pub struct Context<S> {
     /// Kubernetes client
     pub client: Client,
     /// Diagnostics read by the web server
@@ -88,70 +98,49 @@ pub struct Context {
     /// Scheduler to run periodic tasks
     pub scheduler: Arc<RwLock<Scheduler>>,
     /// Actual state of all Triggers
-    pub triggers: Arc<RwLock<TriggersState>>,
-    /// Type of controller
-    pub cntrl_type: ControllerType,
+    pub triggers: Arc<RwLock<TriggersState<S>>>,
 }
 
 /// State wrapper around the controller outputs for the web server
 impl State {
     /// Create a Controller Context that can update State
-    pub fn to_context(
+    pub fn to_context<S>(
         &self,
         client: Client,
         scheduler: Arc<RwLock<Scheduler>>,
-        triggers: Arc<RwLock<TriggersState>>,
-        cntrl_type: ControllerType,
-    ) -> Arc<Context> {
+        triggers: Arc<RwLock<TriggersState<S>>>,
+    ) -> Arc<Context<S>> {
         Arc::new(Context {
             client,
             diagnostics: self.diagnostics.clone(),
             scheduler,
             triggers,
-            cntrl_type,
         })
     }
 }
 
-#[derive(Clone, PartialEq, Display)]
-pub enum ControllerType {
-    Leader,
-    Web,
-}
 /// Initialize the controllers and shared state (given the crd is installed)
-pub async fn run_controllers(
-    cntrl_type: ControllerType,
-    state: State,
-    shutdown_channel: watch::Receiver<bool>,
-    outer_scheduler: Option<Arc<RwLock<Scheduler>>>,
-    outer_triggers_state: Option<Arc<RwLock<TriggersState>>>,
-) {
-    info!("Starting {} controllers", cntrl_type);
-    let scheduler = outer_scheduler.unwrap_or(Arc::new(RwLock::new(Scheduler::default())));
+pub async fn run_leader_controllers(state: State, shutdown_channel: watch::Receiver<bool>) {
+    info!("Starting Leader controllers");
+    let scheduler = Arc::new(RwLock::new(Scheduler::default()));
     let client = Client::try_default()
         .await
         .expect("failed to create kube Client");
 
     {
         let mut controllers = vec![];
-        let triggers_state =
-            outer_triggers_state.unwrap_or(Arc::new(RwLock::new(TriggersState::default())));
-        let context = state.to_context(
-            client.clone(),
-            scheduler.clone(),
-            triggers_state,
-            cntrl_type,
-        );
+        let triggers_state = Arc::new(RwLock::new(TriggersState::<ScheduleTriggerSpec>::default()));
+        let context = state.to_context(client.clone(), scheduler.clone(), triggers_state);
 
-        let triggers_api = Api::<Trigger>::all(client.clone());
+        let triggers_api = Api::<ScheduleTrigger>::all(client.clone());
         check_api_by_list(&triggers_api, "Triggers").await;
         let mut shutdown = shutdown_channel.clone();
         controllers.push(tokio::task::spawn(
             Controller::new(triggers_api, Config::default().any_semantic())
                 .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
                 .run(
-                    reconcile_namespaced::<Trigger>,
-                    error_policy::<Trigger>,
+                    reconcile_namespaced::<ScheduleTrigger, ScheduleTriggerSpec>,
+                    error_policy::<ScheduleTrigger, ScheduleTriggerSpec>,
                     context.clone(),
                 )
                 .filter_map(|x| async move { std::result::Result::ok(x) })
@@ -163,13 +152,47 @@ pub async fn run_controllers(
         debug!("controllers main loop finished");
     }
 
-    if Arc::strong_count(&scheduler) <= 1 {
-        info!("Shutting down Triggers task scheduler");
-        let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
-        scheduler
-            .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
-            .await
-            .unwrap_or(())
+    info!("Shutting down ScheduleTriggers task scheduler");
+    let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
+    scheduler
+        .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
+        .await
+        .unwrap_or(())
+}
+
+pub async fn run_web_controllers(
+    state: State,
+    shutdown_channel: watch::Receiver<bool>,
+    scheduler: Arc<RwLock<Scheduler>>,
+    triggers_state: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
+) {
+    info!("Starting Web controllers");
+    let client = Client::try_default()
+        .await
+        .expect("failed to create kube Client");
+
+    {
+        let mut controllers = vec![];
+        let context = state.to_context(client.clone(), scheduler, triggers_state);
+
+        let triggers_api = Api::<WebhookTrigger>::all(client.clone());
+        check_api_by_list(&triggers_api, "Triggers").await;
+        let mut shutdown = shutdown_channel.clone();
+        controllers.push(tokio::task::spawn(
+            Controller::new(triggers_api, Config::default().any_semantic())
+                .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
+                .run(
+                    reconcile_namespaced::<WebhookTrigger, WebhookTriggerSpec>,
+                    error_policy::<WebhookTrigger, WebhookTriggerSpec>,
+                    context.clone(),
+                )
+                .filter_map(|x| async move { std::result::Result::ok(x) })
+                .for_each(|_| futures::future::ready(())),
+        ));
+
+        debug!("starting controllers main loop");
+        join_all(controllers).await;
+        debug!("controllers main loop finished");
     }
 }
 
@@ -187,25 +210,28 @@ where
     }
 }
 
-pub(crate) trait Reconcilable {
-    async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
-    async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
+#[allow(async_fn_in_trait)]
+pub trait Reconcilable<S> {
+    async fn reconcile(&self, ctx: Arc<Context<S>>) -> Result<ReconcileAction>;
+    async fn cleanup(&self, ctx: Arc<Context<S>>) -> Result<ReconcileAction>;
     fn finalizer_name(&self) -> String;
     fn kind(&self) -> &str;
 }
 
-fn error_policy<K: Reconcilable>(
-    _resource: Arc<K>,
-    error: &Error,
-    _ctx: Arc<Context>,
-) -> ReconcileAction {
+fn error_policy<K, S>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context<S>>) -> ReconcileAction
+where
+    K: Reconcilable<S>,
+{
     warn!("reconcile failed: {:?}", error);
     ReconcileAction::await_change()
 }
 
-async fn reconcile_namespaced<K>(resource: Arc<K>, ctx: Arc<Context>) -> Result<ReconcileAction>
+async fn reconcile_namespaced<K, S>(
+    resource: Arc<K>,
+    ctx: Arc<Context<S>>,
+) -> Result<ReconcileAction>
 where
-    K: Resource + Reconcilable,
+    K: Resource + Reconcilable<S>,
     K: Debug + Clone + DeserializeOwned + Serialize,
     <K as Resource>::DynamicType: Default,
     K: Resource<Scope = NamespaceResourceScope>,

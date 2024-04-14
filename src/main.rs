@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use controllers::{
-    controllers::{run_controllers, ControllerType, State, TriggersState},
+    controllers::{run_leader_controllers, run_web_controllers, State, TriggersState},
     lock,
     signals::SignalHandler,
     web,
@@ -28,12 +28,11 @@ async fn main() -> anyhow::Result<()> {
     let (hooks_web, hooks_controller) = {
         let scheduler = Arc::new(RwLock::new(Scheduler::default()));
         let triggers_state = Arc::new(RwLock::new(TriggersState::default()));
-        let hooks_controller = tokio::spawn(run_controllers(
-            ControllerType::Web,
+        let hooks_controller = tokio::spawn(run_web_controllers(
             state.clone(),
             shutdown_rx.clone(),
-            Some(scheduler.clone()),
-            Some(triggers_state.clone()),
+            scheduler.clone(),
+            triggers_state.clone(),
         ));
         let hooks_web = web::build_hooks_web(shutdown_rx.clone(), scheduler, triggers_state).await;
         (hooks_web, hooks_controller)
@@ -45,12 +44,9 @@ async fn main() -> anyhow::Result<()> {
         let is_leader = lock_channel.borrow_and_update().is_current_for(&identity);
         let controllers = if is_leader {
             info!("Leader lock has been acquired, identity={identity}");
-            Some(tokio::spawn(run_controllers(
-                ControllerType::Leader,
+            Some(tokio::spawn(run_leader_controllers(
                 state.clone(),
                 changed_rx.clone(),
-                None,
-                None,
             )))
         } else {
             None
