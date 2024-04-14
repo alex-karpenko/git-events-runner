@@ -20,9 +20,6 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 
-pub const DEFAULT_HOOKS_WEB_BIND_ADDRESS: &str = "0.0.0.0:8080";
-pub const DEFAULT_UTILS_WEB_BIND_ADDRESS: &str = "0.0.0.0:3000";
-
 #[derive(Clone)]
 struct WebState {
     scheduler: Arc<RwLock<Scheduler>>,
@@ -33,20 +30,21 @@ struct WebState {
 pub async fn build_utils_web(
     app_state: AppState,
     mut shutdown: watch::Receiver<bool>,
+    port: u16,
 ) -> impl Future<Output = ()> {
     let app = Router::new()
         .route("/ready", get(handle_ready))
         .route("/alive", get(|| async { (StatusCode::OK, "Alive") }))
         .route("/metrics", get(handle_metrics))
         .with_state(app_state);
-    let listener = TcpListener::bind(DEFAULT_UTILS_WEB_BIND_ADDRESS)
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .expect("unable to create Utility beb listener");
     let web = axum::serve(listener, app)
         .with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
 
     async move {
-        info!("Starting Utility web server on {DEFAULT_UTILS_WEB_BIND_ADDRESS}");
+        info!("Starting Utility web server on 0.0.0.0:{port}");
         if let Err(err) = web.await {
             error!("Error while Utility web server running: {err}");
         }
@@ -58,6 +56,7 @@ pub async fn build_hooks_web(
     mut shutdown: watch::Receiver<bool>,
     scheduler: Arc<RwLock<Scheduler>>,
     triggers_state: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
+    port: u16,
 ) -> impl Future<Output = ()> {
     let client = Client::try_default()
         .await
@@ -79,14 +78,14 @@ pub async fn build_hooks_web(
             get(handle_get_source_webhook).post(handle_post_source_webhook),
         )
         .with_state(state);
-    let listener = TcpListener::bind(DEFAULT_HOOKS_WEB_BIND_ADDRESS)
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .expect("unable to create Webhooks listener");
     let web = axum::serve(listener, app)
         .with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
 
     async move {
-        info!("Starting Hooks web server on {DEFAULT_HOOKS_WEB_BIND_ADDRESS}");
+        info!("Starting Hooks web server on 0.0.0.0:{port}");
         let res = web.await;
 
         if Arc::strong_count(&scheduler) <= 1 {

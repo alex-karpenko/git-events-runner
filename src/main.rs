@@ -1,19 +1,20 @@
-use std::sync::Arc;
-
 use controllers::{
+    cli::CliConfig,
     controllers::{run_leader_controllers, run_web_controllers, State, TriggersState},
     lock,
     signals::SignalHandler,
     web,
 };
 use sacs::scheduler::Scheduler;
+use std::sync::Arc;
 use tokio::sync::{watch, RwLock};
 use tracing::{error, info};
 use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    //tracing_subscriber::fmt::init();
+    let cli_config = CliConfig::new();
 
     let state = State::default();
     let identity = Uuid::new_v4().to_string();
@@ -22,7 +23,8 @@ async fn main() -> anyhow::Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut shutdown = false;
 
-    let utils_web = web::build_utils_web(state.clone(), shutdown_rx.clone()).await;
+    let utils_web =
+        web::build_utils_web(state.clone(), shutdown_rx.clone(), cli_config.utility_port).await;
     let utils_web = tokio::spawn(utils_web);
 
     let (hooks_web, hooks_controller) = {
@@ -34,7 +36,13 @@ async fn main() -> anyhow::Result<()> {
             scheduler.clone(),
             triggers_state.clone(),
         ));
-        let hooks_web = web::build_hooks_web(shutdown_rx.clone(), scheduler, triggers_state).await;
+        let hooks_web = web::build_hooks_web(
+            shutdown_rx.clone(),
+            scheduler,
+            triggers_state,
+            cli_config.webhooks_port,
+        )
+        .await;
         (hooks_web, hooks_controller)
     };
     let hooks_web = tokio::spawn(hooks_web);

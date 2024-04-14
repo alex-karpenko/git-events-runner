@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod controllers;
 pub mod lock;
 pub mod signals;
