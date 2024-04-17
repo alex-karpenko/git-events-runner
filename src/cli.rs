@@ -4,7 +4,7 @@ use tracing_subscriber::{filter::LevelFilter, fmt, EnvFilter};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
-pub struct CliConfig {
+pub struct Cli {
     /// Enable extreme logging (debug)
     #[arg(short, long)]
     debug: bool,
@@ -18,18 +18,18 @@ pub struct CliConfig {
     json_log: bool,
 
     /// Port to listen on for webhooks
-    #[arg(long, short, value_parser=CliConfig::parse_tcp_port, default_value = "8080")]
+    #[arg(long, short, value_parser=Cli::parse_tcp_port, default_value = "8080")]
     pub webhooks_port: u16,
 
     /// Port to listen on for utilities web
-    #[arg(long, short, value_parser=CliConfig::parse_tcp_port, default_value = "3000")]
+    #[arg(long, short, value_parser=Cli::parse_tcp_port, default_value = "3000")]
     pub utility_port: u16,
 }
 
-impl CliConfig {
+impl Cli {
     /// Constructs CLI config
-    pub fn new() -> CliConfig {
-        let config: CliConfig = Parser::parse();
+    pub fn new() -> Cli {
+        let config: Cli = Parser::parse();
         config.setup_logger();
 
         debug!("CLI config: {:#?}", config);
@@ -78,7 +78,7 @@ impl CliConfig {
     }
 }
 
-impl Default for CliConfig {
+impl Default for Cli {
     fn default() -> Self {
         Self {
             debug: false,
@@ -96,20 +96,20 @@ mod tests {
 
     #[test]
     fn parse_good_health_check_port() {
-        assert_eq!(CliConfig::parse_tcp_port("123"), Ok(123));
-        assert_eq!(CliConfig::parse_tcp_port("65535"), Ok(65535));
+        assert_eq!(Cli::parse_tcp_port("123"), Ok(123));
+        assert_eq!(Cli::parse_tcp_port("65535"), Ok(65535));
     }
 
     #[test]
     fn parse_wrong_health_check_port() {
         assert_eq!(
-            CliConfig::parse_tcp_port("0"),
+            Cli::parse_tcp_port("0"),
             Err("health check port number should be in range 1..65535".into())
         );
         assert_eq!(
-            CliConfig::parse_tcp_port("65536"),
+            Cli::parse_tcp_port("65536"),
             Err("unable to parse `65536`: number too large to fit in target type, it should be number in range 1..65535".into())
         );
-        assert_eq!(CliConfig::parse_tcp_port("qwerty"), Err("unable to parse `qwerty`: invalid digit found in string, it should be number in range 1..65535".into()));
+        assert_eq!(Cli::parse_tcp_port("qwerty"), Err("unable to parse `qwerty`: invalid digit found in string, it should be number in range 1..65535".into()));
     }
 }

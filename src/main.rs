@@ -1,5 +1,5 @@
 use controllers::{
-    cli::CliConfig,
+    cli::Cli,
     controllers::{run_leader_controllers, run_web_controllers, State, TriggersState},
     lock,
     signals::SignalHandler,
@@ -13,8 +13,7 @@ use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    //tracing_subscriber::fmt::init();
-    let cli_config = CliConfig::new();
+    let cli = Cli::new();
 
     let state = State::default();
     let identity = Uuid::new_v4().to_string();
@@ -24,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let mut shutdown = false;
 
     let utils_web =
-        web::build_utils_web(state.clone(), shutdown_rx.clone(), cli_config.utility_port).await;
+        web::build_utils_web(state.clone(), shutdown_rx.clone(), cli.utility_port).await;
     let utils_web = tokio::spawn(utils_web);
 
     let (hooks_web, hooks_controller) = {
@@ -40,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
             shutdown_rx.clone(),
             scheduler,
             triggers_state,
-            cli_config.webhooks_port,
+            cli.webhooks_port,
         )
         .await;
         (hooks_web, hooks_controller)
