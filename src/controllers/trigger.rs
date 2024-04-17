@@ -424,7 +424,6 @@ impl Reconcilable<WebhookTriggerSpec> for WebhookTrigger {
             }
         }
 
-        // Reconcile if something has been changed
         let mut triggers = ctx.triggers.write().await;
         // Update trigger spec in the map
         triggers
@@ -446,16 +445,6 @@ impl Reconcilable<WebhookTriggerSpec> for WebhookTrigger {
             let mut triggers = ctx.triggers.write().await;
             triggers.specs.remove(&trigger_key);
             triggers.statuses.remove(&trigger_key);
-        }
-        // Drop task and remove from tasks map
-        if ctx.triggers.read().await.tasks.contains_key(&trigger_key) {
-            let mut triggers = ctx.triggers.write().await;
-            let task_id = triggers.tasks.remove(&trigger_key).unwrap();
-            let scheduler = ctx.scheduler.write().await;
-            let res = scheduler.cancel(task_id, CancelOpts::Kill).await;
-            if res.is_err() {
-                error!("Can't cancel task: {res:?}");
-            }
         }
 
         Ok(ReconcileAction::await_change())

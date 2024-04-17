@@ -14,6 +14,7 @@ use futures::Future;
 use kube::{Api, Client};
 use sacs::scheduler::{Scheduler, TaskScheduler};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::{
     net::TcpListener,
     sync::{watch, RwLock},
@@ -86,20 +87,26 @@ pub async fn build_hooks_web(
 
     async move {
         info!("Starting Hooks web server on 0.0.0.0:{port}");
-        let res = web.await;
-
-        if Arc::strong_count(&scheduler) <= 1 {
-            info!("Shutting down Webhooks task scheduler");
-            let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
-            scheduler
-                .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
-                .await
-                .unwrap_or(());
-        }
-
-        if let Err(err) = res {
+        if let Err(err) = web.await {
             error!("Error while Webhooks server running: {err}");
         }
+
+        // Sometimes controller works few milliseconds longer than expected, just wait few state-machine cycles to finish
+        for _ in 0..10 {
+            if Arc::strong_count(&scheduler) <= 1 {
+                info!("Shutting down WebhookTriggers task scheduler");
+                let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
+                scheduler
+                    .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
+                    .await
+                    .unwrap_or(());
+                break;
+            } else {
+                debug!("Webhooks task scheduler is in use, waiting...");
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+
         info!("Shutting down Webhooks server");
     }
 }
@@ -147,14 +154,13 @@ async fn handle_post_trigger_webhook(
                     state.triggers.clone(),
                 );
                 let scheduler = state.scheduler.write().await;
-                let mut triggers = state.triggers.write().await;
                 let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
-                let tasks = &mut triggers.tasks;
-                tasks.insert(trigger_hash_key, task_id);
 
                 (
                     StatusCode::ACCEPTED,
-                    Json(serde_json::json!({"status": "ok", "message": "Accepted"})),
+                    Json(
+                        serde_json::json!({"status": "ok", "message": "Accepted", "task_id": task_id.to_string()}),
+                    ),
                 )
             } else {
                 warn!("try to run multi-source hook on trigger {trigger_hash_key}");
@@ -166,7 +172,27 @@ async fn handle_post_trigger_webhook(
                 )
             }
         }
-        Err(_err) => todo!(),
+        Err(err) => match err {
+            kube::Error::Api(err) => {
+                if err.code == 404 {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(
+                            serde_json::json!({"status": "error", "message": "requested trigger doesn't exist"}),
+                        ),
+                    )
+                } else {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"status": "error", "message": err})),
+                    )
+                }
+            }
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"status": "error", "message": err.to_string()})),
+            ),
+        },
     }
 }
 
@@ -198,26 +224,44 @@ async fn handle_post_source_webhook(
                     state.triggers.clone(),
                 );
                 let scheduler = state.scheduler.write().await;
-                let mut triggers = state.triggers.write().await;
                 let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
-                let tasks = &mut triggers.tasks;
-                let task_hash_key = format!("{trigger_hash_key}/{source}");
-                tasks.insert(task_hash_key, task_id);
 
                 (
                     StatusCode::ACCEPTED,
-                    Json(serde_json::json!({"status": "ok", "message": "Accepted"})),
+                    Json(
+                        serde_json::json!({"status": "ok", "message": "Accepted", "task_id": task_id.to_string()}),
+                    ),
                 )
             } else {
                 warn!("source `{source}` doesn't exist in trigger {trigger_hash_key}");
                 (
                     StatusCode::BAD_REQUEST,
                     Json(
-                        serde_json::json!({"status": "error", "message": "Multi-source hooks isn't allowed"}),
+                        serde_json::json!({"status": "error", "message": "requested source doesn't exist in the trigger"}),
                     ),
                 )
             }
         }
-        Err(_err) => todo!(),
+        Err(err) => match err {
+            kube::Error::Api(err) => {
+                if err.code == 404 {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(
+                            serde_json::json!({"status": "error", "message": "requested trigger doesn't exist"}),
+                        ),
+                    )
+                } else {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"status": "error", "message": err})),
+                    )
+                }
+            }
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"status": "error", "message": err.to_string()})),
+            ),
+        },
     }
 }

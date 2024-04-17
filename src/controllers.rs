@@ -42,7 +42,7 @@ pub struct SecretRef {
 
 /// Actual triggers state
 pub struct TriggersState<S> {
-    pub(crate) tasks: HashMap<String, TaskId>,
+    tasks: HashMap<String, TaskId>,
     specs: HashMap<String, S>,
     statuses: HashMap<String, TriggerStatus>,
 }
