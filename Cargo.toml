@@ -43,6 +43,7 @@ path = "src/lib.rs"
 anyhow = "1"
 axum = { version = "0.7.5", default-features = false, features = [
     "http1",
+    "macros",
     "matched-path",
     "original-uri",
     "tokio",
