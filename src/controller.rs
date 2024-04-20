@@ -218,7 +218,7 @@ where
             "CRD `{}` is not queryable; {e:?}. Is the CRD installed/updated?",
             api_name
         );
-        info!("Installation: cargo run --bin crdgen | kubectl apply -f -");
+        info!("Installation: git-events-runner crds | kubectl apply -f -");
         std::process::exit(1);
     }
 }

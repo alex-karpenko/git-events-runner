@@ -27,11 +27,6 @@ path = "src/bin/git-events-runner.rs"
 
 [[bin]]
 doc = false
-name = "crdgen"
-path = "src/bin/crdgen.rs"
-
-[[bin]]
-doc = false
 name = "gitrepo-cloner"
 path = "src/bin/gitrepo-cloner.rs"
 
