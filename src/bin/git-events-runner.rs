@@ -7,7 +7,9 @@ use git_events_runner::{
     web,
 };
 use kube::Client;
-use sacs::scheduler::Scheduler;
+use sacs::scheduler::{
+    GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType,
+};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{watch, RwLock};
 use tracing::{error, info};
@@ -18,7 +20,8 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::new();
 
     let client = Client::try_default().await?;
-    let secrets_cache = ExpiringSecretCache::new(Duration::from_secs(30), client.clone());
+    let secrets_cache =
+        ExpiringSecretCache::new(Duration::from_secs(cli.secrets_cache_time), client.clone());
     let state = State::new(secrets_cache.clone());
     let identity = Uuid::new_v4().to_string();
 
@@ -32,7 +35,12 @@ async fn main() -> anyhow::Result<()> {
     let utils_web = tokio::spawn(utils_web);
 
     let (hooks_web, hooks_controller) = {
-        let scheduler = Arc::new(RwLock::new(Scheduler::default()));
+        let scheduler = SchedulerBuilder::new()
+            .garbage_collector(GarbageCollector::Immediate)
+            .worker_type(WorkerType::MultiThread(RuntimeThreads::CpuCores))
+            .parallelism(WorkerParallelism::Limited(cli.webhooks_parallelism))
+            .build();
+        let scheduler = Arc::new(RwLock::new(scheduler));
         let triggers_state = Arc::new(RwLock::new(TriggersState::default()));
         let hooks_controller = tokio::spawn(run_web_controllers(
             client.clone(),
@@ -63,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
                 client.clone(),
                 state.clone(),
                 changed_rx.clone(),
+                cli.schedule_parallelism,
             )))
         } else {
             None

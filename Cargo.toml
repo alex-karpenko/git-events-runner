@@ -70,7 +70,7 @@ rustls = { version = "0.23.4", features = [
 ], default-features = false }
 rustls-native-certs = "0.7.0"
 rustls-pemfile = "2.1.1"
-sacs = { git = "https://github.com/alex-karpenko/sacs.git", version = "0.3.0", features = [
+sacs = { git = "https://github.com/alex-karpenko/sacs.git", version = "0.4.0", features = [
     "async-trait",
 ] }
 schemars = "0.8.16"

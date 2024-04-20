@@ -20,7 +20,10 @@ use kube::{
     Api, Client, Resource, ResourceExt,
 };
 use sacs::{
-    scheduler::{Scheduler, TaskScheduler},
+    scheduler::{
+        GarbageCollector, RuntimeThreads, Scheduler, SchedulerBuilder, TaskScheduler,
+        WorkerParallelism, WorkerType,
+    },
     task::TaskId,
 };
 use serde::{de::DeserializeOwned, Serialize};
@@ -129,9 +132,15 @@ pub async fn run_leader_controllers(
     client: Client,
     state: State,
     shutdown_channel: watch::Receiver<bool>,
+    schedule_parallelism: usize,
 ) {
     info!("Starting Leader controllers");
-    let scheduler = Arc::new(RwLock::new(Scheduler::default()));
+    let scheduler = SchedulerBuilder::new()
+        .garbage_collector(GarbageCollector::Immediate)
+        .worker_type(WorkerType::MultiThread(RuntimeThreads::CpuCores))
+        .parallelism(WorkerParallelism::Limited(schedule_parallelism))
+        .build();
+    let scheduler = Arc::new(RwLock::new(scheduler));
 
     {
         let mut controllers = vec![];

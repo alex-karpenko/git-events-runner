@@ -7,6 +7,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::sync::RwLock;
+use tracing::debug;
 
 #[allow(async_fn_in_trait)]
 pub trait SecretCache {
@@ -28,6 +29,7 @@ struct SecretValue {
 impl SecretCache for ExpiringSecretCache {
     async fn get(&self, namespace: &str, secret_name: &str, key: &str) -> Result<String, Error> {
         let hash_key = format!("{namespace}/{secret_name}");
+        debug!("get: hash_key={hash_key}, key={key}");
 
         // Let's try to find in cache
         {
@@ -42,13 +44,19 @@ impl SecretCache for ExpiringSecretCache {
                             "error converting string `{key}` from UTF8 in the secret `{secret_name}`"
                         ))
                     })?;
+                    debug!("get: {hash_key}/{key} exists");
                     return Ok(value);
+                } else {
+                    debug!("get: {hash_key}/{key} expired or key doesn't exist");
                 }
+            } else {
+                debug!("get: {hash_key}/{key} not in cache");
             }
         }
 
         // If it's not cached yet or already expired - retrieve secret from API and store to cache
         let mut cache = self.cache.write().await;
+        debug!("get: {hash_key}/{key} try to retrieve and save in cache");
         let secrets_api: Api<Secret> = Api::namespaced(self.client.clone(), namespace);
         let secret = secrets_api
             .get(secret_name)
@@ -76,6 +84,7 @@ impl SecretCache for ExpiringSecretCache {
                 .checked_add(self.expiration_timeout)
                 .unwrap(),
         };
+        debug!("get: {hash_key}/{key} save to cache");
         cache.insert(hash_key, cache_data);
 
         Ok(secret_value)
