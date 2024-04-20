@@ -2,11 +2,13 @@ use controllers::{
     cli::Cli,
     controllers::{run_leader_controllers, run_web_controllers, State, TriggersState},
     lock,
+    secret_cache::ExpiringSecretCache,
     signals::SignalHandler,
     web,
 };
+use kube::Client;
 use sacs::scheduler::Scheduler;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{watch, RwLock};
 use tracing::{error, info};
 use uuid::Uuid;
@@ -16,6 +18,8 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::new();
 
     let state = State::default();
+    let client = Client::try_default().await?;
+    let secrets_cache = ExpiringSecretCache::new(Duration::from_secs(30), client.clone());
     let identity = Uuid::new_v4().to_string();
     let (mut lock_channel, lock_task) = lock::new(&identity, Some("default".into())).await;
     let mut signal_handler = SignalHandler::new().expect("unable to create signal handler");
@@ -30,15 +34,18 @@ async fn main() -> anyhow::Result<()> {
         let scheduler = Arc::new(RwLock::new(Scheduler::default()));
         let triggers_state = Arc::new(RwLock::new(TriggersState::default()));
         let hooks_controller = tokio::spawn(run_web_controllers(
+            client.clone(),
             state.clone(),
             shutdown_rx.clone(),
             scheduler.clone(),
             triggers_state.clone(),
         ));
         let hooks_web = web::build_hooks_web(
+            client.clone(),
             shutdown_rx.clone(),
             scheduler,
             triggers_state,
+            secrets_cache.clone(),
             cli.webhooks_port,
         )
         .await;
@@ -52,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
         let controllers = if is_leader {
             info!("Leader lock has been acquired, identity={identity}");
             Some(tokio::spawn(run_leader_controllers(
+                client.clone(),
                 state.clone(),
                 changed_rx.clone(),
             )))

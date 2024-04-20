@@ -37,7 +37,7 @@ const CURRENT_API_VERSION: &str = "v1alpha1";
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretRef {
-    name: String,
+    pub(crate) name: String,
 }
 
 /// Actual triggers state
@@ -120,12 +120,13 @@ impl State {
 }
 
 /// Initialize the controllers and shared state (given the crd is installed)
-pub async fn run_leader_controllers(state: State, shutdown_channel: watch::Receiver<bool>) {
+pub async fn run_leader_controllers(
+    client: Client,
+    state: State,
+    shutdown_channel: watch::Receiver<bool>,
+) {
     info!("Starting Leader controllers");
     let scheduler = Arc::new(RwLock::new(Scheduler::default()));
-    let client = Client::try_default()
-        .await
-        .expect("failed to create kube Client");
 
     {
         let mut controllers = vec![];
@@ -161,15 +162,13 @@ pub async fn run_leader_controllers(state: State, shutdown_channel: watch::Recei
 }
 
 pub async fn run_web_controllers(
+    client: Client,
     state: State,
     shutdown_channel: watch::Receiver<bool>,
     scheduler: Arc<RwLock<Scheduler>>,
     triggers_state: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
 ) {
     info!("Starting Web controllers");
-    let client = Client::try_default()
-        .await
-        .expect("failed to create kube Client");
 
     {
         let mut controllers = vec![];

@@ -38,6 +38,7 @@ use tokio::{
 use tracing::{debug, error, info, warn};
 
 const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
+const DEFAULT_WEBHOOK_AUTH_HEADER: &str = "x-trigger-auth";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
@@ -215,14 +216,22 @@ impl TriggerSchedule {
 pub struct TriggerWebhook {
     pub(crate) multi_source: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    auth_config: Option<TriggerWebhookAuthConfig>,
+    pub(crate) auth_config: Option<TriggerWebhookAuthConfig>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerWebhookAuthConfig {
-    secret_ref: SecretRef,
-    key: String,
+    pub(crate) secret_ref: SecretRef,
+    pub(crate) key: String,
+    #[serde(default = "TriggerWebhookAuthConfig::default_header")]
+    pub(crate) header: String,
+}
+
+impl TriggerWebhookAuthConfig {
+    fn default_header() -> String {
+        DEFAULT_WEBHOOK_AUTH_HEADER.into()
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]

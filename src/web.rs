@@ -1,4 +1,5 @@
 use crate::controllers::trigger::Trigger;
+use crate::secret_cache::{ExpiringSecretCache, SecretCache};
 use crate::WebhookTriggerSpec;
 use crate::{
     controllers::{State as AppState, TriggersState},
@@ -31,6 +32,7 @@ struct WebState {
     scheduler: Arc<RwLock<Scheduler>>,
     triggers: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
     client: Client,
+    secrets_cache: Arc<ExpiringSecretCache>,
 }
 
 #[derive(FromRequest, Serialize)]
@@ -61,6 +63,8 @@ enum AppError {
     Unauthorized,
     #[strum(to_string = "forbidden")]
     Forbidden,
+    #[strum(to_string = "unable to complete authorization")]
+    AuthorizationError,
     #[strum(to_string = "KubeError: {msg}")]
     KubeError { msg: String },
     #[strum(to_string = "method isn't not implemented")]
@@ -95,19 +99,18 @@ pub async fn build_utils_web(
 }
 
 pub async fn build_hooks_web(
+    client: Client,
     mut shutdown: watch::Receiver<bool>,
     scheduler: Arc<RwLock<Scheduler>>,
     triggers_state: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
+    secrets_cache: Arc<ExpiringSecretCache>,
     port: u16,
 ) -> impl Future<Output = ()> {
-    let client = Client::try_default()
-        .await
-        .expect("failed to create kube Client");
-
     let state = WebState {
         scheduler: scheduler.clone(),
         triggers: triggers_state,
-        client,
+        client: client.clone(),
+        secrets_cache,
     };
 
     let app = Router::new()
@@ -174,13 +177,14 @@ async fn handle_get_trigger_webhook(
 ) -> Result<AppResponseJson, AppError> {
     warn!("webhook: get trigger hook isn't implemented");
     debug!("webhook: GET, namespace={namespace}, trigger={trigger}");
+
     Err(AppError::NotImplemented)
 }
 
 async fn handle_post_trigger_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
-    _headers: HeaderMap,
+    headers: HeaderMap,
 ) -> Result<AppResponseJson, AppError> {
     debug!("webhook: POST, namespace={namespace}, trigger={trigger}");
 
@@ -188,6 +192,9 @@ async fn handle_post_trigger_webhook(
     let trigger = triggers_api.get(&trigger).await?;
     let trigger_hash_key = trigger.trigger_hash_key();
 
+    state
+        .check_hook_authorization(&headers, &trigger.spec, &namespace)
+        .await?;
     if trigger.spec.webhook.multi_source {
         info!("Run all sources task for trigger {trigger_hash_key}");
         let task = trigger.create_trigger_task(
@@ -213,13 +220,14 @@ async fn handle_get_source_webhook(
 ) -> Result<AppResponseJson, AppError> {
     warn!("webhook: get source hook isn't implemented");
     debug!("webhook: GET, namespace={namespace}, trigger={trigger}, source={source}");
+
     Err(AppError::NotImplemented)
 }
 
 async fn handle_post_source_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
-    _headers: HeaderMap,
+    headers: HeaderMap,
 ) -> Result<AppResponseJson, AppError> {
     debug!("webhook: POST, namespace={namespace}, trigger={trigger}, source={source}");
 
@@ -227,6 +235,9 @@ async fn handle_post_source_webhook(
     let trigger = triggers_api.get(&trigger).await?;
     let trigger_hash_key = trigger.trigger_hash_key();
 
+    state
+        .check_hook_authorization(&headers, &trigger.spec, &namespace)
+        .await?;
     if trigger.spec.sources.names.contains(&source) {
         info!("Run source task {trigger_hash_key}/{source}");
         let task = trigger.create_trigger_task(
@@ -298,6 +309,7 @@ impl IntoResponse for AppError {
             AppError::KubeError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::SchedulerError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+            AppError::AuthorizationError => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status, resp).into_response()
@@ -327,6 +339,35 @@ impl From<sacs::Error> for AppError {
     fn from(value: sacs::Error) -> Self {
         Self::SchedulerError {
             msg: value.to_string(),
+        }
+    }
+}
+
+impl WebState {
+    async fn check_hook_authorization(
+        &self,
+        request_headers: &HeaderMap,
+        webhook_spec: &WebhookTriggerSpec,
+        namespace: &str,
+    ) -> Result<(), AppError> {
+        if let Some(auth_config) = &webhook_spec.webhook.auth_config {
+            if let Some(header) = request_headers.get(&auth_config.header) {
+                let secret = self
+                    .secrets_cache
+                    .as_ref()
+                    .get(namespace, &auth_config.secret_ref.name, &auth_config.key)
+                    .await
+                    .map_err(|_| AppError::AuthorizationError)?;
+                if *secret == *header {
+                    Ok(())
+                } else {
+                    Err(AppError::Forbidden)
+                }
+            } else {
+                Err(AppError::Unauthorized)
+            }
+        } else {
+            Ok(())
         }
     }
 }

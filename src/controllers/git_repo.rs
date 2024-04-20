@@ -256,7 +256,7 @@ impl GitRepo {
 
         for (secret_key, expected_key) in secret_keys.into_iter() {
             let secret_data_b64 = secret_ref.clone().data.ok_or_else(|| {
-                Error::GitrepoSecretDecodingError(format!(
+                Error::SecretDecodingError(format!(
                     "no `data` part in the secret `{}`",
                     secret_name
                 ))
@@ -264,14 +264,14 @@ impl GitRepo {
             let secret_data = secret_data_b64
                 .get(secret_key)
                 .ok_or_else(|| {
-                    Error::GitrepoSecretDecodingError(format!(
+                    Error::SecretDecodingError(format!(
                         "no `{}` key in the secret `{}`",
                         secret_key, secret_name
                     ))
                 })?
                 .to_owned();
             let secret_data = String::from_utf8(secret_data.0).map_err(|_e| {
-                Error::GitrepoSecretDecodingError(format!(
+                Error::SecretDecodingError(format!(
                     "error converting string `{}` from UTF8 in the secret `{}`",
                     secret_key, secret_name
                 ))

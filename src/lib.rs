@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod controllers;
 pub mod lock;
+pub mod secret_cache;
 pub mod signals;
 pub mod web;
 
@@ -26,7 +27,7 @@ pub enum Error {
     GitrepoAccessError(#[source] git2::Error),
 
     #[error("GitRepo Secret Decoding Error: {0}")]
-    GitrepoSecretDecodingError(String),
+    SecretDecodingError(String),
 
     #[error("Illegal Source")]
     IllegalSource,
