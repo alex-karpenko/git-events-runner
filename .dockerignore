@@ -1,4 +1,8 @@
 .git/
+.github/
+.vscode/
 target/
 docker-build/
 /*.yaml
+/*.md
+.gitignore

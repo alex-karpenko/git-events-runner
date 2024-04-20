@@ -1,5 +1,8 @@
 use clap::{Args, Parser};
-use controllers::{get_latest_commit, GitRepo, TriggerGitRepoReference, TriggerSourceKind};
+use git_events_runner::resources::{
+    git_repo::GitRepo,
+    trigger::{get_latest_commit, TriggerGitRepoReference, TriggerSourceKind},
+};
 use kube::{Api, Client};
 use tracing::debug;
 

@@ -1,14 +1,14 @@
 pub mod cli;
-pub mod controllers;
-pub mod lock;
+pub mod controller;
+pub mod leader_lock;
+pub mod resources;
 pub mod secrets_cache;
 pub mod signals;
 pub mod web;
 
-pub use crate::controllers::action::*;
-pub use crate::controllers::git_repo::*;
-pub use crate::controllers::trigger::*;
 use thiserror::Error;
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -50,7 +50,6 @@ pub enum Error {
     #[error("Trigger file access IO error: {0}")]
     TriggerFileAccessError(#[source] std::io::Error),
 }
-pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl Error {
     pub fn metric_label(&self) -> String {

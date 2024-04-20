@@ -1,12 +1,10 @@
-use crate::{Error, Result, TriggerGitRepoReference, TriggerSourceKind};
-use k8s_openapi::{
-    api::{
-        batch::v1::{Job, JobSpec},
-        core::v1::{
-            Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount,
-        },
+use crate::{Error, Result};
+use chrono::{DateTime, Local};
+use k8s_openapi::api::{
+    batch::v1::{Job, JobSpec},
+    core::v1::{
+        Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount,
     },
-    chrono::{DateTime, Local},
 };
 use kube::{
     api::{ObjectMeta, PostParams},
@@ -17,7 +15,10 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::SystemTime};
 use tracing::info;
 
-use super::random_string;
+use super::{
+    random_string,
+    trigger::{TriggerGitRepoReference, TriggerSourceKind},
+};
 
 // TODO: this should be config
 const DEFAULT_ACTION_WORKDIR: &str = "/action_workdir";

@@ -1,17 +1,13 @@
-pub(crate) mod action;
-pub(crate) mod git_repo;
-pub(crate) mod trigger;
-
-use self::trigger::ScheduleTrigger;
 use crate::{
-    secrets_cache::ExpiringSecretCache, Error, Result, ScheduleTriggerSpec, TriggerStatus,
-    WebhookTrigger, WebhookTriggerSpec,
+    resources::trigger::{
+        ScheduleTrigger, ScheduleTriggerSpec, TriggerStatus, WebhookTrigger, WebhookTriggerSpec,
+    },
+    secrets_cache::ExpiringSecretCache,
+    Error, Result,
 };
+use chrono::{DateTime, Utc};
 use futures::{future::join_all, StreamExt};
-use k8s_openapi::{
-    chrono::{DateTime, Utc},
-    NamespaceResourceScope,
-};
+use k8s_openapi::NamespaceResourceScope;
 use kube::{
     api::ListParams,
     runtime::{
@@ -23,29 +19,23 @@ use kube::{
     },
     Api, Client, Resource, ResourceExt,
 };
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use sacs::scheduler::TaskScheduler;
-use sacs::{scheduler::Scheduler, task::TaskId};
-use schemars::JsonSchema;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sacs::{
+    scheduler::{Scheduler, TaskScheduler},
+    task::TaskId,
+};
+use serde::{de::DeserializeOwned, Serialize};
 use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc};
 use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
-const API_GROUP: &str = "git-events-runner.rs";
-const CURRENT_API_VERSION: &str = "v1alpha1";
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct SecretRef {
-    pub(crate) name: String,
-}
+pub const API_GROUP: &str = "git-events-runner.rs";
+pub const CURRENT_API_VERSION: &str = "v1alpha1";
 
 /// Actual triggers state
 pub struct TriggersState<S> {
-    tasks: HashMap<String, TaskId>,
-    specs: HashMap<String, S>,
-    statuses: HashMap<String, TriggerStatus>,
+    pub(crate) tasks: HashMap<String, TaskId>,
+    pub(crate) specs: HashMap<String, S>,
+    pub(crate) statuses: HashMap<String, TriggerStatus>,
 }
 
 impl<S> Default for TriggersState<S> {
@@ -92,7 +82,7 @@ impl Default for Diagnostics {
     }
 }
 impl Diagnostics {
-    fn recorder<K>(&self, client: Client, res: &K) -> Recorder
+    pub(crate) fn recorder<K>(&self, client: Client, res: &K) -> Recorder
     where
         K: Resource<DynamicType = ()>,
     {
@@ -272,13 +262,4 @@ where
     )
     .await
     .map_err(|e| Error::FinalizerError(Box::new(e)))
-}
-
-pub(crate) fn random_string(len: usize) -> String {
-    let rand: String = thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(len)
-        .map(char::from)
-        .collect();
-    rand
 }

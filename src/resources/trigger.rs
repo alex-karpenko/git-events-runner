@@ -1,8 +1,9 @@
-use super::{Context, Reconcilable, SecretRef, TriggersState};
 use crate::{
-    controllers::{random_string, DateTime, Utc, API_GROUP, CURRENT_API_VERSION},
-    Action, Error, GitRepo, Result,
+    controller::{Context, Reconcilable, TriggersState, API_GROUP, CURRENT_API_VERSION},
+    resources::{action::Action, git_repo::GitRepo, random_string},
+    Error, Result,
 };
+use chrono::{DateTime, Utc};
 use git2::{Oid, Repository};
 use k8s_openapi::{chrono::SecondsFormat, NamespaceResourceScope};
 use kube::{
@@ -36,6 +37,8 @@ use tokio::{
     sync::RwLock,
 };
 use tracing::{debug, error, info, warn};
+
+use super::SecretRef;
 
 const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
 const DEFAULT_WEBHOOK_AUTH_HEADER: &str = "x-trigger-auth";

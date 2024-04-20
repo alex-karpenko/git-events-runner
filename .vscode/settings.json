@@ -11,6 +11,7 @@
         "hasher",
         "humantime",
         "Initiatilize",
+        "kubert",
         "openapi",
         "printcolumn",
         "rustls",

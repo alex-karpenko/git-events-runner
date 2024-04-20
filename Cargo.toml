@@ -23,21 +23,21 @@ version = "0.1.0"
 [[bin]]
 doc = false
 name = "git-events-runner"
-path = "src/main.rs"
+path = "src/bin/git-events-runner.rs"
 
 [[bin]]
 doc = false
 name = "crdgen"
-path = "src/crdgen.rs"
+path = "src/bin/crdgen.rs"
 
 [[bin]]
 doc = false
 name = "gitrepo-cloner"
-path = "src/gitrepo-cloner.rs"
+path = "src/bin/gitrepo-cloner.rs"
 
-[lib]
-name = "controllers"
-path = "src/lib.rs"
+#[lib]
+#name = "controllers"
+#path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1"
@@ -51,6 +51,7 @@ axum = { version = "0.7.5", default-features = false, features = [
     "tower-log",
     "json",
 ] }
+chrono = { version = "0.4.38", default-features = false, features = ["std"] }
 clap = { version = "4.5.4", features = ["derive"] }
 futures = "0.3.30"
 git2 = "0.18.3"

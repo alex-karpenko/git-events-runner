@@ -1,7 +1,8 @@
-use controllers::Action;
-use controllers::GitRepo;
-use controllers::ScheduleTrigger;
-use controllers::WebhookTrigger;
+use git_events_runner::resources::{
+    action::Action,
+    git_repo::GitRepo,
+    trigger::{ScheduleTrigger, WebhookTrigger},
+};
 use kube::CustomResourceExt;
 
 fn main() {

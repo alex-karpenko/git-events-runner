@@ -1,25 +1,21 @@
-use crate::controllers::trigger::Trigger;
+use crate::controller::{State as AppState, TriggersState};
+use crate::resources::trigger::{Trigger, WebhookTrigger, WebhookTriggerSpec};
 use crate::secrets_cache::{ExpiringSecretCache, SecretCache};
-use crate::WebhookTriggerSpec;
-use crate::{
-    controllers::{State as AppState, TriggersState},
-    WebhookTrigger,
-};
-use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
 use axum::{
     extract::{FromRequest, Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
 use futures::Future;
 use kube::{Api, Client};
-use sacs::scheduler::{Scheduler, TaskScheduler};
-use sacs::task::TaskId;
+use sacs::{
+    scheduler::{Scheduler, TaskScheduler},
+    task::TaskId,
+};
 use serde::Serialize;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use strum::Display;
 use tokio::{
     net::TcpListener,
