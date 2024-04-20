@@ -2,7 +2,7 @@ use controllers::{
     cli::Cli,
     controllers::{run_leader_controllers, run_web_controllers, State, TriggersState},
     lock,
-    secret_cache::ExpiringSecretCache,
+    secrets_cache::ExpiringSecretCache,
     signals::SignalHandler,
     web,
 };

@@ -1,7 +1,7 @@
 pub mod cli;
 pub mod controllers;
 pub mod lock;
-pub mod secret_cache;
+pub mod secrets_cache;
 pub mod signals;
 pub mod web;
 

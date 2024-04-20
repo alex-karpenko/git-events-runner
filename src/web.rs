@@ -1,5 +1,5 @@
 use crate::controllers::trigger::Trigger;
-use crate::secret_cache::{ExpiringSecretCache, SecretCache};
+use crate::secrets_cache::{ExpiringSecretCache, SecretCache};
 use crate::WebhookTriggerSpec;
 use crate::{
     controllers::{State as AppState, TriggersState},
@@ -36,9 +36,9 @@ struct WebState {
 }
 
 #[derive(FromRequest, Serialize)]
-#[from_request(via(axum::Json), rejection(AppError))]
-struct AppResponseJson {
-    status: AppResponseStatus,
+#[from_request(via(axum::Json), rejection(WebError))]
+struct WebResponseJson {
+    status: WebResponseStatus,
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     task_id: Option<String>,
@@ -46,13 +46,13 @@ struct AppResponseJson {
 
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
-enum AppResponseStatus {
+enum WebResponseStatus {
     Ok,
     Error,
 }
 
 #[derive(Display)]
-enum AppError {
+enum WebError {
     #[strum(to_string = "multi-source hook isn't allowed")]
     ForbiddenMultiSource,
     #[strum(to_string = "trigger doesn't exist")]
@@ -109,7 +109,7 @@ pub async fn build_hooks_web(
     let state = WebState {
         scheduler: scheduler.clone(),
         triggers: triggers_state,
-        client: client.clone(),
+        client,
         secrets_cache,
     };
 
@@ -174,18 +174,18 @@ async fn handle_get_trigger_webhook(
     State(_state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
     _headers: HeaderMap,
-) -> Result<AppResponseJson, AppError> {
+) -> Result<WebResponseJson, WebError> {
     warn!("webhook: get trigger hook isn't implemented");
     debug!("webhook: GET, namespace={namespace}, trigger={trigger}");
 
-    Err(AppError::NotImplemented)
+    Err(WebError::NotImplemented)
 }
 
 async fn handle_post_trigger_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
     headers: HeaderMap,
-) -> Result<AppResponseJson, AppError> {
+) -> Result<WebResponseJson, WebError> {
     debug!("webhook: POST, namespace={namespace}, trigger={trigger}");
 
     let triggers_api: Api<WebhookTrigger> = Api::namespaced(state.client.clone(), &namespace);
@@ -209,7 +209,7 @@ async fn handle_post_trigger_webhook(
         Ok(task_id.into())
     } else {
         warn!("try to run forbidden multi-source hook on trigger {trigger_hash_key}");
-        Err(AppError::ForbiddenMultiSource)
+        Err(WebError::ForbiddenMultiSource)
     }
 }
 
@@ -217,18 +217,18 @@ async fn handle_get_source_webhook(
     State(_state): State<WebState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
     _headers: HeaderMap,
-) -> Result<AppResponseJson, AppError> {
+) -> Result<WebResponseJson, WebError> {
     warn!("webhook: get source hook isn't implemented");
     debug!("webhook: GET, namespace={namespace}, trigger={trigger}, source={source}");
 
-    Err(AppError::NotImplemented)
+    Err(WebError::NotImplemented)
 }
 
 async fn handle_post_source_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
     headers: HeaderMap,
-) -> Result<AppResponseJson, AppError> {
+) -> Result<WebResponseJson, WebError> {
     debug!("webhook: POST, namespace={namespace}, trigger={trigger}, source={source}");
 
     let triggers_api: Api<WebhookTrigger> = Api::namespaced(state.client.clone(), &namespace);
@@ -252,71 +252,71 @@ async fn handle_post_source_webhook(
         Ok(task_id.into())
     } else {
         warn!("source `{source}` doesn't exist in trigger {trigger_hash_key}");
-        Err(AppError::SourceNotFound)
+        Err(WebError::SourceNotFound)
     }
 }
 
-impl IntoResponse for AppResponseJson {
+impl IntoResponse for WebResponseJson {
     fn into_response(self) -> Response {
         (StatusCode::ACCEPTED, Json(self)).into_response()
     }
 }
 
-impl From<TaskId> for AppResponseJson {
+impl From<TaskId> for WebResponseJson {
     fn from(value: TaskId) -> Self {
         Self {
-            status: AppResponseStatus::Ok,
+            status: WebResponseStatus::Ok,
             message: "job has been scheduled".into(),
             task_id: Some(value.to_string()),
         }
     }
 }
 
-impl From<String> for AppResponseJson {
+impl From<String> for WebResponseJson {
     fn from(value: String) -> Self {
         Self {
-            status: AppResponseStatus::Ok,
+            status: WebResponseStatus::Ok,
             message: value,
             task_id: None,
         }
     }
 }
 
-impl From<&str> for AppResponseJson {
+impl From<&str> for WebResponseJson {
     fn from(value: &str) -> Self {
         Self {
-            status: AppResponseStatus::Ok,
+            status: WebResponseStatus::Ok,
             message: value.to_string(),
             task_id: None,
         }
     }
 }
 
-impl IntoResponse for AppError {
+impl IntoResponse for WebError {
     fn into_response(self) -> Response {
-        let resp = AppResponseJson {
-            status: AppResponseStatus::Error,
+        let resp = WebResponseJson {
+            status: WebResponseStatus::Error,
             message: self.to_string(),
             task_id: None,
         };
 
         let status: StatusCode = match self {
-            AppError::ForbiddenMultiSource => StatusCode::BAD_REQUEST,
-            AppError::TriggerNotFound => StatusCode::NOT_FOUND,
-            AppError::SourceNotFound => StatusCode::NOT_FOUND,
-            AppError::Unauthorized => StatusCode::UNAUTHORIZED,
-            AppError::Forbidden => StatusCode::FORBIDDEN,
-            AppError::KubeError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::SchedulerError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
-            AppError::AuthorizationError => StatusCode::INTERNAL_SERVER_ERROR,
+            WebError::ForbiddenMultiSource => StatusCode::BAD_REQUEST,
+            WebError::TriggerNotFound => StatusCode::NOT_FOUND,
+            WebError::SourceNotFound => StatusCode::NOT_FOUND,
+            WebError::Unauthorized => StatusCode::UNAUTHORIZED,
+            WebError::Forbidden => StatusCode::FORBIDDEN,
+            WebError::KubeError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
+            WebError::SchedulerError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
+            WebError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+            WebError::AuthorizationError => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status, resp).into_response()
     }
 }
 
-impl From<kube::Error> for AppError {
+impl From<kube::Error> for WebError {
     fn from(value: kube::Error) -> Self {
         match &value {
             kube::Error::Api(err) => {
@@ -335,7 +335,7 @@ impl From<kube::Error> for AppError {
     }
 }
 
-impl From<sacs::Error> for AppError {
+impl From<sacs::Error> for WebError {
     fn from(value: sacs::Error) -> Self {
         Self::SchedulerError {
             msg: value.to_string(),
@@ -349,7 +349,7 @@ impl WebState {
         request_headers: &HeaderMap,
         webhook_spec: &WebhookTriggerSpec,
         namespace: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), WebError> {
         if let Some(auth_config) = &webhook_spec.webhook.auth_config {
             if let Some(header) = request_headers.get(&auth_config.header) {
                 let secret = self
@@ -357,14 +357,14 @@ impl WebState {
                     .as_ref()
                     .get(namespace, &auth_config.secret_ref.name, &auth_config.key)
                     .await
-                    .map_err(|_| AppError::AuthorizationError)?;
+                    .map_err(|_| WebError::AuthorizationError)?;
                 if *secret == *header {
                     Ok(())
                 } else {
-                    Err(AppError::Forbidden)
+                    Err(WebError::Forbidden)
                 }
             } else {
-                Err(AppError::Unauthorized)
+                Err(WebError::Unauthorized)
             }
         } else {
             Ok(())
