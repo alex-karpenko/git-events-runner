@@ -4,7 +4,8 @@ pub(crate) mod trigger;
 
 use self::trigger::ScheduleTrigger;
 use crate::{
-    Error, Result, ScheduleTriggerSpec, TriggerStatus, WebhookTrigger, WebhookTriggerSpec,
+    secrets_cache::ExpiringSecretCache, Error, Result, ScheduleTriggerSpec, TriggerStatus,
+    WebhookTrigger, WebhookTriggerSpec,
 };
 use futures::{future::join_all, StreamExt};
 use k8s_openapi::{
@@ -58,14 +59,25 @@ impl<S> Default for TriggersState<S> {
 }
 
 /// State shared between the controllers and the web server
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct State {
     /// Diagnostics read by the web server
     pub diagnostics: Arc<RwLock<Diagnostics>>,
     /// Web servers readiness
     pub ready: Arc<RwLock<bool>>,
+    /// Shared secrets cache/retriever
+    pub secrets_cache: Arc<ExpiringSecretCache>,
 }
 
+impl State {
+    pub fn new(secrets_cache: Arc<ExpiringSecretCache>) -> Self {
+        Self {
+            diagnostics: Default::default(),
+            ready: Default::default(),
+            secrets_cache,
+        }
+    }
+}
 pub struct Diagnostics {
     pub last_event: DateTime<Utc>,
     pub reporter: Reporter,
@@ -99,6 +111,8 @@ pub struct Context<S> {
     pub scheduler: Arc<RwLock<Scheduler>>,
     /// Actual state of all Triggers
     pub triggers: Arc<RwLock<TriggersState<S>>>,
+    /// Shared secrets cache/retriever
+    pub secrets_cache: Arc<ExpiringSecretCache>,
 }
 
 /// State wrapper around the controller outputs for the web server
@@ -113,6 +127,7 @@ impl State {
         Arc::new(Context {
             client,
             diagnostics: self.diagnostics.clone(),
+            secrets_cache: self.secrets_cache.clone(),
             scheduler,
             triggers,
         })

@@ -17,10 +17,11 @@ use uuid::Uuid;
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::new();
 
-    let state = State::default();
     let client = Client::try_default().await?;
     let secrets_cache = ExpiringSecretCache::new(Duration::from_secs(30), client.clone());
+    let state = State::new(secrets_cache.clone());
     let identity = Uuid::new_v4().to_string();
+    
     let (mut lock_channel, lock_task) = lock::new(&identity, Some("default".into())).await;
     let mut signal_handler = SignalHandler::new().expect("unable to create signal handler");
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
