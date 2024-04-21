@@ -58,9 +58,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let ns = cli.source_namespace.unwrap_or("default".to_string());
-    let client = Client::try_default()
-        .await
-        .expect("failed to create kube Client");
+    let client = Client::try_default().await?;
 
     let reference_name = String::from(&cli.reference);
     let reference = TriggerGitRepoReference::from(&cli.reference);

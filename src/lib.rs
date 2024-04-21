@@ -13,18 +13,48 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("SerializationError: {0}")]
-    SerializationError(#[source] serde_json::Error),
+    SerializationError(
+        #[source]
+        #[from]
+        serde_json::Error,
+    ),
 
     #[error("Kube Error: {0}")]
-    KubeError(#[source] kube::Error),
+    KubeError(
+        #[source]
+        #[from]
+        kube::Error,
+    ),
+
+    #[error("Kube Error: {0}")]
+    KubertKubeError(
+        #[source]
+        #[from]
+        kubert_kube::Error,
+    ),
+
+    #[error("Kubert Error: {0}")]
+    LeaderLockError(
+        #[source]
+        #[from]
+        kubert::lease::Error,
+    ),
 
     #[error("Finalizer Error: {0}")]
     // NB: awkward type because finalizer::Error embeds the reconciler error (which is this)
     // so boxing this error to break cycles
-    FinalizerError(#[source] Box<kube::runtime::finalizer::Error<Error>>),
+    FinalizerError(
+        #[source]
+        #[from]
+        Box<kube::runtime::finalizer::Error<Error>>,
+    ),
 
     #[error("GitRepo Access Error: {0}")]
-    GitrepoAccessError(#[source] git2::Error),
+    GitrepoAccessError(
+        #[source]
+        #[from]
+        git2::Error,
+    ),
 
     #[error("GitRepo Secret Decoding Error: {0}")]
     SecretDecodingError(String),
@@ -48,7 +78,18 @@ pub enum Error {
     WrongTriggerConfig,
 
     #[error("Trigger file access IO error: {0}")]
-    TriggerFileAccessError(#[source] std::io::Error),
+    TriggerFileAccessError(
+        #[source]
+        #[from]
+        std::io::Error,
+    ),
+
+    #[error("Task scheduler error: {0}")]
+    SchedulerError(
+        #[source]
+        #[from]
+        sacs::Error,
+    ),
 }
 
 impl Error {

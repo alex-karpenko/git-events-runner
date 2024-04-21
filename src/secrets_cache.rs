@@ -82,7 +82,7 @@ impl SecretCache for ExpiringSecretCache {
             data: secret_data_raw,
             expires_at: SystemTime::now()
                 .checked_add(self.expiration_timeout)
-                .unwrap(),
+                .expect("looks like a BUG!"),
         };
         debug!("get: {hash_key}/{key} save to cache");
         cache.insert(hash_key, cache_data);

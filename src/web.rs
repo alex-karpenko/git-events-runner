@@ -135,7 +135,9 @@ pub async fn build_hooks_web(
         for _ in 0..10 {
             if Arc::strong_count(&scheduler) <= 1 {
                 info!("Shutting down WebhookTriggers task scheduler");
-                let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
+                let scheduler = Arc::into_inner(scheduler)
+                    .expect("more than one copies of scheduler is present, looks like a BUG!")
+                    .into_inner();
                 scheduler
                     .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
                     .await

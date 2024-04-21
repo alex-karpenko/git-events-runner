@@ -168,7 +168,9 @@ pub async fn run_leader_controllers(
     }
 
     info!("Shutting down ScheduleTriggers task scheduler");
-    let scheduler = Arc::into_inner(scheduler).unwrap().into_inner();
+    let scheduler = Arc::into_inner(scheduler)
+        .expect("more than one copies of scheduler is present, looks like a BUG!")
+        .into_inner();
     scheduler
         .shutdown(sacs::scheduler::ShutdownOpts::WaitForFinish)
         .await

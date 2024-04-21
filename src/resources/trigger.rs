@@ -269,7 +269,9 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
     async fn reconcile(&self, ctx: Arc<Context<ScheduleTriggerSpec>>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
-        let ns = self.namespace().unwrap();
+        let ns = self
+            .namespace()
+            .expect("unable to get resource namespace, looks like a BUG!");
         let triggers_api: Api<ScheduleTrigger> = Api::namespaced(client.clone(), &ns);
         let trigger_key = self.trigger_hash_key();
 
@@ -340,7 +342,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                         None,
                         ctx.triggers.clone(),
                     );
-                    let task_id = scheduler.add(task).await.unwrap(); // TODO: get rid of unwrap
+                    let task_id = scheduler.add(task).await.map_err(Error::SchedulerError)?;
                     let tasks = &mut triggers.tasks;
                     tasks.insert(self.trigger_hash_key(), task_id);
                 } else {
@@ -368,7 +370,8 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         info!(
             "Cleanup Trigger `{}` in {}",
             self.name_any(),
-            self.namespace().unwrap()
+            self.namespace()
+                .expect("unable to get resource namespace, looks like a BUG!")
         );
         let trigger_key = self.trigger_hash_key();
         // Remove from triggers map
@@ -413,7 +416,9 @@ impl Trigger<WebhookTriggerSpec> for WebhookTrigger {
 impl Reconcilable<WebhookTriggerSpec> for WebhookTrigger {
     async fn reconcile(&self, ctx: Arc<Context<WebhookTriggerSpec>>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
-        let ns = self.namespace().unwrap();
+        let ns = self
+            .namespace()
+            .expect("unable to get resource namespace, looks like a BUG!");
         let triggers_api: Api<WebhookTrigger> = Api::namespaced(client.clone(), &ns);
 
         // Create trigger status if it's not present yet
@@ -449,7 +454,8 @@ impl Reconcilable<WebhookTriggerSpec> for WebhookTrigger {
         info!(
             "Cleanup Trigger `{}` in {}",
             self.name_any(),
-            self.namespace().unwrap()
+            self.namespace()
+                .expect("unable to get resource namespace, looks like a BUG!")
         );
         let trigger_key = self.trigger_hash_key();
         // Remove from triggers map
@@ -544,7 +550,12 @@ where
     fn action(&self) -> &TriggerAction;
 
     fn trigger_hash_key(&self) -> String {
-        format!("{}/{}", self.namespace().unwrap(), self.name_any())
+        format!(
+            "{}/{}",
+            self.namespace()
+                .expect("unable to get resource namespace, looks like a BUG!"),
+            self.name_any()
+        )
     }
 
     fn update_trigger_status(
@@ -608,7 +619,9 @@ where
         triggers: Arc<RwLock<TriggersState<S>>>,
     ) -> Task {
         let trigger_name = self.name_any();
-        let trigger_ns = self.namespace().unwrap();
+        let trigger_ns = self
+            .namespace()
+            .expect("unable to get resource namespace, looks like a BUG!");
         Task::new(schedule, move |id| {
             let triggers = triggers.clone();
             let trigger_name = trigger_name.clone();
@@ -872,7 +885,9 @@ pub fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference)
         }
     };
 
-    let ref_obj = repo.find_object(oid, None).unwrap();
+    let ref_obj = repo
+        .find_object(oid, None)
+        .map_err(Error::GitrepoAccessError)?;
     repo.checkout_tree(&ref_obj, None)
         .map_err(Error::GitrepoAccessError)?;
 

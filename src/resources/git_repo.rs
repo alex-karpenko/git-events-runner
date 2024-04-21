@@ -165,10 +165,10 @@ impl GitRepo {
                 GitAuthType::Ssh => {
                     callbacks.credentials(move |_url, username_from_url, _allowed_types| {
                         Cred::ssh_key_from_memory(
-                            username_from_url.unwrap(),
+                            username_from_url.unwrap_or(""),
                             None,
                             auth_secrets["private_key"].clone().as_str(),
-                            None,
+                            None, // TODO: add support to keys with password
                         )
                     });
                 }
@@ -189,7 +189,7 @@ impl GitRepo {
                     // TODO: make system trust store global
                     let mut root_cert_store = RootCertStore::empty();
                     root_cert_store.add_parsable_certificates(
-                        rustls_native_certs::load_native_certs()
+                        rustls_native_certs::load_native_certs() // TODO: Use Mozilla bundle
                             .expect("could not load platform certs"),
                     );
                     root_cert_store.add_parsable_certificates(ca);
@@ -197,9 +197,32 @@ impl GitRepo {
                     callbacks.certificate_check(move |cert, hostname| {
                         let cert_verifier = WebPkiServerVerifier::builder(root_cert_store.clone())
                             .build()
-                            .unwrap();
-                        let end_entity = CertificateDer::from(cert.as_x509().unwrap().data());
-                        let hostname = ServerName::try_from(hostname).unwrap();
+                            .map_err(|_| {
+                                git2::Error::new(
+                                    git2::ErrorCode::Certificate,
+                                    git2::ErrorClass::Callback,
+                                    "unable to build root CA store",
+                                )
+                            })?;
+
+                        let end_entity = {
+                            if let Some(cert) = cert.as_x509() {
+                                CertificateDer::from(cert.data())
+                            } else {
+                                return Err(git2::Error::new(
+                                    git2::ErrorCode::Certificate,
+                                    git2::ErrorClass::Callback,
+                                    "unable to parse x509 certificate data",
+                                ));
+                            }
+                        };
+                        let hostname = ServerName::try_from(hostname).map_err(|_| {
+                            git2::Error::new(
+                                git2::ErrorCode::Certificate,
+                                git2::ErrorClass::Callback,
+                                "unable to get server name",
+                            )
+                        })?;
                         let result = cert_verifier.verify_server_cert(
                             &end_entity,
                             &[],
@@ -247,7 +270,9 @@ impl GitRepo {
         secret_name: &String,
         secret_keys: HashMap<&String, String>,
     ) -> Result<HashMap<String, String>> {
-        let ns = self.namespace().unwrap();
+        let ns = self
+            .namespace()
+            .expect("unable to get resource namespace, looks like a BUG!");
         let secret_api: Api<Secret> = Api::namespaced(client, &ns);
         let secret_ref = secret_api
             .get(secret_name)

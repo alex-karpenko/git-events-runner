@@ -1,3 +1,4 @@
+use crate::Result;
 use kubert::{
     lease::{Claim, ClaimParams, Error},
     LeaseManager,
@@ -17,10 +18,8 @@ const DEFAULT_LEADER_LOCK_LEASE_GRACE_SEC: u64 = 20;
 pub async fn new(
     identity: &String,
     namespace: Option<String>,
-) -> (watch::Receiver<Arc<Claim>>, JoinHandle<Result<(), Error>>) {
-    let client = Client::try_default()
-        .await
-        .expect("failed to create kube Client");
+) -> Result<(watch::Receiver<Arc<Claim>>, JoinHandle<Result<(), Error>>)> {
+    let client = Client::try_default().await?;
     let namespace = namespace.unwrap_or("default".into());
     let name: String = DEFAULT_LEADER_LOCK_LEASE_NAME.into();
 
@@ -52,16 +51,11 @@ pub async fn new(
         info!("Leader lock Lease {namespace}/{name} has been created");
     }
 
-    let manager = LeaseManager::init(api, name.clone())
-        .await
-        .expect("unable to create LeaseManager instance");
+    let manager = LeaseManager::init(api, name.clone()).await?;
     let params = ClaimParams {
         lease_duration: Duration::from_secs(DEFAULT_LEADER_LOCK_LEASE_DERATION_SEC),
         renew_grace_period: Duration::from_secs(DEFAULT_LEADER_LOCK_LEASE_GRACE_SEC),
     };
 
-    manager
-        .spawn(&identity, params)
-        .await
-        .expect("unable to create LeaseManager")
+    Ok(manager.spawn(&identity, params).await?)
 }

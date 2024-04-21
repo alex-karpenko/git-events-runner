@@ -110,11 +110,13 @@ impl Action {
         trigger_ref: &TriggerGitRepoReference,
         client: Client,
     ) -> Result<Job> {
-        let ns = self.namespace().unwrap();
+        let ns = self
+            .namespace()
+            .expect("unable to get resource's namespace, looks like a BUG!");
         let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref)?;
         let jobs_api: Api<Job> = Api::namespaced(client.clone(), &ns);
 
-        info!("Create job {}/{}", job.namespace().unwrap(), job.name_any());
+        info!("Create job {}/{}", ns, job.name_any());
         jobs_api
             .create(&PostParams::default(), &job)
             .await
@@ -142,7 +144,10 @@ impl Action {
 
         if source_kind == &TriggerSourceKind::GitRepo {
             args.push("--namespace".into());
-            args.push(self.namespace().unwrap());
+            args.push(
+                self.namespace()
+                    .expect("unable to get resource's namespace, looks like a BUG!"),
+            );
         }
 
         if self.spec.action_job.preserve_git_folder {
@@ -177,7 +182,9 @@ impl Action {
         if source_kind == &TriggerSourceKind::GitRepo {
             envs.push(Self::create_action_job_env_var(
                 "TRIGGER_SOURCE_NAMESPACE",
-                &self.namespace().unwrap(),
+                &self
+                    .namespace()
+                    .expect("unable to get resource's namespace, looks like a BUG!"),
             ));
         }
 
@@ -203,7 +210,9 @@ impl Action {
             if source_override.kind == TriggerSourceKind::GitRepo {
                 envs.push(Self::create_action_job_env_var(
                     "ACTION_SOURCE_NAMESPACE",
-                    &self.namespace().unwrap(),
+                    &self
+                        .namespace()
+                        .expect("unable to get resource's namespace, looks like a BUG!"),
                 ));
             }
         }
@@ -257,9 +266,14 @@ impl Action {
             metadata: ObjectMeta {
                 // TODO: make func
                 name: Some(self.job_name()),
-                namespace: Some(self.namespace().unwrap()),
+                namespace: Some(
+                    self.namespace()
+                        .expect("unable to get resource's namespace, looks like a BUG!"),
+                ),
                 labels: Some(labels),
-                owner_references: Some(vec![self.controller_owner_ref(&()).unwrap()]),
+                owner_references: Some(vec![self
+                    .controller_owner_ref(&())
+                    .expect("unable to get owner reference, looks like a BUG!")]),
                 ..Default::default()
             },
             spec: Some(JobSpec {
