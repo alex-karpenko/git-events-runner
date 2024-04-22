@@ -1,3 +1,4 @@
+use super::SecretRef;
 use crate::{Error, Result};
 use git2::{
     CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions,
@@ -14,8 +15,6 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use strum_macros::Display;
 use tracing::{debug, warn};
-
-use super::SecretRef;
 
 const URI_VALIDATION_REGEX: &str = r#"^git@[\w.-]+:[\w.-]+/[/\w.-]+$|^ssh://([\w.-]+@)?[\w.-]+(:[\d]{1,5})?(/([/\w.-]+)?)?$|^https?://[\w.-]+(:[\d]{1,5})?(/([/%&=\?\w.-]+)?)?$"#;
 

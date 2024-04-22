@@ -1,6 +1,11 @@
+use super::SecretRef;
 use crate::{
     controller::{Context, Reconcilable, TriggersState, API_GROUP, CURRENT_API_VERSION},
-    resources::{action::Action, git_repo::GitRepo, random_string},
+    resources::{
+        action::{Action, ActionExecutor, ClusterAction},
+        git_repo::GitRepo,
+        random_string,
+    },
     Error, Result,
 };
 use chrono::{DateTime, Utc};
@@ -38,9 +43,8 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 
-use super::SecretRef;
-
-const DEFAULT_TEMP_DIR: &str = "/tmp/git-event-runner";
+// TODO: Make this configurable
+const DEFAULT_TEMP_DIR: &str = "/tmp/git-events-runner";
 const DEFAULT_WEBHOOK_AUTH_HEADER: &str = "x-trigger-auth";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
@@ -790,13 +794,37 @@ where
                                                             .unwrap(),
                                                         &trigger.sources().watch_on.reference,
                                                         client.clone(),
+                                                        &trigger_ns,
                                                     )
                                                     .await
                                             }
                                             Err(err) => Err(Error::KubeError(err)),
                                         }
                                     }
-                                    TriggerActionKind::ClusterAction => todo!(),
+                                    TriggerActionKind::ClusterAction => {
+                                        let actions_api: Api<ClusterAction> =
+                                            Api::all(client.clone());
+                                        let action = actions_api.get(&trigger.action().name).await;
+                                        match action {
+                                            Ok(action) => {
+                                                // TODO: Should we retry in case of error?
+                                                action
+                                                    .execute(
+                                                        &trigger.sources().kind,
+                                                        &source,
+                                                        &new_source_state
+                                                            .commit_hash
+                                                            .clone()
+                                                            .unwrap(),
+                                                        &trigger.sources().watch_on.reference,
+                                                        client.clone(),
+                                                        &trigger_ns,
+                                                    )
+                                                    .await
+                                            }
+                                            Err(err) => Err(Error::KubeError(err)),
+                                        }
+                                    }
                                 };
                                 // - Update self.spec.... by latest processed commit
                                 match action_exec_result {

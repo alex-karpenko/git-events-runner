@@ -3,7 +3,7 @@ use git_events_runner::{
     controller::{run_leader_controllers, run_web_controllers, State, TriggersState},
     leader_lock,
     resources::{
-        action::Action,
+        action::{Action, ClusterAction},
         git_repo::GitRepo,
         trigger::{ScheduleTrigger, WebhookTrigger},
     },
@@ -136,6 +136,7 @@ fn generate_crds() -> anyhow::Result<()> {
         serde_yaml::to_string(&ScheduleTrigger::crd()).unwrap(),
         serde_yaml::to_string(&WebhookTrigger::crd()).unwrap(),
         serde_yaml::to_string(&Action::crd()).unwrap(),
+        serde_yaml::to_string(&ClusterAction::crd()).unwrap(),
     ];
 
     for crd in crds {
