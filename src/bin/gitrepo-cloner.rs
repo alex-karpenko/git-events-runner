@@ -1,6 +1,6 @@
 use clap::{Args, Parser};
 use git_events_runner::resources::{
-    git_repo::GitRepo,
+    git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
     trigger::{get_latest_commit, TriggerGitRepoReference, TriggerSourceKind},
 };
 use kube::{Api, Client};
@@ -76,10 +76,16 @@ async fn main() -> anyhow::Result<()> {
             let api = Api::<GitRepo>::namespaced(client.clone(), &ns);
             let gitrepo = api.get(&cli.source_name).await?;
             gitrepo
-                .fetch_repo_ref(client, &reference_name, &cli.destination)
+                .fetch_repo_ref(client, &reference_name, &cli.destination, &ns)
                 .await?
         }
-        TriggerSourceKind::ClusterGitRepo => todo!(),
+        TriggerSourceKind::ClusterGitRepo => {
+            let api = Api::<ClusterGitRepo>::all(client.clone());
+            let gitrepo = api.get(&cli.source_name).await?;
+            gitrepo
+                .fetch_repo_ref(client, &reference_name, &cli.destination, &ns)
+                .await?
+        }
     };
 
     get_latest_commit(&repo, &reference)?;

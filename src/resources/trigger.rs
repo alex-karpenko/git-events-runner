@@ -3,7 +3,7 @@ use crate::{
     controller::{Context, Reconcilable, TriggersState, API_GROUP, CURRENT_API_VERSION},
     resources::{
         action::{Action, ActionExecutor, ClusterAction},
-        git_repo::GitRepo,
+        git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
         random_string,
     },
     Error, Result,
@@ -697,7 +697,7 @@ where
                         if let Err(err) = create_dir_all(&repo_path).await {
                             error!("Unable to create temporary folder `{repo_path}`: {err:?}");
                         } else {
-                            match trigger.sources().kind {
+                            let repo = match trigger.sources().kind {
                                 // - Get GitRepo object
                                 TriggerSourceKind::GitRepo => {
                                     let gitrepo_api: Api<GitRepo> =
@@ -705,58 +705,14 @@ where
                                     let gitrepo = gitrepo_api.get(&source).await;
                                     // - Call repo.fetch_repo_ref(...) to get repository
                                     if let Ok(gitrepo) = gitrepo {
-                                        let repo = gitrepo
+                                        gitrepo
                                             .fetch_repo_ref(
                                                 client.clone(),
                                                 &trigger.sources().watch_on.reference_name(),
                                                 &repo_path,
+                                                &trigger_ns,
                                             )
-                                            .await;
-                                        // - Call get_latest_commit_hash(...) to get latest commit
-                                        if let Ok(repo) = repo {
-                                            let latest_commit = get_latest_commit(
-                                                &repo,
-                                                &trigger.sources().watch_on.reference,
-                                            );
-                                            if let Ok(latest_commit) = latest_commit {
-                                                debug!("Latest commit: {:?}", latest_commit);
-                                                new_source_state.commit_hash =
-                                                    Some(latest_commit.to_string());
-                                                // - Get file hash if it's required and present
-                                                if let Some(path) =
-                                                    &trigger.sources().watch_on.file_
-                                                {
-                                                    let full_path = format!("{repo_path}/{path}");
-                                                    let is_exists = try_exists(&full_path).await;
-                                                    if is_exists.is_ok() && is_exists.unwrap() {
-                                                        let file_hash =
-                                                            get_file_hash(&full_path).await;
-                                                        if let Ok(file_hash) = file_hash {
-                                                            debug!("File hash: {file_hash}");
-                                                            new_source_state.file_hash =
-                                                                Some(file_hash);
-                                                        } else {
-                                                            error!(
-                                                                    "Unable to calc file `{path}` hash: {:?}",
-                                                                    file_hash.err()
-                                                                );
-                                                        }
-                                                    } else {
-                                                        warn!("File `{path}` doesn't exits");
-                                                    }
-                                                }
-                                            } else {
-                                                error!("Unable to get latest commit from GitRepo `{source}`: {:?} ", latest_commit.err());
-                                                continue;
-                                            }
-                                        } else {
-                                            error!(
-                                                "Unable to fetch GitRepo `{}` from remote: {:?}",
-                                                source,
-                                                repo.err()
-                                            );
-                                            continue;
-                                        }
+                                            .await
                                     } else {
                                         error!(
                                             "Unable to get GitRepo {trigger_ns}/{source}: {:?}",
@@ -765,7 +721,66 @@ where
                                         continue;
                                     }
                                 }
-                                TriggerSourceKind::ClusterGitRepo => todo!(),
+                                TriggerSourceKind::ClusterGitRepo => {
+                                    let gitrepo_api: Api<ClusterGitRepo> = Api::all(client.clone());
+                                    let gitrepo = gitrepo_api.get(&source).await;
+                                    // - Call repo.fetch_repo_ref(...) to get repository
+                                    if let Ok(gitrepo) = gitrepo {
+                                        gitrepo
+                                            .fetch_repo_ref(
+                                                client.clone(),
+                                                &trigger.sources().watch_on.reference_name(),
+                                                &repo_path,
+                                                &trigger_ns,
+                                            )
+                                            .await
+                                    } else {
+                                        error!(
+                                            "Unable to get GitRepo {trigger_ns}/{source}: {:?}",
+                                            gitrepo.err()
+                                        );
+                                        continue;
+                                    }
+                                }
+                            };
+
+                            // - Call get_latest_commit_hash(...) to get latest commit
+                            if let Ok(repo) = repo {
+                                let latest_commit =
+                                    get_latest_commit(&repo, &trigger.sources().watch_on.reference);
+                                if let Ok(latest_commit) = latest_commit {
+                                    debug!("Latest commit: {:?}", latest_commit);
+                                    new_source_state.commit_hash = Some(latest_commit.to_string());
+                                    // - Get file hash if it's required and present
+                                    if let Some(path) = &trigger.sources().watch_on.file_ {
+                                        let full_path = format!("{repo_path}/{path}");
+                                        let is_exists = try_exists(&full_path).await;
+                                        if is_exists.is_ok() && is_exists.unwrap() {
+                                            let file_hash = get_file_hash(&full_path).await;
+                                            if let Ok(file_hash) = file_hash {
+                                                debug!("File hash: {file_hash}");
+                                                new_source_state.file_hash = Some(file_hash);
+                                            } else {
+                                                error!(
+                                                    "Unable to calc file `{path}` hash: {:?}",
+                                                    file_hash.err()
+                                                );
+                                            }
+                                        } else {
+                                            warn!("File `{path}` doesn't exits");
+                                        }
+                                    }
+                                } else {
+                                    error!("Unable to get latest commit from GitRepo `{source}`: {:?} ", latest_commit.err());
+                                    continue;
+                                }
+                            } else {
+                                error!(
+                                    "Unable to fetch GitRepo `{}` from remote: {:?}",
+                                    source,
+                                    repo.err()
+                                );
+                                continue;
                             }
 
                             // - Get self.status... latest processed hash for current source

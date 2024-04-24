@@ -4,7 +4,7 @@ use git_events_runner::{
     leader_lock,
     resources::{
         action::{Action, ClusterAction},
-        git_repo::GitRepo,
+        git_repo::{ClusterGitRepo, GitRepo},
         trigger::{ScheduleTrigger, WebhookTrigger},
     },
     secrets_cache::ExpiringSecretCache,
@@ -133,6 +133,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
 fn generate_crds() -> anyhow::Result<()> {
     let crds = vec![
         serde_yaml::to_string(&GitRepo::crd()).unwrap(),
+        serde_yaml::to_string(&ClusterGitRepo::crd()).unwrap(),
         serde_yaml::to_string(&ScheduleTrigger::crd()).unwrap(),
         serde_yaml::to_string(&WebhookTrigger::crd()).unwrap(),
         serde_yaml::to_string(&Action::crd()).unwrap(),

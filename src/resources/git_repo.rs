@@ -1,10 +1,9 @@
-use super::SecretRef;
+use super::{get_secret_strings, SecretRef};
 use crate::{Error, Result};
 use git2::{
     CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions,
 };
-use k8s_openapi::api::core::v1::Secret;
-use kube::{Api, Client, CustomResource, ResourceExt};
+use kube::{Client, CustomResource};
 use rustls::{
     client::{danger::ServerCertVerifier, WebPkiServerVerifier},
     pki_types::{CertificateDer, ServerName, UnixTime},
@@ -28,6 +27,23 @@ const URI_VALIDATION_REGEX: &str = r#"^git@[\w.-]+:[\w.-]+/[/\w.-]+$|^ssh://([\w
 )]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoSpec {
+    #[schemars(regex = "URI_VALIDATION_REGEX")]
+    pub repo_uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls_config: Option<TlsConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_config: Option<GitAuthConfig>,
+}
+
+#[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[cfg_attr(test, derive(Default))]
+#[kube(
+    kind = "ClusterGitRepo",
+    group = "git-events-runner.rs",
+    version = "v1alpha1"
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterGitRepoSpec {
     #[schemars(regex = "URI_VALIDATION_REGEX")]
     pub repo_uri: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -98,41 +114,89 @@ impl Default for GitAuthSecretKeys {
     }
 }
 
-impl GitRepo {
-    pub async fn fetch_repo_ref(
+impl GitRepoGetter for GitRepo {}
+impl GitRepoGetter for ClusterGitRepo {}
+
+trait GitRepoInternals {
+    fn auth_config(&self) -> &Option<GitAuthConfig>;
+    fn tls_config(&self) -> &Option<TlsConfig>;
+    fn repo_uri(&self) -> &String;
+}
+
+impl GitRepoInternals for GitRepo {
+    fn auth_config(&self) -> &Option<GitAuthConfig> {
+        &self.spec.auth_config
+    }
+
+    fn tls_config(&self) -> &Option<TlsConfig> {
+        &self.spec.tls_config
+    }
+
+    fn repo_uri(&self) -> &String {
+        &self.spec.repo_uri
+    }
+}
+
+impl GitRepoInternals for ClusterGitRepo {
+    fn auth_config(&self) -> &Option<GitAuthConfig> {
+        &self.spec.auth_config
+    }
+
+    fn tls_config(&self) -> &Option<TlsConfig> {
+        &self.spec.tls_config
+    }
+
+    fn repo_uri(&self) -> &String {
+        &self.spec.repo_uri
+    }
+}
+
+#[allow(private_bounds, async_fn_in_trait)]
+pub trait GitRepoGetter: GitRepoInternals {
+    async fn fetch_repo_ref(
         &self,
         client: Client,
         ref_name: &String,
         path: &String,
+        secrets_ns: &str,
     ) -> Result<Repository> {
         // Determine which secrets are mandatory and fetch them
-        let auth_secrets: HashMap<String, String> =
-            if let Some(auth_config) = &self.spec.auth_config {
-                let mut secret_keys: HashMap<&String, String> = HashMap::new();
-                match auth_config.auth_type {
-                    GitAuthType::Basic => {
-                        secret_keys.insert(&auth_config.keys.username, "username".into());
-                        secret_keys.insert(&auth_config.keys.password, "password".into());
-                    }
-                    GitAuthType::Token => {
-                        secret_keys.insert(&auth_config.keys.token, "token".into());
-                    }
-                    GitAuthType::Ssh => {
-                        secret_keys.insert(&auth_config.keys.private_key, "private_key".into());
-                    }
+        let auth_secrets: HashMap<String, String> = if let Some(auth_config) = self.auth_config() {
+            let mut secret_keys: HashMap<&String, String> = HashMap::new();
+            match auth_config.auth_type {
+                GitAuthType::Basic => {
+                    secret_keys.insert(&auth_config.keys.username, "username".into());
+                    secret_keys.insert(&auth_config.keys.password, "password".into());
                 }
-                self.get_secret_strings(client.clone(), &auth_config.secret_ref.name, secret_keys)
-                    .await?
-            } else {
-                HashMap::new()
-            };
+                GitAuthType::Token => {
+                    secret_keys.insert(&auth_config.keys.token, "token".into());
+                }
+                GitAuthType::Ssh => {
+                    secret_keys.insert(&auth_config.keys.private_key, "private_key".into());
+                }
+            }
+            get_secret_strings(
+                client.clone(),
+                &auth_config.secret_ref.name,
+                secret_keys,
+                secrets_ns,
+            )
+            .await?
+        } else {
+            HashMap::new()
+        };
 
-        let tls_secrets: HashMap<String, String> = if let Some(tls_config) = &self.spec.tls_config {
+        let tls_secrets: HashMap<String, String> = if let Some(tls_config) = self.tls_config() {
             let mut secret_keys: HashMap<&String, String> = HashMap::new();
             if let Some(ca_cert) = &tls_config.ca_cert {
                 secret_keys.insert(&ca_cert.key, "ca.crt".into());
-                self.get_secret_strings(client.clone(), &ca_cert.secret_ref.name, secret_keys)
-                    .await?
+                get_secret_strings(
+                    client.clone(),
+                    &ca_cert.secret_ref.name,
+                    secret_keys,
+                    secrets_ns,
+                )
+                .await?
             } else {
                 HashMap::new()
             }
@@ -144,7 +208,7 @@ impl GitRepo {
         let mut callbacks = RemoteCallbacks::new();
         let mut init_opts = RepositoryInitOptions::new();
         let mut fetch_opt = FetchOptions::default();
-        if let Some(auth_config) = &self.spec.auth_config {
+        if let Some(auth_config) = self.auth_config() {
             match auth_config.auth_type {
                 GitAuthType::Basic => {
                     callbacks.credentials(move |_url, _username_from_url, _allowed_types| {
@@ -174,7 +238,7 @@ impl GitRepo {
             }
         }
 
-        if let Some(tls_config) = &self.spec.tls_config {
+        if let Some(tls_config) = self.tls_config() {
             if tls_config.no_verify_ssl {
                 callbacks.certificate_check(move |_cert, _hostname| {
                     debug!("certificate check callback: no_verify_ssl=true");
@@ -247,7 +311,7 @@ impl GitRepo {
 
         fetch_opt.remote_callbacks(callbacks);
         fetch_opt.depth(1);
-        init_opts.origin_url(&self.spec.repo_uri);
+        init_opts.origin_url(self.repo_uri());
 
         let repo = Repository::init_opts(path, &init_opts).map_err(Error::GitrepoAccessError)?;
         {
@@ -260,50 +324,5 @@ impl GitRepo {
         }
 
         Ok(repo)
-    }
-
-    // TODO: move to lib
-    async fn get_secret_strings(
-        &self,
-        client: Client,
-        secret_name: &String,
-        secret_keys: HashMap<&String, String>,
-    ) -> Result<HashMap<String, String>> {
-        let ns = self
-            .namespace()
-            .expect("unable to get resource namespace, looks like a BUG!");
-        let secret_api: Api<Secret> = Api::namespaced(client, &ns);
-        let secret_ref = secret_api
-            .get(secret_name)
-            .await
-            .map_err(Error::KubeError)?;
-        let mut secrets: HashMap<String, String> = HashMap::new();
-
-        for (secret_key, expected_key) in secret_keys.into_iter() {
-            let secret_data_b64 = secret_ref.clone().data.ok_or_else(|| {
-                Error::SecretDecodingError(format!(
-                    "no `data` part in the secret `{}`",
-                    secret_name
-                ))
-            })?;
-            let secret_data = secret_data_b64
-                .get(secret_key)
-                .ok_or_else(|| {
-                    Error::SecretDecodingError(format!(
-                        "no `{}` key in the secret `{}`",
-                        secret_key, secret_name
-                    ))
-                })?
-                .to_owned();
-            let secret_data = String::from_utf8(secret_data.0).map_err(|_e| {
-                Error::SecretDecodingError(format!(
-                    "error converting string `{}` from UTF8 in the secret `{}`",
-                    secret_key, secret_name
-                ))
-            })?;
-            secrets.insert(expected_key, secret_data);
-        }
-
-        Ok(secrets)
     }
 }
