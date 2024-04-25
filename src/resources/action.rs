@@ -187,14 +187,12 @@ trait ActionInternals: Sized + Resource {
                 &source_override.kind,
                 &source_override.name,
                 &source_override.reference,
-                ns.to_string(),
             )
         } else {
             self.get_gitrepo_cloner_args(
                 source_kind,
                 source_name,
                 &TriggerGitRepoReference::Commit(source_commit.into()),
-                ns.to_string(),
             )
         };
 
@@ -320,7 +318,6 @@ trait ActionInternals: Sized + Resource {
         source_kind: &TriggerSourceKind,
         source_name: &str,
         source_ref: &TriggerGitRepoReference,
-        ns: String,
     ) -> Vec<String> {
         let action_job = self.action_job_spec();
 
@@ -336,11 +333,6 @@ trait ActionInternals: Sized + Resource {
         let (ref_type, ref_name) = source_ref.to_refname(Some("--"));
         args.push(ref_type);
         args.push(ref_name.clone());
-
-        if source_kind == &TriggerSourceKind::GitRepo {
-            args.push("--namespace".into());
-            args.push(ns);
-        }
 
         if self.action_job_spec().preserve_git_folder {
             args.push("--preserve-git-folder".into());

@@ -1,9 +1,9 @@
-use super::{get_secret_strings, SecretRef};
 use crate::{Error, Result};
 use git2::{
     CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions,
 };
-use kube::{Client, CustomResource};
+use k8s_openapi::api::core::v1::Secret;
+use kube::{Api, Client, CustomResource};
 use rustls::{
     client::{danger::ServerCertVerifier, WebPkiServerVerifier},
     pki_types::{CertificateDer, ServerName, UnixTime},
@@ -114,6 +114,14 @@ impl Default for GitAuthSecretKeys {
     }
 }
 
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretRef {
+    pub(crate) name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) namespace: Option<String>,
+}
+
 impl GitRepoGetter for GitRepo {}
 impl GitRepoGetter for ClusterGitRepo {}
 
@@ -121,6 +129,7 @@ trait GitRepoInternals {
     fn auth_config(&self) -> &Option<GitAuthConfig>;
     fn tls_config(&self) -> &Option<TlsConfig>;
     fn repo_uri(&self) -> &String;
+    fn is_namespaced(&self) -> bool;
 }
 
 impl GitRepoInternals for GitRepo {
@@ -134,6 +143,10 @@ impl GitRepoInternals for GitRepo {
 
     fn repo_uri(&self) -> &String {
         &self.spec.repo_uri
+    }
+
+    fn is_namespaced(&self) -> bool {
+        true
     }
 }
 
@@ -149,6 +162,10 @@ impl GitRepoInternals for ClusterGitRepo {
     fn repo_uri(&self) -> &String {
         &self.spec.repo_uri
     }
+
+    fn is_namespaced(&self) -> bool {
+        false
+    }
 }
 
 #[allow(private_bounds, async_fn_in_trait)]
@@ -158,7 +175,7 @@ pub trait GitRepoGetter: GitRepoInternals {
         client: Client,
         ref_name: &String,
         path: &String,
-        secrets_ns: &str,
+        secrets_ns: &String,
     ) -> Result<Repository> {
         // Determine which secrets are mandatory and fetch them
         let auth_secrets: HashMap<String, String> = if let Some(auth_config) = self.auth_config() {
@@ -175,11 +192,20 @@ pub trait GitRepoGetter: GitRepoInternals {
                     secret_keys.insert(&auth_config.keys.private_key, "private_key".into());
                 }
             }
+            let ns = if self.is_namespaced() {
+                secrets_ns
+            } else {
+                auth_config
+                    .secret_ref
+                    .namespace
+                    .as_ref()
+                    .unwrap_or(secrets_ns)
+            };
             get_secret_strings(
                 client.clone(),
                 &auth_config.secret_ref.name,
                 secret_keys,
-                secrets_ns,
+                ns,
             )
             .await?
         } else {
@@ -190,13 +216,15 @@ pub trait GitRepoGetter: GitRepoInternals {
             let mut secret_keys: HashMap<&String, String> = HashMap::new();
             if let Some(ca_cert) = &tls_config.ca_cert {
                 secret_keys.insert(&ca_cert.key, "ca.crt".into());
-                get_secret_strings(
-                    client.clone(),
-                    &ca_cert.secret_ref.name,
-                    secret_keys,
-                    secrets_ns,
-                )
-                .await?
+
+                let ns = if self.is_namespaced() {
+                    secrets_ns
+                } else {
+                    ca_cert.secret_ref.namespace.as_ref().unwrap_or(secrets_ns)
+                };
+
+                get_secret_strings(client.clone(), &ca_cert.secret_ref.name, secret_keys, ns)
+                    .await?
             } else {
                 HashMap::new()
             }
@@ -325,4 +353,42 @@ pub trait GitRepoGetter: GitRepoInternals {
 
         Ok(repo)
     }
+}
+
+async fn get_secret_strings<'a>(
+    client: Client,
+    secret_name: &'a String,
+    secret_keys: HashMap<&String, String>,
+    ns: &'a str,
+) -> Result<HashMap<String, String>> {
+    let secret_api: Api<Secret> = Api::namespaced(client, ns);
+    let secret_ref = secret_api
+        .get(secret_name)
+        .await
+        .map_err(Error::KubeError)?;
+    let mut secrets: HashMap<String, String> = HashMap::new();
+
+    for (secret_key, expected_key) in secret_keys.into_iter() {
+        let secret_data_b64 = secret_ref.clone().data.ok_or_else(|| {
+            Error::SecretDecodingError(format!("no `data` part in the secret `{}`", secret_name))
+        })?;
+        let secret_data = secret_data_b64
+            .get(secret_key)
+            .ok_or_else(|| {
+                Error::SecretDecodingError(format!(
+                    "no `{}` key in the secret `{}`",
+                    secret_key, secret_name
+                ))
+            })?
+            .to_owned();
+        let secret_data = String::from_utf8(secret_data.0).map_err(|_e| {
+            Error::SecretDecodingError(format!(
+                "error converting string `{}` from UTF8 in the secret `{}`",
+                secret_key, secret_name
+            ))
+        })?;
+        secrets.insert(expected_key, secret_data);
+    }
+
+    Ok(secrets)
 }

@@ -1,4 +1,3 @@
-use super::SecretRef;
 use crate::{
     controller::{Context, Reconcilable, TriggersState, API_GROUP, CURRENT_API_VERSION},
     resources::{
@@ -239,6 +238,12 @@ impl TriggerWebhookAuthConfig {
     fn default_header() -> String {
         DEFAULT_WEBHOOK_AUTH_HEADER.into()
     }
+}
+
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretRef {
+    pub(crate) name: String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]

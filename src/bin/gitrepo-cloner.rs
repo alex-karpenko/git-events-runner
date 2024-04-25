@@ -14,9 +14,6 @@ struct Cli {
     /// Source kind
     #[arg(long = "kind", short = 'k')]
     source_kind: TriggerSourceKind,
-    /// Source namespace (for namespaced types)
-    #[arg(long = "namespace", short = 'n')]
-    source_namespace: Option<String>,
     /// Source name
     #[arg(long = "source", short = 's')]
     source_name: String,
@@ -57,8 +54,8 @@ async fn main() -> anyhow::Result<()> {
     }
     tracing_subscriber::fmt::init();
 
-    let ns = cli.source_namespace.unwrap_or("default".to_string());
     let client = Client::try_default().await?;
+    let ns = client.default_namespace().to_owned();
 
     let reference_name = String::from(&cli.reference);
     let reference = TriggerGitRepoReference::from(&cli.reference);
