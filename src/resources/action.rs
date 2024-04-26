@@ -16,6 +16,7 @@ use kube::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::SystemTime};
+use strum::{Display, EnumString};
 use tracing::info;
 
 use super::{
@@ -58,7 +59,7 @@ pub struct ActionSpec {
 #[serde(rename_all = "camelCase")]
 pub struct ClusterActionSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
-    source_override: Option<ActionSourceOverride>,
+    source_override: Option<ClusterActionSourceOverride>,
     #[serde(default)]
     action_job: ActionJob,
 }
@@ -69,6 +70,24 @@ pub struct ActionSourceOverride {
     kind: TriggerSourceKind,
     name: String,
     reference: TriggerGitRepoReference,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterActionSourceOverride {
+    kind: TriggerClusterSourceKind,
+    name: String,
+    reference: TriggerGitRepoReference,
+}
+
+#[derive(
+    Deserialize, Serialize, Clone, Debug, Default, JsonSchema, EnumString, Display, PartialEq,
+)]
+#[serde(rename_all = "PascalCase")]
+#[strum(serialize_all = "PascalCase")]
+pub enum TriggerClusterSourceKind {
+    #[default]
+    ClusterGitRepo,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
@@ -356,7 +375,16 @@ impl ActionInternals for ClusterAction {
     }
 
     fn source_override_spec(&self) -> Option<ActionSourceOverride> {
-        self.spec.source_override.clone()
+        // Since ClusterAction restricts repo type to ClusterGitRepo only,
+        // we create ActionSourceOverride from ClusterActionSourceOverride
+        self.spec
+            .source_override
+            .as_ref()
+            .map(|value| ActionSourceOverride {
+                kind: TriggerSourceKind::ClusterGitRepo,
+                name: value.name.clone(),
+                reference: value.reference.clone(),
+            })
     }
 
     fn get_owner_reference(&self) -> OwnerReference {
