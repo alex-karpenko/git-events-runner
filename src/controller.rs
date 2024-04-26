@@ -1,4 +1,5 @@
 use crate::{
+    cli::CliConfig,
     resources::trigger::{
         ScheduleTrigger, ScheduleTriggerSpec, TriggerStatus, WebhookTrigger, WebhookTriggerSpec,
     },
@@ -60,14 +61,17 @@ pub struct State {
     pub ready: Arc<RwLock<bool>>,
     /// Shared secrets cache/retriever
     pub secrets_cache: Arc<ExpiringSecretCache>,
+    /// Cli config
+    pub cli_config: Arc<CliConfig>,
 }
 
 impl State {
-    pub fn new(secrets_cache: Arc<ExpiringSecretCache>) -> Self {
+    pub fn new(cli_config: Arc<CliConfig>, secrets_cache: Arc<ExpiringSecretCache>) -> Self {
         Self {
             diagnostics: Default::default(),
             ready: Default::default(),
             secrets_cache,
+            cli_config,
         }
     }
 }

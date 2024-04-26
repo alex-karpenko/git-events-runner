@@ -11,7 +11,7 @@ pub enum Cli {
     Run(CliConfig),
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 pub struct CliConfig {
     /// Port to listen on for webhooks
     #[arg(long, short, value_parser=clap::value_parser!(u16).range(1..), default_value = "8080")]

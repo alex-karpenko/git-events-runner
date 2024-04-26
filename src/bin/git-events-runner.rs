@@ -36,7 +36,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         Duration::from_secs(cli_config.secrets_cache_time),
         client.clone(),
     );
-    let state = State::new(secrets_cache.clone());
+    let state = State::new(Arc::new(cli_config.clone()), secrets_cache.clone());
     let identity = Uuid::new_v4().to_string();
 
     let (mut lock_channel, lock_task) = leader_lock::new(&identity, Some("default".into())).await?;
