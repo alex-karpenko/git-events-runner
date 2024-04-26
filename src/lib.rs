@@ -12,13 +12,6 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("SerializationError: {0}")]
-    SerializationError(
-        #[source]
-        #[from]
-        serde_json::Error,
-    ),
-
     #[error("Kube Error: {0}")]
     KubeError(
         #[source]
@@ -33,7 +26,7 @@ pub enum Error {
         kubert_kube::Error,
     ),
 
-    #[error("Kubert Error: {0}")]
+    #[error("Leader Lock Error: {0}")]
     LeaderLockError(
         #[source]
         #[from]
@@ -58,24 +51,6 @@ pub enum Error {
 
     #[error("GitRepo Secret Decoding Error: {0}")]
     SecretDecodingError(String),
-
-    #[error("Illegal Source")]
-    IllegalSource,
-
-    #[error("Wrong Secret Reference")]
-    WrongSecretReference,
-
-    #[error("Wrong Repository Authentication Config")]
-    WrongAuthConfig,
-
-    #[error("Wrong Source Uri")]
-    WrongSourceUri,
-
-    #[error("Wrong TLS Config")]
-    WrongTlsConfig,
-
-    #[error("Wrong Trigger Config")]
-    WrongTriggerConfig,
 
     #[error("Trigger file access IO error: {0}")]
     TriggerFileAccessError(

@@ -362,10 +362,7 @@ async fn get_secret_strings<'a>(
     ns: &'a str,
 ) -> Result<HashMap<String, String>> {
     let secret_api: Api<Secret> = Api::namespaced(client, ns);
-    let secret_ref = secret_api
-        .get(secret_name)
-        .await
-        .map_err(Error::KubeError)?;
+    let secret_ref = secret_api.get(secret_name).await?;
     let mut secrets: HashMap<String, String> = HashMap::new();
 
     for (secret_key, expected_key) in secret_keys.into_iter() {

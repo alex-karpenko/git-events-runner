@@ -351,7 +351,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                         None,
                         ctx.triggers.clone(),
                     );
-                    let task_id = scheduler.add(task).await.map_err(Error::SchedulerError)?;
+                    let task_id = scheduler.add(task).await?;
                     let tasks = &mut triggers.tasks;
                     tasks.insert(self.trigger_hash_key(), task_id);
                 } else {
@@ -539,8 +539,7 @@ impl ScheduleTrigger {
                 action: action.into(),
                 secondary: None,
             })
-            .await
-            .map_err(Error::KubeError)?;
+            .await?;
 
         Ok(())
     }
@@ -609,10 +608,7 @@ where
                 }
             }));
             let pp = PatchParams::apply("cntrlr").force();
-            let _o = api
-                .patch_status(&name, &pp, &status)
-                .await
-                .map_err(Error::KubeError)?;
+            let _o = api.patch_status(&name, &pp, &status).await?;
 
             triggers.statuses.insert(trigger_key, new_status);
 

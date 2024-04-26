@@ -58,10 +58,7 @@ impl SecretCache for ExpiringSecretCache {
         let mut cache = self.cache.write().await;
         debug!("get: {hash_key}/{key} try to retrieve and save in cache");
         let secrets_api: Api<Secret> = Api::namespaced(self.client.clone(), namespace);
-        let secret = secrets_api
-            .get(secret_name)
-            .await
-            .map_err(Error::KubeError)?;
+        let secret = secrets_api.get(secret_name).await?;
 
         let secret_data_raw = secret.clone().data.ok_or_else(|| {
             Error::SecretDecodingError(format!("no `data` part in the secret `{secret_name}`"))
