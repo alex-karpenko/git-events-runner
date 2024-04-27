@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - main
-      - feat/first-draft-implementation
 
 jobs:
   release-charts:
