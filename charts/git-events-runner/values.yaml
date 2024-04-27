@@ -137,8 +137,11 @@ tolerations: []
 
 affinity: {}
 
-controllerConfig:
+controllerOptions:
   logLevel: info
+  leaderLease:
+    duration: 30
+    grace: 20
   scheduleParallelism: 16
   webhooksParallelism: 16
   secretsCacheTime: 60 # seconds
@@ -146,3 +149,20 @@ controllerConfig:
   sourceCloneFolder:
     mountPath: /tmp/git-events-runner
     volumeName: temp-repo-data
+
+controllerConfig:
+  action:
+    workdir:
+      mountPath: /action_workdir
+      volumeName: action-workdir
+    images:
+      cloner: ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:{{ .Chart.AppVersion }}
+      action: docker.io/bash:latest
+    containerNames:
+      init: action-init
+      worker: action-worker
+    jobConfig:
+      envVarPrefix: ACTION_JOB_
+
+  webhookTrigger:
+    defaultAuthHeader: x-trigger-auth

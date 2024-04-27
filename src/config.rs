@@ -2,7 +2,10 @@ use clap::Parser;
 use tracing::debug;
 use tracing_subscriber::{filter::LevelFilter, fmt, EnvFilter};
 
+const CONFIG_MAP_DATA_NAME: &str = "controllerConfig";
 const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
+const DEFAULT_CONFIG_MAP_NAME: &str = "git-events-runner";
+const DEFAULT_LEADER_LOCK_LEASE_NAME: &str = "git-events-runner-leader-lock";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -38,6 +41,22 @@ pub struct CliConfig {
     /// Path (within container) to clone repo to
     #[arg(long, default_value = DEFAULT_SOURCE_CLONE_FOLDER)]
     pub source_clone_folder: String,
+
+    /// Name of the ConfigMap with dynamic controller config
+    #[arg(long, default_value = DEFAULT_CONFIG_MAP_NAME)]
+    pub config_map_name: String,
+
+    /// Name of the Lease for leader locking
+    #[arg(long, default_value = DEFAULT_LEADER_LOCK_LEASE_NAME)]
+    pub leader_lease_name: String,
+
+    /// Leader lease duration, seconds
+    #[arg(long, default_value = "30")]
+    pub leader_lease_duration: u64,
+
+    /// Leader lease grace interval, seconds
+    #[arg(long, default_value = "20")]
+    pub leader_lease_grace: u64,
 
     /// Enable extreme logging (debug)
     #[arg(short, long)]

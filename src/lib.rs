@@ -1,4 +1,4 @@
-pub mod cli;
+pub mod config;
 pub mod controller;
 pub mod leader_lock;
 pub mod resources;

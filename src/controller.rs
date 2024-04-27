@@ -1,5 +1,5 @@
 use crate::{
-    cli::CliConfig,
+    config::CliConfig,
     resources::trigger::{
         ScheduleTrigger, ScheduleTriggerSpec, TriggerStatus, WebhookTrigger, WebhookTriggerSpec,
     },

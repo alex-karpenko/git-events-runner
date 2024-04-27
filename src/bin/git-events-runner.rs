@@ -1,5 +1,5 @@
 use git_events_runner::{
-    cli::{Cli, CliConfig},
+    config::{Cli, CliConfig},
     controller::{run_leader_controllers, run_web_controllers, State, TriggersState},
     leader_lock,
     resources::{

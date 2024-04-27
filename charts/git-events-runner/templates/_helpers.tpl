@@ -71,3 +71,17 @@ Create the name of the action job service account to use
 {{- default "default" .Values.actionJobServiceAccounts.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the ConfigMap with dynamic controller config
+*/}}
+{{- define "git-events-runner.configMapName" -}}
+{{- printf "%s-config" (include "git-events-runner.fullname" .) }}
+{{- end }}
+
+{{/*
+Create the name of the Lease with leader lock
+*/}}
+{{- define "git-events-runner.leaderLeaseName" -}}
+{{- printf "%s-leader-lock" (include "git-events-runner.fullname" .) }}
+{{- end }}

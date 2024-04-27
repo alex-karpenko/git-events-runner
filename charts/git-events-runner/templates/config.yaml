@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "git-events-runner.configMapName" . }}
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+data:
+  controllerConfig: |
+{{ tpl (toYaml .Values.controllerConfig) . | indent 4 }}

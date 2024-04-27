@@ -43,12 +43,20 @@ spec:
             - --webhooks-parallelism
             - {{ .Values.service.webhooksParallelism | default 16 | quote }}
             - --secrets-cache-time
-            - {{ .Values.controllerConfig.secretsCacheTime | default 60 | quote }}
+            - {{ .Values.controllerOptions.secretsCacheTime | default 60 | quote }}
             - --source-clone-folder
-            - {{ .Values.controllerConfig.sourceCloneFolder.mountPath | default "/tmp/git-events-runner" | quote }}
-            {{- if eq .Values.controllerConfig.logLevel "debug" }}
+            - {{ .Values.controllerOptions.sourceCloneFolder.mountPath | default "/tmp/git-events-runner" | quote }}
+            - --config-map-name
+            - {{ include "git-events-runner.configMapName" . }}
+            - --leader-lease-name
+            - {{ include "git-events-runner.leaderLeaseName" . }}
+            - --leader-lease-duration
+            - {{ .Values.controllerOptions.leaderLease.duration | default 30 | quote }}
+            - --leader-lease-grace
+            - {{ .Values.controllerOptions.leaderLease.grace | default 20 | quote }}
+            {{- if eq .Values.controllerOptions.logLevel "debug" }}
             - --debug
-            {{- else if eq .Values.controllerConfig.logLevel "info" }}
+            {{- else if eq .Values.controllerOptions.logLevel "info" }}
             - --verbose
             {{- end }}
           securityContext:
@@ -69,7 +77,7 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-          {{- with .Values.controllerConfig.sourceCloneFolder }}
+          {{- with .Values.controllerOptions.sourceCloneFolder }}
             - name: {{ .volumeName }}
               mountPath: {{ .mountPath }}
           {{- end }}
@@ -77,7 +85,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
-      {{- with .Values.controllerConfig.sourceCloneFolder }}
+      {{- with .Values.controllerOptions.sourceCloneFolder }}
         - name: {{ .volumeName }}
           emptyDir: {}
       {{- end }}
