@@ -39,9 +39,13 @@ spec:
             - --utility-port
             - {{ .Values.service.utility | default 3000 | quote }}
             - --schedule-parallelism
-            - {{ .Values.service.parallelism | default 16 | quote }}
+            - {{ .Values.service.scheduleParallelism | default 16 | quote }}
+            - --webhooks-parallelism
+            - {{ .Values.service.webhooksParallelism | default 16 | quote }}
             - --secrets-cache-time
             - {{ .Values.controllerConfig.secretsCacheTime | default 60 | quote }}
+            - --source-clone-folder
+            - {{ .Values.controllerConfig.sourceCloneFolder.mountPath | default "/tmp/git-events-runner" | quote }}
             {{- if eq .Values.controllerConfig.logLevel "debug" }}
             - --debug
             {{- else if eq .Values.controllerConfig.logLevel "info" }}
@@ -65,7 +69,7 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-          {{- with .Values.controllerConfig.sourceCloneTempFolder }}
+          {{- with .Values.controllerConfig.sourceCloneFolder }}
             - name: {{ .volumeName }}
               mountPath: {{ .mountPath }}
           {{- end }}
@@ -73,7 +77,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
-      {{- with .Values.controllerConfig.sourceCloneTempFolder }}
+      {{- with .Values.controllerConfig.sourceCloneFolder }}
         - name: {{ .volumeName }}
           emptyDir: {}
       {{- end }}

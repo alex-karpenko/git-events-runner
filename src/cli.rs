@@ -2,6 +2,8 @@ use clap::Parser;
 use tracing::debug;
 use tracing_subscriber::{filter::LevelFilter, fmt, EnvFilter};
 
+const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
+
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 pub enum Cli {
@@ -29,9 +31,13 @@ pub struct CliConfig {
     #[arg(long, value_parser=clap::value_parser!(u16).range(1..256), default_value = "16")]
     pub schedule_parallelism: u16,
 
-    /// Seconds to cache secrets
+    /// Seconds to cache secrets for
     #[arg(long, default_value = "30")]
     pub secrets_cache_time: u64,
+
+    /// Path (within container) to clone repo to
+    #[arg(long, default_value = DEFAULT_SOURCE_CLONE_FOLDER)]
+    pub source_clone_folder: String,
 
     /// Enable extreme logging (debug)
     #[arg(short, long)]
@@ -47,6 +53,7 @@ pub struct CliConfig {
 
 impl Cli {
     /// Constructs CLI config
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Cli {
         let cli: Cli = Parser::parse();
         cli.setup_logger();
@@ -79,19 +86,5 @@ impl Cli {
             subscriber.event_format(log_format.compact()).init();
             // };
         }
-    }
-}
-
-impl Default for Cli {
-    fn default() -> Self {
-        Self::Run(CliConfig {
-            webhooks_port: 8080,
-            utility_port: 3000,
-            webhooks_parallelism: 16,
-            schedule_parallelism: 16,
-            secrets_cache_time: 60,
-            debug: false,
-            verbose: false,
-        })
     }
 }

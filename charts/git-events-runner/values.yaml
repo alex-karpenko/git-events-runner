@@ -113,6 +113,11 @@ autoscaling:
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
 
+pdb:
+  enabled: true
+  # maxUnavailable: 1
+  # minAvailable: 1
+
 # Additional volumes on the output Deployment definition.
 volumes: []
 # - name: foo
@@ -134,9 +139,10 @@ affinity: {}
 
 controllerConfig:
   logLevel: info
-  parallelism: 16
+  scheduleParallelism: 16
+  webhooksParallelism: 16
   secretsCacheTime: 60 # seconds
   # emptyDir volume will be created
-  sourceCloneTempFolder:
+  sourceCloneFolder:
     mountPath: /tmp/git-events-runner
     volumeName: temp-repo-data
