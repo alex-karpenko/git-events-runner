@@ -35,7 +35,7 @@ pub struct CliConfig {
     pub schedule_parallelism: u16,
 
     /// Seconds to cache secrets for
-    #[arg(long, default_value = "30")]
+    #[arg(long, value_parser=clap::value_parser!(u64).range(1..), default_value = "60")]
     pub secrets_cache_time: u64,
 
     /// Path (within container) to clone repo to
@@ -51,11 +51,11 @@ pub struct CliConfig {
     pub leader_lease_name: String,
 
     /// Leader lease duration, seconds
-    #[arg(long, default_value = "30")]
+    #[arg(long, value_parser=clap::value_parser!(u64).range(1..301), default_value = "30")]
     pub leader_lease_duration: u64,
 
     /// Leader lease grace interval, seconds
-    #[arg(long, default_value = "20")]
+    #[arg(long, value_parser=clap::value_parser!(u64).range(1..301), default_value = "20")]
     pub leader_lease_grace: u64,
 
     /// Enable extreme logging (debug)

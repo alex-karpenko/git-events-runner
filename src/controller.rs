@@ -12,7 +12,7 @@ use k8s_openapi::NamespaceResourceScope;
 use kube::{
     api::ListParams,
     runtime::{
-        controller::Action as ReconcileAction,
+        controller::{self, Action as ReconcileAction},
         events::{Recorder, Reporter},
         finalizer::{finalizer, Event as Finalizer},
         watcher::Config,
@@ -28,7 +28,9 @@ use sacs::{
     task::TaskId,
 };
 use serde::{de::DeserializeOwned, Serialize};
-use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc};
+use std::{
+    clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration,
+};
 use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
@@ -156,6 +158,7 @@ pub async fn run_leader_controllers(
         let mut shutdown = shutdown_channel.clone();
         controllers.push(tokio::task::spawn(
             Controller::new(triggers_api, Config::default().any_semantic())
+                .with_config(controller::Config::default().debounce(Duration::from_millis(500)))
                 .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
                 .run(
                     reconcile_namespaced::<ScheduleTrigger, ScheduleTriggerSpec>,
@@ -199,6 +202,7 @@ pub async fn run_web_controllers(
         let mut shutdown = shutdown_channel.clone();
         controllers.push(tokio::task::spawn(
             Controller::new(triggers_api, Config::default().any_semantic())
+                .with_config(controller::Config::default().debounce(Duration::from_millis(500)))
                 .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
                 .run(
                     reconcile_namespaced::<WebhookTrigger, WebhookTriggerSpec>,
@@ -233,8 +237,10 @@ where
 pub trait Reconcilable<S> {
     async fn reconcile(&self, ctx: Arc<Context<S>>) -> Result<ReconcileAction>;
     async fn cleanup(&self, ctx: Arc<Context<S>>) -> Result<ReconcileAction>;
-    fn finalizer_name(&self) -> String;
     fn kind(&self) -> &str;
+    fn finalizer_name(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 fn error_policy<K, S>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context<S>>) -> ReconcileAction
@@ -264,17 +270,16 @@ where
         resource.name_any(),
         ns
     );
-    finalizer(
-        &resource_api,
-        resource.finalizer_name().as_str(),
-        resource,
-        |event| async {
+    if let Some(finalizer_name) = resource.finalizer_name() {
+        finalizer(&resource_api, finalizer_name, resource, |event| async {
             match event {
                 Finalizer::Apply(resource) => resource.reconcile(ctx.clone()).await,
                 Finalizer::Cleanup(resource) => resource.cleanup(ctx.clone()).await,
             }
-        },
-    )
-    .await
-    .map_err(|e| Error::FinalizerError(Box::new(e)))
+        })
+        .await
+        .map_err(|e| Error::FinalizerError(Box::new(e)))
+    } else {
+        resource.reconcile(ctx.clone()).await
+    }
 }

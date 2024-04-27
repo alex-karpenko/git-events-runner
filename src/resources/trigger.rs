@@ -377,7 +377,8 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
 
     async fn cleanup(&self, ctx: Arc<Context<ScheduleTriggerSpec>>) -> Result<ReconcileAction> {
         info!(
-            "Cleanup Trigger `{}` in {}",
+            "Cleanup {} `{}` in {}",
+            self.kind(),
             self.name_any(),
             self.namespace()
                 .expect("unable to get resource namespace, looks like a BUG!")
@@ -403,8 +404,8 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         Ok(ReconcileAction::await_change())
     }
 
-    fn finalizer_name(&self) -> String {
-        String::from("scheduletriggers.git-events-runner.rs")
+    fn finalizer_name(&self) -> Option<&'static str> {
+        Some("scheduletriggers.git-events-runner.rs")
     }
 
     fn kind(&self) -> &str {
@@ -461,7 +462,8 @@ impl Reconcilable<WebhookTriggerSpec> for WebhookTrigger {
 
     async fn cleanup(&self, ctx: Arc<Context<WebhookTriggerSpec>>) -> Result<ReconcileAction> {
         info!(
-            "Cleanup Trigger `{}` in {}",
+            "Cleanup {} `{}` in {}",
+            self.kind(),
             self.name_any(),
             self.namespace()
                 .expect("unable to get resource namespace, looks like a BUG!")
@@ -475,10 +477,6 @@ impl Reconcilable<WebhookTriggerSpec> for WebhookTrigger {
         }
 
         Ok(ReconcileAction::await_change())
-    }
-
-    fn finalizer_name(&self) -> String {
-        String::from("webhooktriggers.git-events-runner.rs")
     }
 
     fn kind(&self) -> &str {
