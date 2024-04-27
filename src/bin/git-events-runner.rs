@@ -39,7 +39,8 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let state = State::new(Arc::new(cli_config.clone()), secrets_cache.clone());
     let identity = Uuid::new_v4().to_string();
 
-    let (mut lock_channel, lock_task) = leader_lock::new(&identity, Some("default".into())).await?;
+    let (mut lock_channel, lock_task) =
+        leader_lock::new(&identity, Some(client.default_namespace().to_string())).await?;
     let mut signal_handler = SignalHandler::new().expect("unable to create signal handler");
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut shutdown = false;
