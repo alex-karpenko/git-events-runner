@@ -12,8 +12,8 @@ else
 fi
 
 # generate CRD bundle from the latest binary
-APP_VERSION=$(yq .appVersion ${CHART_DIR}/Chart.yaml)
-APP_IMAGE=$(yq .image.repository ${CHART_DIR}/values.yaml)
+APP_VERSION=${LOCAL_APP_VERSION:-$(yq .appVersion ${CHART_DIR}/Chart.yaml)}
+APP_IMAGE=${LOCAL_APP_IMAGE:-$(yq .image.repository ${CHART_DIR}/values.yaml)}
 
 docker run --rm ${APP_IMAGE}:${APP_VERSION} crds > ${BUNDLE_FILE}
 

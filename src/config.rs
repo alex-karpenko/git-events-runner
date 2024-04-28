@@ -1,109 +1,166 @@
-use clap::Parser;
-use tracing::debug;
-use tracing_subscriber::{filter::LevelFilter, fmt, EnvFilter};
+use k8s_openapi::api::core::v1::ConfigMap;
+use kube::{Api, Client};
+use serde::Deserialize;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::watch::{self, Sender};
+use tracing::{debug, error, info, warn};
 
-const CONFIG_MAP_DATA_NAME: &str = "controllerConfig";
-const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
-const DEFAULT_CONFIG_MAP_NAME: &str = "git-events-runner";
-const DEFAULT_LEADER_LOCK_LEASE_NAME: &str = "git-events-runner-leader-lock";
+const CONFIG_MAP_DATA_NAME: &str = "runtimeConfig";
 
-#[derive(Parser, Debug)]
-#[command(author, version, about)]
-pub enum Cli {
-    /// Print CRD definitions to stdout
-    Crds,
-    /// Run K8s controller
-    Run(CliConfig),
+static CONFIG_WATCHER: OnceLock<ConfigWatcher> = OnceLock::new();
+
+#[derive(Clone)]
+struct ConfigWatcher {
+    client: Client,
+    cm_name: String,
+    tx: Sender<Arc<RuntimeConfig>>,
 }
 
-#[derive(Parser, Debug, Clone)]
-pub struct CliConfig {
-    /// Port to listen on for webhooks
-    #[arg(long, short, value_parser=clap::value_parser!(u16).range(1..), default_value = "8080")]
-    pub webhooks_port: u16,
-
-    /// Port to listen on for utilities web
-    #[arg(long, short, value_parser=clap::value_parser!(u16).range(1..), default_value = "3000")]
-    pub utility_port: u16,
-
-    /// Maximum number of webhook triggers running in parallel
-    #[arg(long, value_parser=clap::value_parser!(u16).range(1..256), default_value = "16")]
-    pub webhooks_parallelism: u16,
-
-    /// Maximum number of schedule triggers running in parallel
-    #[arg(long, value_parser=clap::value_parser!(u16).range(1..256), default_value = "16")]
-    pub schedule_parallelism: u16,
-
-    /// Seconds to cache secrets for
-    #[arg(long, value_parser=clap::value_parser!(u64).range(1..), default_value = "60")]
-    pub secrets_cache_time: u64,
-
-    /// Path (within container) to clone repo to
-    #[arg(long, default_value = DEFAULT_SOURCE_CLONE_FOLDER)]
-    pub source_clone_folder: String,
-
-    /// Name of the ConfigMap with dynamic controller config
-    #[arg(long, default_value = DEFAULT_CONFIG_MAP_NAME)]
-    pub config_map_name: String,
-
-    /// Name of the Lease for leader locking
-    #[arg(long, default_value = DEFAULT_LEADER_LOCK_LEASE_NAME)]
-    pub leader_lease_name: String,
-
-    /// Leader lease duration, seconds
-    #[arg(long, value_parser=clap::value_parser!(u64).range(1..301), default_value = "30")]
-    pub leader_lease_duration: u64,
-
-    /// Leader lease grace interval, seconds
-    #[arg(long, value_parser=clap::value_parser!(u64).range(1..301), default_value = "20")]
-    pub leader_lease_grace: u64,
-
-    /// Enable extreme logging (debug)
-    #[arg(short, long)]
-    debug: bool,
-
-    /// Enable additional logging (info)
-    #[arg(short, long)]
-    verbose: bool,
-    // /// Write logs in JSON format
-    // #[arg(short, long)]
-    // json_log: bool,
-}
-
-impl Cli {
-    /// Constructs CLI config
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Cli {
-        let cli: Cli = Parser::parse();
-        cli.setup_logger();
-
-        debug!("CLI config: {:#?}", cli);
-
-        cli
+impl ConfigWatcher {
+    async fn get_cm(&self) -> Option<RuntimeConfig> {
+        let cm_api: Api<ConfigMap> = Api::default_namespaced(self.client.clone());
+        match cm_api.get(self.cm_name.as_str()).await {
+            Ok(cm) => {
+                if let Some(config_data) = cm.data.unwrap_or_default().get(CONFIG_MAP_DATA_NAME) {
+                    match serde_yaml::from_str::<RuntimeConfig>(config_data) {
+                        Ok(config) => Some(config),
+                        Err(err) => {
+                            error!("Unable to deserialize runtime config: {err}");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+            Err(err) => {
+                error!("Unable to get runtime config: {err}");
+                None
+            }
+        }
     }
 
-    /// Creates global logger and set requested log level and format
-    fn setup_logger(&self) {
-        if let Self::Run(config) = self {
-            let level_filter = if config.debug {
-                LevelFilter::DEBUG
-            } else if config.verbose {
-                LevelFilter::INFO
-            } else {
-                LevelFilter::WARN
-            };
+    async fn update(&self) {
+        if let Some(config) = self.get_cm().await {
+            info!(
+                "Loading runtime config from {}/{}",
+                self.client.default_namespace(),
+                self.cm_name
+            );
+            debug!("runtime config: {config:#?}");
+            self.tx.send_replace(Arc::new(config));
+        } else {
+            warn!("Unable to update runtime config");
+        }
+    }
+}
 
-            let log_filter = EnvFilter::from_default_env().add_directive(level_filter.into());
-            let log_format = fmt::format().with_level(true).with_target(config.debug);
+impl RuntimeConfig {
+    pub fn get() -> Arc<RuntimeConfig> {
+        let rx = CONFIG_WATCHER.get().unwrap().tx.subscribe();
+        let config = rx.borrow();
+        config.clone()
+    }
 
-            let subscriber = tracing_subscriber::fmt().with_env_filter(log_filter);
-            // if config.json_log {
-            //     subscriber
-            //         .event_format(log_format.json().flatten_event(true))
-            //         .init();
-            // } else {
-            subscriber.event_format(log_format.compact()).init();
-            // };
+    pub async fn init(client: Client, cm_name: &str) {
+        let (tx, _) = watch::channel(Arc::new(RuntimeConfig::default()));
+        let _ = CONFIG_WATCHER.set(ConfigWatcher {
+            client,
+            cm_name: String::from(cm_name),
+            tx,
+        });
+
+        CONFIG_WATCHER.get().unwrap().update().await;
+    }
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct RuntimeConfig {
+    pub action: ActionConfig,
+    pub trigger: TriggerConfig,
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct ActionConfig {
+    pub workdir: ActionWorkdirConfig,
+    pub containers: ActionContainersConfig,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct ActionWorkdirConfig {
+    pub mount_path: String,
+    pub volume_name: String,
+}
+
+impl Default for ActionWorkdirConfig {
+    fn default() -> Self {
+        Self {
+            mount_path: String::from("/tmp/git-events-runner"),
+            volume_name: String::from("temp-repo-data"),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct ActionContainersConfig {
+    pub cloner: ActionContainersClonerConfig,
+    pub worker: ActionContainersWorkerConfig,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct ActionContainersClonerConfig {
+    pub name: String,
+    pub image: String,
+}
+
+impl Default for ActionContainersClonerConfig {
+    fn default() -> Self {
+        Self {
+            name: String::from("action-cloner"),
+            image: String::from("ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:latest"), // TODO: use crate version instead
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct ActionContainersWorkerConfig {
+    pub name: String,
+    pub image: String,
+    pub variables_prefix: String,
+}
+
+impl Default for ActionContainersWorkerConfig {
+    fn default() -> Self {
+        Self {
+            name: String::from("action-worker"),
+            image: String::from("docker.io/bash:latest"),
+            variables_prefix: String::from("ACTION_JOB_"),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct TriggerConfig {
+    pub webhook: TriggerWebhookConfig,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct TriggerWebhookConfig {
+    pub default_auth_header: String,
+}
+
+impl Default for TriggerWebhookConfig {
+    fn default() -> Self {
+        Self {
+            default_auth_header: String::from("x-trigger-auth"),
         }
     }
 }

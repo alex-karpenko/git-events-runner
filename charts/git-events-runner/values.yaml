@@ -24,7 +24,7 @@ serviceAccount:
   # Annotations to add to the service account
   annotations: {}
   # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
+  # If not set and create is true, a name is generated using the full name template
   name: ""
 
 actionJobServiceAccounts:
@@ -34,7 +34,7 @@ actionJobServiceAccounts:
   automount: true
   annotations: {}
   # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
+  # If not set and create is true, a name is generated using the full name template
   # like {{ fullname }}-action-job
   name: ""
 
@@ -122,7 +122,7 @@ pdb:
 volumes: []
 # - name: foo
 #   secret:
-#     secretName: mysecret
+#     secretName: mySecret
 #     optional: false
 
 # Additional volumeMounts on the output Deployment definition.
@@ -150,19 +150,20 @@ controllerOptions:
     mountPath: /tmp/git-events-runner
     volumeName: temp-repo-data
 
-controllerConfig:
+runtimeConfig:
   action:
     workdir:
       mountPath: /action_workdir
       volumeName: action-workdir
-    images:
-      cloner: ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:{{ .Chart.AppVersion }}
-      action: docker.io/bash:latest
-    containerNames:
-      init: action-init
-      worker: action-worker
-    jobConfig:
-      envVarPrefix: ACTION_JOB_
+    containers:
+      cloner:
+        name: action-cloner
+        image: ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:{{ .Chart.AppVersion }}
+      worker:
+        name: action-worker
+        image: docker.io/bash:latest
+        variablesPrefix: ACTION_JOB_
 
-  webhookTrigger:
-    defaultAuthHeader: x-trigger-auth
+  trigger:
+    webhook:
+      defaultAuthHeader: x-trigger-auth

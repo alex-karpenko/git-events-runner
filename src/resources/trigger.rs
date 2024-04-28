@@ -41,10 +41,6 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 
-// TODO: Make this configurable
-const DEFAULT_TEMP_DIR: &str = "/tmp/git-events-runner";
-const DEFAULT_WEBHOOK_AUTH_HEADER: &str = "x-trigger-auth";
-
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
     kind = "ScheduleTrigger",
@@ -229,14 +225,8 @@ pub struct TriggerWebhook {
 pub struct TriggerWebhookAuthConfig {
     pub(crate) secret_ref: SecretRef,
     pub(crate) key: String,
-    #[serde(default = "TriggerWebhookAuthConfig::default_header")]
-    pub(crate) header: String,
-}
-
-impl TriggerWebhookAuthConfig {
-    fn default_header() -> String {
-        DEFAULT_WEBHOOK_AUTH_HEADER.into()
-    }
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) header: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
@@ -336,7 +326,12 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 // Add new task
                 if let Some(schedule) = self.get_task_schedule(last_run) {
                     let scheduler = ctx.scheduler.write().await;
-                    let task = self.create_trigger_task(client.clone(), schedule, None);
+                    let task = self.create_trigger_task(
+                        client.clone(),
+                        schedule,
+                        None,
+                        ctx.cli_config.source_clone_folder.clone(),
+                    );
                     let task_id = scheduler.add(task).await?;
                     let tasks = &mut triggers.tasks;
                     tasks.insert(self.trigger_hash_key(), task_id);
@@ -557,6 +552,7 @@ where
         client: Client,
         schedule: TaskSchedule,
         source: Option<String>,
+        source_clone_folder: String,
     ) -> Task {
         let trigger_name = self.name_any();
         let trigger_ns = self
@@ -567,6 +563,7 @@ where
             let trigger_ns = trigger_ns.clone();
             let client = client.clone();
             let source = source.clone();
+            let source_clone_folder = source_clone_folder.clone();
             Box::pin(async move {
                 debug!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
                 // Get current trigger from API
@@ -575,7 +572,7 @@ where
 
                 if let Ok(trigger) = trigger {
                     let base_temp_dir = format!(
-                        "{DEFAULT_TEMP_DIR}/{trigger_ns}/{trigger_name}/{}",
+                        "{source_clone_folder}/{trigger_ns}/{trigger_name}/{}",
                         random_string(8)
                     );
 

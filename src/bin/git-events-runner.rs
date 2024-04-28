@@ -1,5 +1,6 @@
 use git_events_runner::{
-    config::{Cli, CliConfig},
+    cli::{Cli, CliConfig},
+    config::RuntimeConfig,
     controller::{run_leader_controllers, State},
     leader_lock,
     resources::{
@@ -32,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
 
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let client = Client::try_default().await?;
+    RuntimeConfig::init(client.clone(), &cli_config.config_map_name).await;
     let secrets_cache = ExpiringSecretCache::new(
         Duration::from_secs(cli_config.secrets_cache_time),
         client.clone(),
@@ -39,8 +41,14 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let state = State::new(Arc::new(cli_config.clone()), secrets_cache.clone());
     let identity = Uuid::new_v4().to_string();
 
-    let (mut lock_channel, lock_task) =
-        leader_lock::new(&identity, Some(client.default_namespace().to_string())).await?;
+    let (mut lock_channel, lock_task) = leader_lock::new(
+        &identity,
+        Some(client.default_namespace().to_string()),
+        &cli_config.leader_lease_name,
+        cli_config.leader_lease_duration,
+        cli_config.leader_lease_grace,
+    )
+    .await?;
     let mut signal_handler = SignalHandler::new().expect("unable to create signal handler");
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut shutdown = false;
@@ -64,6 +72,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
             scheduler,
             secrets_cache.clone(),
             cli_config.webhooks_port,
+            cli_config.source_clone_folder.clone(),
         )
         .await
     };

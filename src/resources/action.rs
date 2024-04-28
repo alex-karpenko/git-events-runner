@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::{config::RuntimeConfig, Error, Result};
 use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
@@ -23,15 +23,6 @@ use super::{
     random_string,
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
 };
-
-// TODO: this should be config
-const DEFAULT_ACTION_WORKDIR: &str = "/action_workdir";
-const DEFAULT_CLONER_IMAGE: &str = "ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:latest";
-const DEFAULT_ACTION_IMAGE: &str = "docker.io/bash:latest";
-const DEFAULT_ACTION_WORKDIR_VOLUME_NAME: &str = "action-workdir";
-const DEFAULT_ACTION_INIT_CONTAINER_NAME: &str = "action-init";
-const DEFAULT_ACTION_WORKER_CONTAINER_NAME: &str = "action-worker";
-const DEFAULT_ACTION_JOB_ENV_VARS_PREFIX: &str = "ACTION_JOB_";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[cfg_attr(test, derive(Default))]
@@ -90,52 +81,23 @@ pub enum TriggerClusterSourceKind {
     ClusterGitRepo,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq, Default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct ActionJob {
-    #[serde(default = "ActionJob::default_workdir")]
-    workdir: String,
-    #[serde(default = "ActionJob::default_cloner_image")]
-    cloner_image: String,
-    #[serde(default = "ActionJob::default_action_image")]
-    action_image: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workdir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cloner_image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    action_image: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     args: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     service_account: Option<String>,
-    #[serde(default)]
     enable_cloner_debug: bool,
-    #[serde(default)]
     preserve_git_folder: bool,
-}
-
-impl Default for ActionJob {
-    fn default() -> Self {
-        Self {
-            workdir: String::from(DEFAULT_ACTION_WORKDIR),
-            cloner_image: String::from(DEFAULT_CLONER_IMAGE),
-            action_image: String::from(DEFAULT_ACTION_IMAGE),
-            args: None,
-            command: None,
-            service_account: None,
-            enable_cloner_debug: false,
-            preserve_git_folder: false,
-        }
-    }
-}
-
-impl ActionJob {
-    fn default_workdir() -> String {
-        String::from(DEFAULT_ACTION_WORKDIR)
-    }
-    fn default_action_image() -> String {
-        String::from(DEFAULT_ACTION_IMAGE)
-    }
-    fn default_cloner_image() -> String {
-        String::from(DEFAULT_CLONER_IMAGE)
-    }
 }
 
 impl ActionExecutor for Action {}
@@ -185,6 +147,7 @@ trait ActionInternals: Sized + Resource {
         trigger_ref: &TriggerGitRepoReference,
         ns: &str,
     ) -> Result<Job> {
+        let config = RuntimeConfig::get();
         let action_job = self.action_job_spec();
         let source_override = self.source_override_spec();
 
@@ -233,20 +196,38 @@ trait ActionInternals: Sized + Resource {
                     spec: Some(PodSpec {
                         service_account_name: action_job.service_account.clone(),
                         init_containers: Some(vec![Container {
-                            name: DEFAULT_ACTION_INIT_CONTAINER_NAME.into(),
-                            image: Some(action_job.cloner_image.clone()),
+                            name: config.action.containers.cloner.name.clone(),
+                            image: Some(
+                                action_job
+                                    .cloner_image
+                                    .clone()
+                                    .unwrap_or(config.action.containers.cloner.image.clone()),
+                            ),
                             args: Some(args),
                             volume_mounts: Some(vec![VolumeMount {
-                                name: DEFAULT_ACTION_WORKDIR_VOLUME_NAME.into(),
-                                mount_path: action_job.workdir.clone(),
+                                name: config.action.workdir.volume_name.clone(),
+                                mount_path: action_job
+                                    .workdir
+                                    .clone()
+                                    .unwrap_or(config.action.workdir.mount_path.clone()),
                                 ..Default::default()
                             }]),
                             ..Default::default()
                         }]),
                         containers: vec![Container {
-                            name: DEFAULT_ACTION_WORKER_CONTAINER_NAME.into(),
-                            image: Some(action_job.action_image.clone()),
-                            working_dir: Some(action_job.workdir.clone()),
+                            name: config.action.containers.worker.name.clone(),
+                            image: Some(
+                                action_job
+                                    .action_image
+                                    .clone()
+                                    .unwrap_or(config.action.containers.worker.image.clone()),
+                            ),
+                            working_dir: Some(
+                                action_job
+                                    .workdir
+                                    .clone()
+                                    .unwrap_or(config.action.workdir.mount_path.clone()),
+                            ),
                             command: action_job.command.clone(),
                             args: action_job.args.clone(),
                             env: Some(self.get_action_job_envs(
@@ -257,15 +238,17 @@ trait ActionInternals: Sized + Resource {
                                 ns,
                             )),
                             volume_mounts: Some(vec![VolumeMount {
-                                name: DEFAULT_ACTION_WORKDIR_VOLUME_NAME.into(),
-                                mount_path: action_job.workdir,
+                                name: config.action.workdir.volume_name.clone(),
+                                mount_path: action_job
+                                    .workdir
+                                    .unwrap_or(config.action.workdir.mount_path.clone()),
                                 ..Default::default()
                             }]),
                             ..Default::default()
                         }],
                         restart_policy: Some("Never".into()),
                         volumes: Some(vec![Volume {
-                            name: DEFAULT_ACTION_WORKDIR_VOLUME_NAME.into(),
+                            name: config.action.workdir.volume_name.clone(),
                             empty_dir: Some(EmptyDirVolumeSource::default()),
                             ..Default::default()
                         }]),
@@ -293,7 +276,12 @@ trait ActionInternals: Sized + Resource {
 
         let (trigger_ref_type, trigger_ref_name) = trigger_ref.to_refname(None);
         let mut envs = vec![
-            format_action_job_env_var("WORKDIR", &action_job.workdir),
+            format_action_job_env_var(
+                "WORKDIR",
+                &action_job
+                    .workdir
+                    .unwrap_or(RuntimeConfig::get().action.workdir.mount_path.clone()),
+            ),
             format_action_job_env_var("TRIGGER_SOURCE_KIND", &source_kind.to_string()),
             format_action_job_env_var("TRIGGER_SOURCE_NAME", source_name),
             format_action_job_env_var("TRIGGER_SOURCE_COMMIT", source_commit),
@@ -346,7 +334,10 @@ trait ActionInternals: Sized + Resource {
             "--source".into(),
             source_name.into(),
             "--destination".into(),
-            action_job.workdir.clone(),
+            action_job
+                .workdir
+                .clone()
+                .unwrap_or(RuntimeConfig::get().action.workdir.mount_path.clone()),
         ];
 
         let (ref_type, ref_name) = source_ref.to_refname(Some("--"));
@@ -414,7 +405,15 @@ impl ActionInternals for Action {
 
 fn format_action_job_env_var(name: &str, value: &str) -> EnvVar {
     EnvVar {
-        name: format!("{DEFAULT_ACTION_JOB_ENV_VARS_PREFIX}{name}"),
+        name: format!(
+            "{}{name}",
+            RuntimeConfig::get()
+                .action
+                .containers
+                .worker
+                .variables_prefix
+                .clone()
+        ),
         value: Some(value.to_owned()),
         value_from: None,
     }

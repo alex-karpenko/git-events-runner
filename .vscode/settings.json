@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "automount",
         "chrono",
         "clippy",
         "clustergitrepos",
@@ -8,6 +9,7 @@
         "crdgen",
         "crds",
         "Finalizer",
+        "fullname",
         "gitrepo",
         "gitrepos",
         "hasher",

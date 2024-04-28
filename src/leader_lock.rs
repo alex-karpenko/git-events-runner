@@ -11,17 +11,15 @@ use std::{sync::Arc, time::Duration};
 use tokio::{sync::watch, task::JoinHandle};
 use tracing::{debug, info};
 
-const DEFAULT_LEADER_LOCK_LEASE_NAME: &str = "git-events-runner-leader-lock";
-const DEFAULT_LEADER_LOCK_LEASE_DERATION_SEC: u64 = 30;
-const DEFAULT_LEADER_LOCK_LEASE_GRACE_SEC: u64 = 20;
-
 pub async fn new(
     identity: &String,
     namespace: Option<String>,
+    name: &String,
+    duration: u64,
+    grace: u64,
 ) -> Result<(watch::Receiver<Arc<Claim>>, JoinHandle<Result<(), Error>>)> {
     let client = Client::try_default().await?;
     let namespace = namespace.unwrap_or("default".into());
-    let name: String = DEFAULT_LEADER_LOCK_LEASE_NAME.into();
 
     // Create Lease
     let api = kubert_kube::Api::<coordv1::Lease>::namespaced(client.clone(), &namespace);
@@ -53,8 +51,8 @@ pub async fn new(
 
     let manager = LeaseManager::init(api, name.clone()).await?;
     let params = ClaimParams {
-        lease_duration: Duration::from_secs(DEFAULT_LEADER_LOCK_LEASE_DERATION_SEC),
-        renew_grace_period: Duration::from_secs(DEFAULT_LEADER_LOCK_LEASE_GRACE_SEC),
+        lease_duration: Duration::from_secs(duration),
+        renew_grace_period: Duration::from_secs(grace),
     };
 
     Ok(manager.spawn(&identity, params).await?)

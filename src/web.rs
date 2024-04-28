@@ -1,3 +1,4 @@
+use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, WebhookTrigger, WebhookTriggerSpec};
 use crate::secrets_cache::{ExpiringSecretCache, SecretCache};
@@ -28,6 +29,7 @@ struct WebState {
     scheduler: Arc<RwLock<Scheduler>>,
     client: Client,
     secrets_cache: Arc<ExpiringSecretCache>,
+    source_clone_folder: String,
 }
 
 #[derive(FromRequest, Serialize)]
@@ -99,11 +101,13 @@ pub async fn build_hooks_web(
     scheduler: Arc<RwLock<Scheduler>>,
     secrets_cache: Arc<ExpiringSecretCache>,
     port: u16,
+    source_clone_folder: String,
 ) -> impl Future<Output = ()> {
     let state = WebState {
         scheduler: scheduler.clone(),
         client,
         secrets_cache,
+        source_clone_folder,
     };
 
     let app = Router::new()
@@ -192,8 +196,12 @@ async fn handle_post_trigger_webhook(
         .await?;
     if trigger.spec.webhook.multi_source {
         info!("Run all sources task for trigger {trigger_hash_key}");
-        let task =
-            trigger.create_trigger_task(state.client.clone(), sacs::task::TaskSchedule::Once, None);
+        let task = trigger.create_trigger_task(
+            state.client.clone(),
+            sacs::task::TaskSchedule::Once,
+            None,
+            state.source_clone_folder,
+        );
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;
 
@@ -235,6 +243,7 @@ async fn handle_post_source_webhook(
             state.client.clone(),
             sacs::task::TaskSchedule::Once,
             Some(source.clone()),
+            state.source_clone_folder,
         );
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;
@@ -341,7 +350,15 @@ impl WebState {
         namespace: &str,
     ) -> Result<(), WebError> {
         if let Some(auth_config) = &webhook_spec.webhook.auth_config {
-            if let Some(header) = request_headers.get(&auth_config.header) {
+            if let Some(header) = request_headers.get(
+                auth_config.header.clone().unwrap_or(
+                    RuntimeConfig::get()
+                        .trigger
+                        .webhook
+                        .default_auth_header
+                        .clone(),
+                ),
+            ) {
                 let secret = self
                     .secrets_cache
                     .as_ref()

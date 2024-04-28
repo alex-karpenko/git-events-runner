@@ -13,3 +13,9 @@ rbac:
 actionJobServiceAccounts:
   namespaces:
     - default
+
+runtimeConfig:
+  action:
+    containers:
+      cloner:
+        image: gitrepo-cloner:local

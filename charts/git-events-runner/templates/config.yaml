@@ -5,5 +5,5 @@ metadata:
   labels:
     {{- include "git-events-runner.labels" . | nindent 4 }}
 data:
-  controllerConfig: |
-{{ tpl (toYaml .Values.controllerConfig) . | indent 4 }}
+  runtimeConfig: |
+{{ tpl (toYaml .Values.runtimeConfig) . | indent 4 }}

@@ -1,5 +1,5 @@
 use crate::{
-    config::CliConfig,
+    cli::CliConfig,
     resources::trigger::{ScheduleTrigger, ScheduleTriggerSpec},
     secrets_cache::ExpiringSecretCache,
     Error, Result,
@@ -108,6 +108,8 @@ pub struct Context<S> {
     pub triggers: Arc<RwLock<TriggersState<S>>>,
     /// Shared secrets cache/retriever
     pub secrets_cache: Arc<ExpiringSecretCache>,
+    /// Cli config
+    pub cli_config: Arc<CliConfig>,
 }
 
 /// State wrapper around the controller outputs for the web server
@@ -125,6 +127,7 @@ impl State {
             secrets_cache: self.secrets_cache.clone(),
             scheduler,
             triggers,
+            cli_config: self.cli_config.clone(),
         })
     }
 }
