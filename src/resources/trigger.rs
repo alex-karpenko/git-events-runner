@@ -274,6 +274,22 @@ impl Trigger<ScheduleTriggerSpec> for ScheduleTrigger {
     }
 }
 
+pub(crate) trait HasTriggerStatus {
+    fn trigger_status(&self) -> &Option<TriggerStatus>;
+}
+
+impl HasTriggerStatus for ScheduleTrigger {
+    fn trigger_status(&self) -> &Option<TriggerStatus> {
+        &self.status
+    }
+}
+
+impl HasTriggerStatus for WebhookTrigger {
+    fn trigger_status(&self) -> &Option<TriggerStatus> {
+        &self.status
+    }
+}
+
 impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
     async fn reconcile(&self, ctx: Arc<Context<ScheduleTriggerSpec>>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
@@ -299,7 +315,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                     .statuses
                     .insert(self.trigger_hash_key(), status.clone());
             } else {
-                self.update_trigger_status(None, None, None, ctx.triggers.clone(), &triggers_api)
+                self.update_trigger_status_2(None, None, None, &triggers_api)
                     .await?;
             }
         }
@@ -446,7 +462,7 @@ impl Reconcilable<WebhookTriggerSpec> for WebhookTrigger {
                     .statuses
                     .insert(self.trigger_hash_key(), status.clone());
             } else {
-                self.update_trigger_status(None, None, None, ctx.triggers.clone(), &triggers_api)
+                self.update_trigger_status_2(None, None, None, &triggers_api)
                     .await?;
             }
         }
@@ -543,10 +559,10 @@ impl ScheduleTrigger {
     }
 }
 
-pub trait Trigger<S>
+pub(crate) trait Trigger<S>
 where
     Self: Send + Sync,
-    Self: Resource + ResourceExt + Reconcilable<S>,
+    Self: Resource + ResourceExt + Reconcilable<S> + HasTriggerStatus,
     Self: std::fmt::Debug + Clone + DeserializeOwned + Serialize,
     <Self as Resource>::DynamicType: Default,
     Self: Resource<Scope = NamespaceResourceScope>,
@@ -614,6 +630,62 @@ where
         }
     }
 
+    fn update_trigger_status_2(
+        &self,
+        state: Option<TriggerState>,
+        checked_sources: Option<HashMap<String, CheckedSourceState>>,
+        last_run: Option<DateTime<Utc>>,
+        api: &Api<Self>,
+    ) -> impl Future<Output = Result<()>> + Send {
+        async move {
+            let name = self.name_any();
+            let trigger = api.get(&name).await?;
+
+            let new_status = if let Some(status) = trigger.trigger_status() {
+                // Use new checked_sources map as addition to existing
+                let mut checked_sources = checked_sources.unwrap_or_default();
+                checked_sources.extend(status.checked_sources.clone());
+
+                // Filter checked_sources to exclude non-existing sources
+                let checked_sources: HashMap<String, CheckedSourceState> = checked_sources
+                    .into_iter()
+                    .filter(|(k, _v)| trigger.sources().names.contains(k))
+                    .collect();
+
+                TriggerStatus {
+                    state: state.unwrap_or(status.state.clone()),
+                    last_run: if let Some(last_run) = last_run {
+                        Some(last_run.to_rfc3339_opts(SecondsFormat::Secs, true))
+                    } else {
+                        status.last_run.clone()
+                    },
+                    checked_sources,
+                }
+            } else {
+                TriggerStatus {
+                    state: state.unwrap_or_default(),
+                    last_run: last_run
+                        .map(|last_run| last_run.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                    checked_sources: checked_sources.unwrap_or_default(),
+                }
+            };
+
+            let status = Patch::Apply(json!({
+                "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
+                "kind": self.kind(),
+                "status": {
+                    "state": new_status.state,
+                    "lastRun": new_status.last_run,
+                    "checkedSources": new_status.checked_sources,
+                }
+            }));
+            let pp = PatchParams::apply("cntrlr").force();
+            let _o = api.patch_status(&name, &pp, &status).await?;
+
+            Ok(())
+        }
+    }
+
     fn create_trigger_task(
         &self,
         client: Client,
@@ -656,11 +728,10 @@ where
                         .collect();
 
                     if let Err(err) = trigger
-                        .update_trigger_status(
+                        .update_trigger_status_2(
                             Some(TriggerState::Running),
                             None,
                             None,
-                            triggers.clone(),
                             &triggers_api,
                         )
                         .await
@@ -848,11 +919,10 @@ where
                                         );
                                         checked_sources.insert(source, new_source_state);
                                         if let Err(err) = trigger
-                                            .update_trigger_status(
+                                            .update_trigger_status_2(
                                                 Some(TriggerState::Running),
                                                 Some(checked_sources.clone()),
                                                 Some(Utc::now()),
-                                                triggers.clone(),
                                                 &triggers_api,
                                             )
                                             .await
@@ -886,11 +956,10 @@ where
                         }
                     }
                     if let Err(err) = trigger
-                        .update_trigger_status(
+                        .update_trigger_status_2(
                             Some(TriggerState::Idle),
                             Some(checked_sources.to_owned()),
                             Some(Utc::now()),
-                            triggers.clone(),
                             &triggers_api,
                         )
                         .await
