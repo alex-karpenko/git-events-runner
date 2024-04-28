@@ -1,6 +1,6 @@
 use git_events_runner::{
     config::{Cli, CliConfig},
-    controller::{run_leader_controllers, run_web_controllers, State, TriggersState},
+    controller::{run_leader_controllers, State},
     leader_lock,
     resources::{
         action::{Action, ClusterAction},
@@ -49,7 +49,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         web::build_utils_web(state.clone(), shutdown_rx.clone(), cli_config.utility_port).await;
     let utils_web = tokio::spawn(utils_web);
 
-    let (hooks_web, hooks_controller) = {
+    let hooks_web = {
         let scheduler = SchedulerBuilder::new()
             .garbage_collector(GarbageCollector::Immediate)
             .worker_type(WorkerType::MultiThread(RuntimeThreads::CpuCores))
@@ -58,24 +58,14 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
             ))
             .build();
         let scheduler = Arc::new(RwLock::new(scheduler));
-        let triggers_state = Arc::new(RwLock::new(TriggersState::default()));
-        let hooks_controller = tokio::spawn(run_web_controllers(
-            client.clone(),
-            state.clone(),
-            shutdown_rx.clone(),
-            scheduler.clone(),
-            triggers_state.clone(),
-        ));
-        let hooks_web = web::build_hooks_web(
+        web::build_hooks_web(
             client.clone(),
             shutdown_rx.clone(),
             scheduler,
-            triggers_state,
             secrets_cache.clone(),
             cli_config.webhooks_port,
         )
-        .await;
-        (hooks_web, hooks_controller)
+        .await
     };
     let hooks_web = tokio::spawn(hooks_web);
 
@@ -126,7 +116,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     }
 
     drop(lock_channel);
-    let _ = tokio::join!(lock_task, utils_web, hooks_web, hooks_controller);
+    let _ = tokio::join!(lock_task, utils_web, hooks_web);
 
     Ok(())
 }

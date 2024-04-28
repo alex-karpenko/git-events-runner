@@ -1,4 +1,4 @@
-use crate::controller::{State as AppState, TriggersState};
+use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, WebhookTrigger, WebhookTriggerSpec};
 use crate::secrets_cache::{ExpiringSecretCache, SecretCache};
 use axum::{
@@ -26,7 +26,6 @@ use tracing::{debug, error, info, warn};
 #[derive(Clone)]
 struct WebState {
     scheduler: Arc<RwLock<Scheduler>>,
-    triggers: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
     client: Client,
     secrets_cache: Arc<ExpiringSecretCache>,
 }
@@ -98,13 +97,11 @@ pub async fn build_hooks_web(
     client: Client,
     mut shutdown: watch::Receiver<bool>,
     scheduler: Arc<RwLock<Scheduler>>,
-    triggers_state: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
     secrets_cache: Arc<ExpiringSecretCache>,
     port: u16,
 ) -> impl Future<Output = ()> {
     let state = WebState {
         scheduler: scheduler.clone(),
-        triggers: triggers_state,
         client,
         secrets_cache,
     };
@@ -195,12 +192,8 @@ async fn handle_post_trigger_webhook(
         .await?;
     if trigger.spec.webhook.multi_source {
         info!("Run all sources task for trigger {trigger_hash_key}");
-        let task = trigger.create_trigger_task(
-            state.client.clone(),
-            sacs::task::TaskSchedule::Once,
-            None,
-            state.triggers.clone(),
-        );
+        let task =
+            trigger.create_trigger_task(state.client.clone(), sacs::task::TaskSchedule::Once, None);
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;
 
@@ -242,7 +235,6 @@ async fn handle_post_source_webhook(
             state.client.clone(),
             sacs::task::TaskSchedule::Once,
             Some(source.clone()),
-            state.triggers.clone(),
         );
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;

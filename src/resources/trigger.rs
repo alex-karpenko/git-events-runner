@@ -1,5 +1,5 @@
 use crate::{
-    controller::{Context, Reconcilable, TriggersState, API_GROUP, CURRENT_API_VERSION},
+    controller::{Context, CustomApiResource, Reconcilable, API_GROUP, CURRENT_API_VERSION},
     resources::{
         action::{Action, ActionExecutor, ClusterAction},
         git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
@@ -38,7 +38,6 @@ use strum_macros::{Display, EnumString};
 use tokio::{
     fs::{create_dir_all, remove_dir_all, try_exists, File},
     io::AsyncReadExt,
-    sync::RwLock,
 };
 use tracing::{debug, error, info, warn};
 
@@ -294,31 +293,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
     async fn reconcile(&self, ctx: Arc<Context<ScheduleTriggerSpec>>) -> Result<ReconcileAction> {
         let client = ctx.client.clone();
         let recorder = &ctx.diagnostics.read().await.recorder(client.clone(), self);
-        let ns = self
-            .namespace()
-            .expect("unable to get resource namespace, looks like a BUG!");
-        let triggers_api: Api<ScheduleTrigger> = Api::namespaced(client.clone(), &ns);
         let trigger_key = self.trigger_hash_key();
-
-        // Create trigger status if it's not present yet
-        if !ctx
-            .triggers
-            .read()
-            .await
-            .statuses
-            .contains_key(&self.trigger_hash_key())
-        {
-            if let Some(status) = self.status() {
-                ctx.triggers
-                    .write()
-                    .await
-                    .statuses
-                    .insert(self.trigger_hash_key(), status.clone());
-            } else {
-                self.update_trigger_status_2(None, None, None, &triggers_api)
-                    .await?;
-            }
-        }
 
         // Reconcile if something has been changed
         if Some(&self.spec) != ctx.triggers.read().await.specs.get(&trigger_key) {
@@ -361,12 +336,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 // Add new task
                 if let Some(schedule) = self.get_task_schedule(last_run) {
                     let scheduler = ctx.scheduler.write().await;
-                    let task = self.create_trigger_task(
-                        client.clone(),
-                        schedule,
-                        None,
-                        ctx.triggers.clone(),
-                    );
+                    let task = self.create_trigger_task(client.clone(), schedule, None);
                     let task_id = scheduler.add(task).await?;
                     let tasks = &mut triggers.tasks;
                     tasks.insert(self.trigger_hash_key(), task_id);
@@ -404,7 +374,6 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         if ctx.triggers.read().await.specs.contains_key(&trigger_key) {
             let mut triggers = ctx.triggers.write().await;
             triggers.specs.remove(&trigger_key);
-            triggers.statuses.remove(&trigger_key);
         }
         // Drop task and remove from tasks map
         if ctx.triggers.read().await.tasks.contains_key(&trigger_key) {
@@ -423,9 +392,17 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
     fn finalizer_name(&self) -> Option<&'static str> {
         Some("scheduletriggers.git-events-runner.rs")
     }
+}
 
+impl CustomApiResource for ScheduleTrigger {
     fn kind(&self) -> &str {
         "ScheduleTrigger"
+    }
+}
+
+impl CustomApiResource for WebhookTrigger {
+    fn kind(&self) -> &str {
+        "WebhookTrigger"
     }
 }
 
@@ -436,67 +413,6 @@ impl Trigger<WebhookTriggerSpec> for WebhookTrigger {
 
     fn action(&self) -> &TriggerAction {
         &self.spec.action
-    }
-}
-
-impl Reconcilable<WebhookTriggerSpec> for WebhookTrigger {
-    async fn reconcile(&self, ctx: Arc<Context<WebhookTriggerSpec>>) -> Result<ReconcileAction> {
-        let client = ctx.client.clone();
-        let ns = self
-            .namespace()
-            .expect("unable to get resource namespace, looks like a BUG!");
-        let triggers_api: Api<WebhookTrigger> = Api::namespaced(client.clone(), &ns);
-
-        // Create trigger status if it's not present yet
-        if !ctx
-            .triggers
-            .read()
-            .await
-            .statuses
-            .contains_key(&self.trigger_hash_key())
-        {
-            if let Some(status) = self.status() {
-                ctx.triggers
-                    .write()
-                    .await
-                    .statuses
-                    .insert(self.trigger_hash_key(), status.clone());
-            } else {
-                self.update_trigger_status_2(None, None, None, &triggers_api)
-                    .await?;
-            }
-        }
-
-        let mut triggers = ctx.triggers.write().await;
-        // Update trigger spec in the map
-        triggers
-            .specs
-            .insert(self.trigger_hash_key(), self.spec.clone());
-
-        Ok(ReconcileAction::await_change())
-    }
-
-    async fn cleanup(&self, ctx: Arc<Context<WebhookTriggerSpec>>) -> Result<ReconcileAction> {
-        info!(
-            "Cleanup {} `{}` in {}",
-            self.kind(),
-            self.name_any(),
-            self.namespace()
-                .expect("unable to get resource namespace, looks like a BUG!")
-        );
-        let trigger_key = self.trigger_hash_key();
-        // Remove from triggers map
-        if ctx.triggers.read().await.specs.contains_key(&trigger_key) {
-            let mut triggers = ctx.triggers.write().await;
-            triggers.specs.remove(&trigger_key);
-            triggers.statuses.remove(&trigger_key);
-        }
-
-        Ok(ReconcileAction::await_change())
-    }
-
-    fn kind(&self) -> &str {
-        "WebhookTrigger"
     }
 }
 
@@ -562,7 +478,7 @@ impl ScheduleTrigger {
 pub(crate) trait Trigger<S>
 where
     Self: Send + Sync,
-    Self: Resource + ResourceExt + Reconcilable<S> + HasTriggerStatus,
+    Self: Resource + ResourceExt + CustomApiResource + HasTriggerStatus,
     Self: std::fmt::Debug + Clone + DeserializeOwned + Serialize,
     <Self as Resource>::DynamicType: Default,
     Self: Resource<Scope = NamespaceResourceScope>,
@@ -581,56 +497,6 @@ where
     }
 
     fn update_trigger_status(
-        &self,
-        state: Option<TriggerState>,
-        checked_sources: Option<HashMap<String, CheckedSourceState>>,
-        last_run: Option<DateTime<Utc>>,
-        triggers: Arc<RwLock<TriggersState<S>>>,
-        api: &Api<Self>,
-    ) -> impl Future<Output = Result<()>> + Send {
-        async move {
-            let name = self.name_any();
-            let trigger_key = self.trigger_hash_key();
-
-            let mut triggers = triggers.write().await;
-            let new_status = if let Some(status) = triggers.statuses.get(&trigger_key) {
-                TriggerStatus {
-                    state: state.unwrap_or(status.state.clone()),
-                    last_run: if let Some(last_run) = last_run {
-                        Some(last_run.to_rfc3339_opts(SecondsFormat::Secs, true))
-                    } else {
-                        status.last_run.clone()
-                    },
-                    checked_sources: checked_sources.unwrap_or(status.checked_sources.clone()),
-                }
-            } else {
-                TriggerStatus {
-                    state: state.unwrap_or_default(),
-                    last_run: last_run
-                        .map(|last_run| last_run.to_rfc3339_opts(SecondsFormat::Secs, true)),
-                    checked_sources: checked_sources.unwrap_or_default(),
-                }
-            };
-
-            let status = Patch::Apply(json!({
-                "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
-                "kind": self.kind(),
-                "status": {
-                    "state": new_status.state,
-                    "lastRun": new_status.last_run,
-                    "checkedSources": new_status.checked_sources,
-                }
-            }));
-            let pp = PatchParams::apply("cntrlr").force();
-            let _o = api.patch_status(&name, &pp, &status).await?;
-
-            triggers.statuses.insert(trigger_key, new_status);
-
-            Ok(())
-        }
-    }
-
-    fn update_trigger_status_2(
         &self,
         state: Option<TriggerState>,
         checked_sources: Option<HashMap<String, CheckedSourceState>>,
@@ -691,14 +557,12 @@ where
         client: Client,
         schedule: TaskSchedule,
         source: Option<String>,
-        triggers: Arc<RwLock<TriggersState<S>>>,
     ) -> Task {
         let trigger_name = self.name_any();
         let trigger_ns = self
             .namespace()
             .expect("unable to get resource namespace, looks like a BUG!");
         Task::new(schedule, move |id| {
-            let triggers = triggers.clone();
             let trigger_name = trigger_name.clone();
             let trigger_ns = trigger_ns.clone();
             let client = client.clone();
@@ -715,20 +579,18 @@ where
                         random_string(8)
                     );
 
-                    let checked_sources: &mut HashMap<String, CheckedSourceState> = &mut triggers
-                        .read()
-                        .await
-                        .statuses
-                        .get(&trigger.trigger_hash_key())
-                        .expect("Looks like a BUG!")
-                        .checked_sources
+                    // Filter checked_sources to exclude non-existing sources
+                    let checked_sources: HashMap<String, CheckedSourceState> = trigger
+                        .trigger_status()
                         .clone()
+                        .unwrap_or_default()
+                        .checked_sources
                         .into_iter()
                         .filter(|(k, _v)| trigger.sources().names.contains(k))
                         .collect();
 
                     if let Err(err) = trigger
-                        .update_trigger_status_2(
+                        .update_trigger_status(
                             Some(TriggerState::Running),
                             None,
                             None,
@@ -917,11 +779,12 @@ where
                                         new_source_state.changed = Some(
                                             Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
                                         );
-                                        checked_sources.insert(source, new_source_state);
+                                        let new_source_state: HashMap<String, CheckedSourceState> =
+                                            HashMap::from([(source, new_source_state)]);
                                         if let Err(err) = trigger
-                                            .update_trigger_status_2(
+                                            .update_trigger_status(
                                                 Some(TriggerState::Running),
-                                                Some(checked_sources.clone()),
+                                                Some(new_source_state),
                                                 Some(Utc::now()),
                                                 &triggers_api,
                                             )
@@ -941,13 +804,6 @@ where
                                         err
                                     ),
                                 }
-                            } else {
-                                if let Some(current_source_state) = current_source_state {
-                                    new_source_state
-                                        .changed
-                                        .clone_from(&current_source_state.changed);
-                                }
-                                checked_sources.insert(source, new_source_state);
                             }
                             // - Remove temp dir content
                             if let Err(err) = remove_dir_all(&repo_path).await {
@@ -956,9 +812,9 @@ where
                         }
                     }
                     if let Err(err) = trigger
-                        .update_trigger_status_2(
+                        .update_trigger_status(
                             Some(TriggerState::Idle),
-                            Some(checked_sources.to_owned()),
+                            None,
                             Some(Utc::now()),
                             &triggers_api,
                         )

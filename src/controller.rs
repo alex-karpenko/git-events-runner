@@ -1,8 +1,6 @@
 use crate::{
     config::CliConfig,
-    resources::trigger::{
-        ScheduleTrigger, ScheduleTriggerSpec, TriggerStatus, WebhookTrigger, WebhookTriggerSpec,
-    },
+    resources::trigger::{ScheduleTrigger, ScheduleTriggerSpec},
     secrets_cache::ExpiringSecretCache,
     Error, Result,
 };
@@ -41,7 +39,6 @@ pub const CURRENT_API_VERSION: &str = "v1alpha1";
 pub struct TriggersState<S> {
     pub(crate) tasks: HashMap<String, TaskId>,
     pub(crate) specs: HashMap<String, S>,
-    pub(crate) statuses: HashMap<String, TriggerStatus>,
 }
 
 impl<S> Default for TriggersState<S> {
@@ -49,7 +46,6 @@ impl<S> Default for TriggersState<S> {
         Self {
             tasks: Default::default(),
             specs: HashMap::<String, S>::new(),
-            statuses: Default::default(),
         }
     }
 }
@@ -184,41 +180,6 @@ pub async fn run_leader_controllers(
         .unwrap_or(())
 }
 
-pub async fn run_web_controllers(
-    client: Client,
-    state: State,
-    shutdown_channel: watch::Receiver<bool>,
-    scheduler: Arc<RwLock<Scheduler>>,
-    triggers_state: Arc<RwLock<TriggersState<WebhookTriggerSpec>>>,
-) {
-    info!("Starting Web controllers");
-
-    {
-        let mut controllers = vec![];
-        let context = state.to_context(client.clone(), scheduler, triggers_state);
-
-        let triggers_api = Api::<WebhookTrigger>::all(client.clone());
-        check_api_by_list(&triggers_api, "Triggers").await;
-        let mut shutdown = shutdown_channel.clone();
-        controllers.push(tokio::task::spawn(
-            Controller::new(triggers_api, Config::default().any_semantic())
-                .with_config(controller::Config::default().debounce(Duration::from_millis(500)))
-                .graceful_shutdown_on(async move { shutdown.changed().await.unwrap_or(()) })
-                .run(
-                    reconcile_namespaced::<WebhookTrigger, WebhookTriggerSpec>,
-                    error_policy::<WebhookTrigger, WebhookTriggerSpec>,
-                    context.clone(),
-                )
-                .filter_map(|x| async move { std::result::Result::ok(x) })
-                .for_each(|_| futures::future::ready(())),
-        ));
-
-        debug!("starting controllers main loop");
-        join_all(controllers).await;
-        debug!("controllers main loop finished");
-    }
-}
-
 async fn check_api_by_list<K>(api: &Api<K>, api_name: &str)
 where
     K: Clone + DeserializeOwned + Debug,
@@ -233,11 +194,14 @@ where
     }
 }
 
+pub(crate) trait CustomApiResource {
+    fn kind(&self) -> &str;
+}
+
 #[allow(async_fn_in_trait)]
 pub trait Reconcilable<S> {
     async fn reconcile(&self, ctx: Arc<Context<S>>) -> Result<ReconcileAction>;
     async fn cleanup(&self, ctx: Arc<Context<S>>) -> Result<ReconcileAction>;
-    fn kind(&self) -> &str;
     fn finalizer_name(&self) -> Option<&'static str> {
         None
     }
@@ -256,7 +220,7 @@ async fn reconcile_namespaced<K, S>(
     ctx: Arc<Context<S>>,
 ) -> Result<ReconcileAction>
 where
-    K: Resource + Reconcilable<S>,
+    K: Resource + Reconcilable<S> + CustomApiResource,
     K: Debug + Clone + DeserializeOwned + Serialize,
     <K as Resource>::DynamicType: Default,
     K: Resource<Scope = NamespaceResourceScope>,
