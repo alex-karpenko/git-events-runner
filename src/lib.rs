@@ -53,6 +53,9 @@ pub enum Error {
     #[error("GitRepo Secret Decoding Error: {0}")]
     SecretDecodingError(String),
 
+    #[error("RuntimeConfig ConfigMap format Error")]
+    RuntimeConfigFormatError,
+
     #[error("Trigger file access IO error: {0}")]
     TriggerFileAccessError(
         #[source]
@@ -65,6 +68,13 @@ pub enum Error {
         #[source]
         #[from]
         sacs::Error,
+    ),
+
+    #[error("Config deserialization error: {0}")]
+    ConfigDeserializationError(
+        #[source]
+        #[from]
+        serde_yaml::Error,
     ),
 }
 

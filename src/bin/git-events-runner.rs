@@ -33,7 +33,10 @@ async fn main() -> anyhow::Result<()> {
 
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let client = Client::try_default().await?;
-    RuntimeConfig::init(client.clone(), &cli_config.config_map_name).await;
+    tokio::spawn(RuntimeConfig::init_and_watch(
+        client.clone(),
+        cli_config.config_map_name.clone(),
+    ));
     let secrets_cache = ExpiringSecretCache::new(
         Duration::from_secs(cli_config.secrets_cache_time),
         client.clone(),

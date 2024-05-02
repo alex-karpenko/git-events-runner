@@ -1,5 +1,9 @@
-use k8s_openapi::api::core::v1::ConfigMap;
-use kube::{Api, Client};
+use futures::{future::ready, StreamExt};
+use k8s_openapi::{api::core::v1::ConfigMap, Metadata};
+use kube::{
+    runtime::{watcher, WatchStreamExt},
+    Api, Client,
+};
 use serde::Deserialize;
 use std::sync::{Arc, OnceLock};
 use tokio::sync::watch::{self, Sender};
@@ -21,14 +25,8 @@ impl ConfigWatcher {
         let cm_api: Api<ConfigMap> = Api::default_namespaced(self.client.clone());
         match cm_api.get(self.cm_name.as_str()).await {
             Ok(cm) => {
-                if let Some(config_data) = cm.data.unwrap_or_default().get(CONFIG_MAP_DATA_NAME) {
-                    match serde_yaml::from_str::<RuntimeConfig>(config_data) {
-                        Ok(config) => Some(config),
-                        Err(err) => {
-                            error!("Unable to deserialize runtime config: {err}");
-                            None
-                        }
-                    }
+                if let Ok(config) = RuntimeConfig::try_from(cm) {
+                    Some(config)
                 } else {
                     None
                 }
@@ -40,17 +38,35 @@ impl ConfigWatcher {
         }
     }
 
-    async fn update(&self) {
+    async fn init(&self) {
         if let Some(config) = self.get_cm().await {
-            info!(
-                "Loading runtime config from {}/{}",
-                self.client.default_namespace(),
-                self.cm_name
-            );
             debug!("runtime config: {config:#?}");
             self.tx.send_replace(Arc::new(config));
         } else {
-            warn!("Unable to update runtime config");
+            warn!(
+                "Unable to init runtime config from ConfigMap {}/{}",
+                self.client.default_namespace(),
+                self.cm_name
+            );
+        }
+    }
+}
+
+impl TryFrom<ConfigMap> for RuntimeConfig {
+    type Error = crate::Error;
+
+    fn try_from(value: ConfigMap) -> Result<Self, Self::Error> {
+        if let Some(config_data) = value.data.unwrap_or_default().get(CONFIG_MAP_DATA_NAME) {
+            match serde_yaml::from_str::<RuntimeConfig>(config_data) {
+                Ok(config) => Ok(config),
+                Err(err) => {
+                    error!("Unable to deserialize runtime config: {err}");
+                    Err(err.into())
+                }
+            }
+        } else {
+            error!("Unable to deserialize runtime config");
+            Err(crate::Error::RuntimeConfigFormatError)
         }
     }
 }
@@ -62,33 +78,63 @@ impl RuntimeConfig {
         config.clone()
     }
 
-    pub async fn init(client: Client, cm_name: &str) {
+    pub async fn init_and_watch(client: Client, cm_name: String) {
         let (tx, _) = watch::channel(Arc::new(RuntimeConfig::default()));
         let _ = CONFIG_WATCHER.set(ConfigWatcher {
-            client,
-            cm_name: String::from(cm_name),
+            client: client.clone(),
+            cm_name: cm_name.clone(),
             tx,
         });
+        CONFIG_WATCHER.get().unwrap().init().await;
 
-        CONFIG_WATCHER.get().unwrap().update().await;
+        let cm_api: Api<ConfigMap> = Api::default_namespaced(client.clone());
+        let watcher_config =
+            watcher::Config::default().fields(format!("metadata.name={cm_name}").as_str());
+        let cm_stream = watcher(cm_api, watcher_config);
+        cm_stream
+            .touched_objects()
+            .for_each(|cm| {
+                if let Ok(cm) = cm {
+                    let cm_key = format!(
+                        "{}/{}",
+                        cm.metadata().namespace.clone().unwrap(),
+                        cm.metadata().name.clone().unwrap()
+                    );
+                    match RuntimeConfig::try_from(cm) {
+                        Ok(config) => {
+                            CONFIG_WATCHER
+                                .get()
+                                .unwrap()
+                                .tx
+                                .send_replace(Arc::new(config));
+                            info!("Loading runtime config from {cm_key}");
+                        }
+                        Err(err) => {
+                            warn!("Ignore runtime config update due to error: {err}")
+                        }
+                    }
+                }
+                ready(())
+            })
+            .await
     }
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Debug, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct RuntimeConfig {
     pub action: ActionConfig,
     pub trigger: TriggerConfig,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Debug, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionConfig {
     pub workdir: ActionWorkdirConfig,
     pub containers: ActionContainersConfig,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionWorkdirConfig {
     pub mount_path: String,
@@ -104,14 +150,14 @@ impl Default for ActionWorkdirConfig {
     }
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Debug, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersConfig {
     pub cloner: ActionContainersClonerConfig,
     pub worker: ActionContainersWorkerConfig,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersClonerConfig {
     pub name: String,
@@ -127,7 +173,7 @@ impl Default for ActionContainersClonerConfig {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersWorkerConfig {
     pub name: String,
@@ -145,13 +191,13 @@ impl Default for ActionContainersWorkerConfig {
     }
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Debug, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct TriggerConfig {
     pub webhook: TriggerWebhookConfig,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct TriggerWebhookConfig {
     pub default_auth_header: String,
