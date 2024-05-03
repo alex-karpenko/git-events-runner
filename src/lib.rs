@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod controller;
@@ -76,6 +77,9 @@ pub enum Error {
         #[from]
         serde_yaml::Error,
     ),
+
+    #[error("Resource not found in cache: {0}")]
+    ResourceNotFoundError(String),
 }
 
 impl Error {

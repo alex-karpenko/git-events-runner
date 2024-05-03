@@ -1,7 +1,9 @@
+use crate::cache::ApiCache;
 use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, WebhookTrigger, WebhookTriggerSpec};
 use crate::secrets_cache::{ExpiringSecretCache, SecretCache};
+use crate::Error;
 use axum::{
     extract::{FromRequest, Path, State},
     http::{HeaderMap, StatusCode},
@@ -10,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use futures::Future;
-use kube::{Api, Client};
+use kube::Client;
 use sacs::{
     scheduler::{Scheduler, TaskScheduler},
     task::TaskId,
@@ -68,6 +70,8 @@ enum WebError {
     NotImplemented,
     #[strum(to_string = "TaskScheduler: {msg}")]
     SchedulerError { msg: String },
+    #[strum(to_string = "Unknown: {msg}")]
+    UnknownError { msg: String },
 }
 
 pub async fn build_utils_web(
@@ -187,8 +191,7 @@ async fn handle_post_trigger_webhook(
 ) -> Result<WebResponseJson, WebError> {
     debug!("webhook: POST, namespace={namespace}, trigger={trigger}");
 
-    let triggers_api: Api<WebhookTrigger> = Api::namespaced(state.client.clone(), &namespace);
-    let trigger = triggers_api.get(&trigger).await?;
+    let trigger = WebhookTrigger::get(&trigger, Some(&namespace))?;
     let trigger_hash_key = trigger.trigger_hash_key();
 
     state
@@ -230,8 +233,7 @@ async fn handle_post_source_webhook(
 ) -> Result<WebResponseJson, WebError> {
     debug!("webhook: POST, namespace={namespace}, trigger={trigger}, source={source}");
 
-    let triggers_api: Api<WebhookTrigger> = Api::namespaced(state.client.clone(), &namespace);
-    let trigger = triggers_api.get(&trigger).await?;
+    let trigger = WebhookTrigger::get(&trigger, Some(&namespace))?;
     let trigger_hash_key = trigger.trigger_hash_key();
 
     state
@@ -309,6 +311,7 @@ impl IntoResponse for WebError {
             WebError::SchedulerError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
             WebError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
             WebError::AuthorizationError => StatusCode::INTERNAL_SERVER_ERROR,
+            WebError::UnknownError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status, resp).into_response()
@@ -338,6 +341,15 @@ impl From<sacs::Error> for WebError {
     fn from(value: sacs::Error) -> Self {
         Self::SchedulerError {
             msg: value.to_string(),
+        }
+    }
+}
+
+impl From<Error> for WebError {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::ResourceNotFoundError(_) => Self::TriggerNotFound,
+            e => Self::UnknownError { msg: e.to_string() },
         }
     }
 }

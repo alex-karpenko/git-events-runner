@@ -1,4 +1,5 @@
 use git_events_runner::{
+    cache::CacheStore,
     cli::{Cli, CliConfig},
     config::RuntimeConfig,
     controller::{run_leader_controllers, State},
@@ -37,6 +38,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         client.clone(),
         cli_config.config_map_name.clone(),
     ));
+    tokio::spawn(CacheStore::watch(client.clone()));
     let secrets_cache = ExpiringSecretCache::new(
         Duration::from_secs(cli_config.secrets_cache_time),
         client.clone(),

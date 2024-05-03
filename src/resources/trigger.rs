@@ -1,4 +1,5 @@
 use crate::{
+    cache::ApiCache,
     controller::{Context, CustomApiResource, Reconcilable, API_GROUP, CURRENT_API_VERSION},
     resources::{
         action::{Action, ActionExecutor, ClusterAction},
@@ -472,11 +473,12 @@ impl ScheduleTrigger {
 
 pub(crate) trait Trigger<S>
 where
-    Self: Send + Sync,
+    Self: 'static + Send + Sync + ApiCache,
     Self: Resource + ResourceExt + CustomApiResource + HasTriggerStatus,
     Self: std::fmt::Debug + Clone + DeserializeOwned + Serialize,
     <Self as Resource>::DynamicType: Default,
     Self: Resource<Scope = NamespaceResourceScope>,
+    <Self as kube::Resource>::DynamicType: std::hash::Hash + std::cmp::Eq + Clone,
     S: Send + Sync + 'static,
 {
     fn sources(&self) -> &TriggerSources;
@@ -500,7 +502,7 @@ where
     ) -> impl Future<Output = Result<()>> + Send {
         async move {
             let name = self.name_any();
-            let trigger = api.get(&name).await?;
+            let trigger = Self::get(&name, Some(&self.namespace().unwrap()))?;
 
             let new_status = if let Some(status) = trigger.trigger_status() {
                 // Use new checked_sources map as addition to existing
@@ -566,9 +568,9 @@ where
             let source_clone_folder = source_clone_folder.clone();
             Box::pin(async move {
                 debug!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
-                // Get current trigger from API
                 let triggers_api: Api<Self> = Api::namespaced(client.clone(), &trigger_ns);
-                let trigger = triggers_api.get(&trigger_name).await;
+                // Get current trigger from cache
+                let trigger = Self::get(&trigger_name, Some(&trigger_ns));
 
                 if let Ok(trigger) = trigger {
                     let base_temp_dir = format!(
@@ -629,9 +631,7 @@ where
                             let repo = match trigger.sources().kind {
                                 // - Get GitRepo object
                                 TriggerSourceKind::GitRepo => {
-                                    let gitrepo_api: Api<GitRepo> =
-                                        Api::namespaced(client.clone(), &trigger_ns);
-                                    let gitrepo = gitrepo_api.get(&source).await;
+                                    let gitrepo = GitRepo::get(&source, Some(&trigger_ns));
                                     // - Call repo.fetch_repo_ref(...) to get repository
                                     if let Ok(gitrepo) = gitrepo {
                                         gitrepo
@@ -651,8 +651,7 @@ where
                                     }
                                 }
                                 TriggerSourceKind::ClusterGitRepo => {
-                                    let gitrepo_api: Api<ClusterGitRepo> = Api::all(client.clone());
-                                    let gitrepo = gitrepo_api.get(&source).await;
+                                    let gitrepo = ClusterGitRepo::get(&source, None);
                                     // - Call repo.fetch_repo_ref(...) to get repository
                                     if let Ok(gitrepo) = gitrepo {
                                         gitrepo
@@ -722,9 +721,8 @@ where
                             {
                                 let action_exec_result = match trigger.action().kind {
                                     TriggerActionKind::Action => {
-                                        let actions_api: Api<Action> =
-                                            Api::namespaced(client.clone(), &trigger_ns);
-                                        let action = actions_api.get(&trigger.action().name).await;
+                                        let action =
+                                            Action::get(&trigger.action().name, Some(&trigger_ns));
                                         match action {
                                             Ok(action) => {
                                                 // TODO: Should we retry in case of error?
@@ -742,13 +740,12 @@ where
                                                     )
                                                     .await
                                             }
-                                            Err(err) => Err(Error::KubeError(err)),
+                                            Err(err) => Err(err),
                                         }
                                     }
                                     TriggerActionKind::ClusterAction => {
-                                        let actions_api: Api<ClusterAction> =
-                                            Api::all(client.clone());
-                                        let action = actions_api.get(&trigger.action().name).await;
+                                        let action =
+                                            ClusterAction::get(&trigger.action().name, None);
                                         match action {
                                             Ok(action) => {
                                                 // TODO: Should we retry in case of error?
@@ -766,7 +763,7 @@ where
                                                     )
                                                     .await
                                             }
-                                            Err(err) => Err(Error::KubeError(err)),
+                                            Err(err) => Err(err),
                                         }
                                     }
                                 };
