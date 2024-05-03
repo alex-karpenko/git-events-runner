@@ -45,6 +45,7 @@ rules:
       - configmaps
     verbs:
       - get
+      - list
       - watch
     resourceNames:
       - {{ include "git-events-runner.configMapName" . }}

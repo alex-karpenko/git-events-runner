@@ -7,50 +7,10 @@ use kube::{
 use serde::Deserialize;
 use std::sync::{Arc, OnceLock};
 use tokio::sync::watch::{self, Sender};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 const CONFIG_MAP_DATA_NAME: &str = "runtimeConfig";
-
-static CONFIG_WATCHER: OnceLock<ConfigWatcher> = OnceLock::new();
-
-#[derive(Clone)]
-struct ConfigWatcher {
-    client: Client,
-    cm_name: String,
-    tx: Sender<Arc<RuntimeConfig>>,
-}
-
-impl ConfigWatcher {
-    async fn get_cm(&self) -> Option<RuntimeConfig> {
-        let cm_api: Api<ConfigMap> = Api::default_namespaced(self.client.clone());
-        match cm_api.get(self.cm_name.as_str()).await {
-            Ok(cm) => {
-                if let Ok(config) = RuntimeConfig::try_from(cm) {
-                    Some(config)
-                } else {
-                    None
-                }
-            }
-            Err(err) => {
-                error!("Unable to get runtime config: {err}");
-                None
-            }
-        }
-    }
-
-    async fn init(&self) {
-        if let Some(config) = self.get_cm().await {
-            debug!("runtime config: {config:#?}");
-            self.tx.send_replace(Arc::new(config));
-        } else {
-            warn!(
-                "Unable to init runtime config from ConfigMap {}/{}",
-                self.client.default_namespace(),
-                self.cm_name
-            );
-        }
-    }
-}
+static CONFIG_TX_CHANNEL: OnceLock<Sender<Arc<RuntimeConfig>>> = OnceLock::new();
 
 impl TryFrom<ConfigMap> for RuntimeConfig {
     type Error = crate::Error;
@@ -73,21 +33,36 @@ impl TryFrom<ConfigMap> for RuntimeConfig {
 
 impl RuntimeConfig {
     pub fn get() -> Arc<RuntimeConfig> {
-        let rx = CONFIG_WATCHER.get().unwrap().tx.subscribe();
+        let rx = CONFIG_TX_CHANNEL.get().unwrap().subscribe();
         let config = rx.borrow();
         config.clone()
     }
 
     pub async fn init_and_watch(client: Client, cm_name: String) {
         let (tx, _) = watch::channel(Arc::new(RuntimeConfig::default()));
-        let _ = CONFIG_WATCHER.set(ConfigWatcher {
-            client: client.clone(),
-            cm_name: cm_name.clone(),
-            tx,
-        });
-        CONFIG_WATCHER.get().unwrap().init().await;
+        let _ = CONFIG_TX_CHANNEL.set(tx);
 
         let cm_api: Api<ConfigMap> = Api::default_namespaced(client.clone());
+        // Load initial config content from ConfigMap
+        let initial_config = match cm_api.get(cm_name.as_str()).await {
+            Ok(cm) => {
+                if let Ok(config) = RuntimeConfig::try_from(cm) {
+                    config
+                } else {
+                    warn!("Unable to load initial runtime config, use default instead.");
+                    RuntimeConfig::default()
+                }
+            }
+            Err(_err) => {
+                warn!("Unable to load initial runtime config, use default instead.");
+                RuntimeConfig::default()
+            }
+        };
+        CONFIG_TX_CHANNEL
+            .get()
+            .unwrap()
+            .send_replace(Arc::new(initial_config));
+
         let watcher_config =
             watcher::Config::default().fields(format!("metadata.name={cm_name}").as_str());
         let cm_stream = watcher(cm_api, watcher_config);
@@ -102,10 +77,9 @@ impl RuntimeConfig {
                     );
                     match RuntimeConfig::try_from(cm) {
                         Ok(config) => {
-                            CONFIG_WATCHER
+                            CONFIG_TX_CHANNEL
                                 .get()
                                 .unwrap()
-                                .tx
                                 .send_replace(Arc::new(config));
                             info!("Loading runtime config from {cm_key}");
                         }
