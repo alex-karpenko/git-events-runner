@@ -67,7 +67,7 @@ impl RuntimeConfig {
             watcher::Config::default().fields(format!("metadata.name={cm_name}").as_str());
         let cm_stream = watcher(cm_api, watcher_config);
         cm_stream
-            .touched_objects()
+            .applied_objects()
             .for_each(|cm| {
                 if let Ok(cm) = cm {
                     let cm_key = format!(
