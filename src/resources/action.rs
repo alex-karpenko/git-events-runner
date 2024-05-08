@@ -196,7 +196,9 @@ trait ActionInternals: Sized + Resource {
             spec: Some(JobSpec {
                 backoff_limit: Some(0),
                 parallelism: Some(1),
-                ttl_seconds_after_finished: Some(300),
+                ttl_seconds_after_finished: Some(
+                    RuntimeConfig::get().action.ttl_seconds_after_finished,
+                ),
                 template: PodTemplateSpec {
                     metadata: Default::default(),
                     spec: Some(PodSpec {

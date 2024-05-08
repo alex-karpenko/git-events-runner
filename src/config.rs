@@ -102,12 +102,24 @@ pub struct RuntimeConfig {
     pub trigger: TriggerConfig,
 }
 
-#[derive(Clone, Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionConfig {
     pub workdir: ActionWorkdirConfig,
     pub containers: ActionContainersConfig,
     pub default_service_account: Option<String>,
+    pub ttl_seconds_after_finished: i32,
+}
+
+impl Default for ActionConfig {
+    fn default() -> Self {
+        Self {
+            workdir: ActionWorkdirConfig::default(),
+            containers: ActionContainersConfig::default(),
+            default_service_account: None,
+            ttl_seconds_after_finished: 300,
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Debug)]

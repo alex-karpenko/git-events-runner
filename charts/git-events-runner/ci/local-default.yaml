@@ -16,6 +16,7 @@ actionJobServiceAccounts:
 
 runtimeConfig:
   action:
+    ttlSecondsAfterFinished: 30
     containers:
       cloner:
         image: gitrepo-cloner:local

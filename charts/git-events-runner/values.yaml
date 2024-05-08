@@ -160,8 +160,8 @@ runtimeConfig:
     webhook:
       defaultAuthHeader: x-trigger-auth
   action:
-    defaultServiceAccount: |-
-      {{ include "git-events-runner.actionJobServiceAccountName" . }}
+    ttlSecondsAfterFinished: 300
+    defaultServiceAccount: '{{ include "git-events-runner.actionJobServiceAccountName" . }}'
     workdir:
       mountPath: /action_workdir
       volumeName: action-workdir
