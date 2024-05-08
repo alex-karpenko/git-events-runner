@@ -178,6 +178,12 @@ trait ActionInternals: Sized + Resource {
             )
         };
 
+        let service_account = if let Some(sa) = action_job.service_account {
+            Some(sa)
+        } else {
+            RuntimeConfig::get().action.default_service_account.clone()
+        };
+
         let job = Job {
             metadata: ObjectMeta {
                 // TODO: make func
@@ -194,13 +200,12 @@ trait ActionInternals: Sized + Resource {
                 template: PodTemplateSpec {
                     metadata: Default::default(),
                     spec: Some(PodSpec {
-                        service_account_name: action_job.service_account.clone(),
+                        service_account_name: service_account,
                         init_containers: Some(vec![Container {
                             name: config.action.containers.cloner.name.clone(),
                             image: Some(
                                 action_job
                                     .cloner_image
-                                    .clone()
                                     .unwrap_or(config.action.containers.cloner.image.clone()),
                             ),
                             args: Some(args),
@@ -219,7 +224,6 @@ trait ActionInternals: Sized + Resource {
                             image: Some(
                                 action_job
                                     .action_image
-                                    .clone()
                                     .unwrap_or(config.action.containers.worker.image.clone()),
                             ),
                             working_dir: Some(
@@ -229,7 +233,7 @@ trait ActionInternals: Sized + Resource {
                                     .unwrap_or(config.action.workdir.mount_path.clone()),
                             ),
                             command: action_job.command.clone(),
-                            args: action_job.args.clone(),
+                            args: action_job.args,
                             env: Some(self.get_action_job_envs(
                                 source_kind,
                                 source_name,

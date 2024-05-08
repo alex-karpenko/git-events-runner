@@ -7,7 +7,7 @@ use kube::{
 use serde::Deserialize;
 use std::sync::{Arc, OnceLock};
 use tokio::sync::watch::{self, Sender};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 const CONFIG_MAP_DATA_NAME: &str = "runtimeConfig";
 static CONFIG_TX_CHANNEL: OnceLock<Sender<Arc<RuntimeConfig>>> = OnceLock::new();
@@ -77,6 +77,7 @@ impl RuntimeConfig {
                     );
                     match RuntimeConfig::try_from(cm) {
                         Ok(config) => {
+                            debug!("{config:#?}");
                             CONFIG_TX_CHANNEL
                                 .get()
                                 .unwrap()
@@ -106,6 +107,7 @@ pub struct RuntimeConfig {
 pub struct ActionConfig {
     pub workdir: ActionWorkdirConfig,
     pub containers: ActionContainersConfig,
+    pub default_service_account: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Debug)]

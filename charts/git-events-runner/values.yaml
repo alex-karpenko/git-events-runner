@@ -156,7 +156,12 @@ controllerOptions:
     volumeName: temp-repo-data
 
 runtimeConfig:
+  trigger:
+    webhook:
+      defaultAuthHeader: x-trigger-auth
   action:
+    defaultServiceAccount: |-
+      {{ include "git-events-runner.actionJobServiceAccountName" . }}
     workdir:
       mountPath: /action_workdir
       volumeName: action-workdir
@@ -168,7 +173,3 @@ runtimeConfig:
         name: action-worker
         image: docker.io/bash:latest
         variablesPrefix: ACTION_JOB_
-
-  trigger:
-    webhook:
-      defaultAuthHeader: x-trigger-auth
