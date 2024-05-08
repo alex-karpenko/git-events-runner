@@ -30,6 +30,7 @@ use super::{
     kind = "Action",
     group = "git-events-runner.rs",
     version = "v1alpha1",
+    doc = "Action custom resource definition",
     namespaced
 )]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +46,8 @@ pub struct ActionSpec {
 #[kube(
     kind = "ClusterAction",
     group = "git-events-runner.rs",
-    version = "v1alpha1"
+    version = "v1alpha1",
+    doc = "ClusterAction custom resource definition"
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ClusterActionSpec {

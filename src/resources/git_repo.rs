@@ -23,6 +23,7 @@ const URI_VALIDATION_REGEX: &str = r#"^git@[\w.-]+:[\w.-]+/[/\w.-]+$|^ssh://([\w
     kind = "GitRepo",
     group = "git-events-runner.rs",
     version = "v1alpha1",
+    doc = "GitRepo custom resource definition",
     namespaced
 )]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +41,8 @@ pub struct GitRepoSpec {
 #[kube(
     kind = "ClusterGitRepo",
     group = "git-events-runner.rs",
-    version = "v1alpha1"
+    version = "v1alpha1",
+    doc = "ClusterGitRepo custom resource definition"
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ClusterGitRepoSpec {

@@ -47,6 +47,7 @@ use tracing::{debug, error, info, warn};
     kind = "ScheduleTrigger",
     group = "git-events-runner.rs",
     version = "v1alpha1",
+    doc = "ScheduleTrigger custom resource definition",
     namespaced,
     printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#,
     printcolumn = r#"{"name":"Last Run", "type":"date", "format":"date-time", "description":"time of last trigger run", "jsonPath":".status.lastRun"}"#
@@ -64,6 +65,7 @@ pub struct ScheduleTriggerSpec {
     kind = "WebhookTrigger",
     group = "git-events-runner.rs",
     version = "v1alpha1",
+    doc = "WebhookTrigger custom resource definition",
     namespaced,
     printcolumn = r#"{"name":"State", "type":"string", "description":"current trigger state", "jsonPath":".status.state"}"#,
     printcolumn = r#"{"name":"Last Run", "type":"date", "format":"date-time", "description":"time of last trigger run", "jsonPath":".status.lastRun"}"#
