@@ -11,5 +11,5 @@ spec:
     - name: wget
       image: busybox
       command: ['wget']
-      args: ['{{ include "git-events-runner.fullname" . }}:{{ .Values.service.utility }}/ready']
+      args: ['{{ include "git-events-runner.fullname" . }}:{{ .Values.service.utility.port }}/ready']
   restartPolicy: Never

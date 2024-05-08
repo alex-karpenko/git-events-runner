@@ -1,3 +1,4 @@
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -5,15 +6,29 @@ metadata:
   labels:
     {{- include "git-events-runner.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ .Values.service.webhook.type }}
   ports:
-    - port: {{ .Values.service.utility }}
-      targetPort: utility
-      protocol: TCP
-      name: utility
-    - port: {{ .Values.service.webhook }}
+    - port: {{ .Values.service.webhook.port }}
       targetPort: webhook
       protocol: TCP
       name: webhook
   selector:
     {{- include "git-events-runner.selectorLabels" . | nindent 4 }}
+{{- if .Values.service.utility.type }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-utility
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.utility.type }}
+  ports:
+    - port: {{ .Values.service.utility.port }}
+      targetPort: utility
+      protocol: TCP
+      name: utility
+  selector:
+    {{- include "git-events-runner.selectorLabels" . | nindent 4 }}
+{{- end }}

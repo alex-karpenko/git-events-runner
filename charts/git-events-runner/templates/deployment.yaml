@@ -35,9 +35,9 @@ spec:
           args:
             - run
             - --webhooks-port
-            - {{ .Values.service.webhook | default 8080 | quote }}
+            - {{ .Values.service.webhook.port | default 8080 | quote }}
             - --utility-port
-            - {{ .Values.service.utility | default 3000 | quote }}
+            - {{ .Values.service.utility.port | default 3000 | quote }}
             - --schedule-parallelism
             - {{ .Values.service.scheduleParallelism | default 16 | quote }}
             - --webhooks-parallelism
@@ -65,10 +65,10 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: utility
-              containerPort: {{ .Values.service.utility }}
+              containerPort: {{ .Values.service.utility.port }}
               protocol: TCP
             - name: webhook
-              containerPort: {{ .Values.service.webhook }}
+              containerPort: {{ .Values.service.webhook.port }}
               protocol: TCP
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
