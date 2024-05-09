@@ -1,3 +1,7 @@
+use super::{
+    random_string,
+    trigger::{TriggerGitRepoReference, TriggerSourceKind},
+};
 use crate::{config::RuntimeConfig, Error, Result};
 use chrono::{DateTime, Local};
 use k8s_openapi::{
@@ -19,10 +23,11 @@ use std::{collections::BTreeMap, time::SystemTime};
 use strum::{Display, EnumString};
 use tracing::info;
 
-use super::{
-    random_string,
-    trigger::{TriggerGitRepoReference, TriggerSourceKind},
-};
+pub const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identity";
+pub const ACTION_JOB_ACTION_KIND_LABEL: &str = "git-events-runner.rs/action-kind";
+pub const ACTION_JOB_ACTION_NAME_LABEL: &str = "git-events-runner.rs/action-name";
+pub const ACTION_JOB_SOURCE_KIND_LABEL: &str = "git-events-runner.rs/source-kind";
+pub const ACTION_JOB_SOURCE_NAME_LABEL: &str = "git-events-runner.rs/source-name";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[cfg_attr(test, derive(Default))]
@@ -107,6 +112,7 @@ impl ActionExecutor for ClusterAction {}
 
 #[allow(private_bounds)]
 pub(crate) trait ActionExecutor: ActionInternals {
+    #[allow(clippy::too_many_arguments)]
     async fn execute(
         &self,
         source_kind: &TriggerSourceKind,
@@ -115,8 +121,16 @@ pub(crate) trait ActionExecutor: ActionInternals {
         trigger_ref: &TriggerGitRepoReference,
         client: Client,
         ns: &str,
+        identity: String,
     ) -> Result<Job> {
-        let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns)?;
+        let job = self.create_job_spec(
+            source_kind,
+            source_name,
+            source_commit,
+            trigger_ref,
+            ns,
+            identity,
+        )?;
         let jobs_api: Api<Job> = Api::namespaced(client.clone(), ns);
 
         info!("Create job {}/{}", ns, job.name_any());
@@ -148,23 +162,18 @@ trait ActionInternals: Sized + Resource {
         source_commit: &str,
         trigger_ref: &TriggerGitRepoReference,
         ns: &str,
+        identity: String,
     ) -> Result<Job> {
         let config = RuntimeConfig::get();
         let action_job = self.action_job_spec();
         let source_override = self.source_override_spec();
 
         let mut labels: BTreeMap<String, String> = BTreeMap::new();
-        labels.insert("git-events-runner.rs/job".into(), "true".into());
-        labels.insert("git-events-runner.rs/action-kind".into(), self.kind());
-        labels.insert("git-events-runner.rs/action-name".into(), self.name_any());
-        labels.insert(
-            "git-events-runner.rs/source-kind".into(),
-            source_kind.to_string(),
-        );
-        labels.insert(
-            "git-events-runner.rs/source-name".into(),
-            source_name.into(),
-        );
+        labels.insert(ACTION_JOB_IDENTITY_LABEL.into(), identity);
+        labels.insert(ACTION_JOB_ACTION_KIND_LABEL.into(), self.kind());
+        labels.insert(ACTION_JOB_ACTION_NAME_LABEL.into(), self.name_any());
+        labels.insert(ACTION_JOB_SOURCE_KIND_LABEL.into(), source_kind.to_string());
+        labels.insert(ACTION_JOB_SOURCE_NAME_LABEL.into(), source_name.into());
 
         let args = if let Some(source_override) = source_override {
             self.get_gitrepo_cloner_args(

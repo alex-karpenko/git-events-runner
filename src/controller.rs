@@ -61,15 +61,22 @@ pub struct State {
     pub secrets_cache: Arc<ExpiringSecretCache>,
     /// Cli config
     pub cli_config: Arc<CliConfig>,
+    /// Current controller identity
+    pub identity: String,
 }
 
 impl State {
-    pub fn new(cli_config: Arc<CliConfig>, secrets_cache: Arc<ExpiringSecretCache>) -> Self {
+    pub fn new(
+        cli_config: Arc<CliConfig>,
+        secrets_cache: Arc<ExpiringSecretCache>,
+        identity: String,
+    ) -> Self {
         Self {
             diagnostics: Default::default(),
             ready: Default::default(),
             secrets_cache,
             cli_config,
+            identity,
         }
     }
 }
@@ -110,6 +117,8 @@ pub struct Context<S> {
     pub secrets_cache: Arc<ExpiringSecretCache>,
     /// Cli config
     pub cli_config: Arc<CliConfig>,
+    /// Current controller identity
+    pub identity: String,
 }
 
 /// State wrapper around the controller outputs for the web server
@@ -128,6 +137,7 @@ impl State {
             scheduler,
             triggers,
             cli_config: self.cli_config.clone(),
+            identity: self.identity.clone(),
         })
     }
 }

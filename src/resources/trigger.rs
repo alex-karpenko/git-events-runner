@@ -334,6 +334,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                         schedule,
                         None,
                         ctx.cli_config.source_clone_folder.clone(),
+                        ctx.identity.clone(),
                     );
                     let task_id = scheduler.add(task).await?;
                     let tasks = &mut triggers.tasks;
@@ -557,6 +558,7 @@ where
         schedule: TaskSchedule,
         source: Option<String>,
         source_clone_folder: String,
+        identity: String,
     ) -> Task {
         let trigger_name = self.name_any();
         let trigger_ns = self
@@ -568,6 +570,7 @@ where
             let client = client.clone();
             let source = source.clone();
             let source_clone_folder = source_clone_folder.clone();
+            let identity = identity.clone();
             Box::pin(async move {
                 debug!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
                 let triggers_api: Api<Self> = Api::namespaced(client.clone(), &trigger_ns);
@@ -739,6 +742,7 @@ where
                                                         &trigger.sources().watch_on.reference,
                                                         client.clone(),
                                                         &trigger_ns,
+                                                        identity.clone(),
                                                     )
                                                     .await
                                             }
@@ -762,6 +766,7 @@ where
                                                         &trigger.sources().watch_on.reference,
                                                         client.clone(),
                                                         &trigger_ns,
+                                                        identity.clone(),
                                                     )
                                                     .await
                                             }

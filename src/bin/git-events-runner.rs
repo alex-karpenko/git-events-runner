@@ -43,8 +43,12 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         Duration::from_secs(cli_config.secrets_cache_time),
         client.clone(),
     );
-    let state = State::new(Arc::new(cli_config.clone()), secrets_cache.clone());
     let identity = Uuid::new_v4().to_string();
+    let state = State::new(
+        Arc::new(cli_config.clone()),
+        secrets_cache.clone(),
+        identity.clone(),
+    );
 
     let (mut lock_channel, lock_task) = leader_lock::new(
         &identity,
@@ -78,6 +82,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
             secrets_cache.clone(),
             cli_config.webhooks_port,
             cli_config.source_clone_folder.clone(),
+            identity.clone(),
         )
         .await
     };

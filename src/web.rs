@@ -32,6 +32,7 @@ struct WebState {
     client: Client,
     secrets_cache: Arc<ExpiringSecretCache>,
     source_clone_folder: String,
+    identity: String,
 }
 
 #[derive(FromRequest, Serialize)]
@@ -106,12 +107,14 @@ pub async fn build_hooks_web(
     secrets_cache: Arc<ExpiringSecretCache>,
     port: u16,
     source_clone_folder: String,
+    identity: String,
 ) -> impl Future<Output = ()> {
     let state = WebState {
         scheduler: scheduler.clone(),
         client,
         secrets_cache,
         source_clone_folder,
+        identity,
     };
 
     let app = Router::new()
@@ -204,6 +207,7 @@ async fn handle_post_trigger_webhook(
             sacs::task::TaskSchedule::Once,
             None,
             state.source_clone_folder,
+            state.identity.clone(),
         );
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;
@@ -246,6 +250,7 @@ async fn handle_post_source_webhook(
             sacs::task::TaskSchedule::Once,
             Some(source.clone()),
             state.source_clone_folder,
+            state.identity.clone(),
         );
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;
