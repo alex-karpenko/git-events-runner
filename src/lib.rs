@@ -2,6 +2,7 @@ pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod controller;
+pub mod jobs;
 pub mod leader_lock;
 pub mod resources;
 pub mod secrets_cache;

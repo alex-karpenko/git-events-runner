@@ -3,7 +3,7 @@ use git_events_runner::{
     cli::{Cli, CliConfig},
     config::RuntimeConfig,
     controller::{run_leader_controllers, State},
-    leader_lock,
+    jobs, leader_lock,
     resources::{
         action::{Action, ClusterAction},
         git_repo::{ClusterGitRepo, GitRepo},
@@ -34,16 +34,20 @@ async fn main() -> anyhow::Result<()> {
 
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let client = Client::try_default().await?;
+    let identity = Uuid::new_v4().to_string();
+
     tokio::spawn(RuntimeConfig::init_and_watch(
         client.clone(),
         cli_config.config_map_name.clone(),
     ));
     tokio::spawn(CacheStore::watch(client.clone()));
+    tokio::spawn(jobs::watch(client.clone(), identity.clone()));
+
     let secrets_cache = ExpiringSecretCache::new(
         Duration::from_secs(cli_config.secrets_cache_time),
         client.clone(),
     );
-    let identity = Uuid::new_v4().to_string();
+
     let state = State::new(
         Arc::new(cli_config.clone()),
         secrets_cache.clone(),

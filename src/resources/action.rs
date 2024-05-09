@@ -403,7 +403,7 @@ impl ActionInternals for ClusterAction {
 
 impl ActionInternals for Action {
     fn kind(&self) -> String {
-        String::from("ClusterAction")
+        String::from("Action")
     }
 
     fn action_job_spec(&self) -> ActionJob {

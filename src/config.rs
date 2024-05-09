@@ -1,7 +1,7 @@
 use futures::{future::ready, StreamExt};
 use k8s_openapi::{api::core::v1::ConfigMap, Metadata};
 use kube::{
-    runtime::{watcher, WatchStreamExt},
+    runtime::{predicates, watcher, WatchStreamExt},
     Api, Client,
 };
 use serde::Deserialize;
@@ -68,6 +68,7 @@ impl RuntimeConfig {
         let cm_stream = watcher(cm_api, watcher_config);
         cm_stream
             .applied_objects()
+            .predicate_filter(predicates::generation)
             .for_each(|cm| {
                 if let Ok(cm) = cm {
                     let cm_key = format!(
