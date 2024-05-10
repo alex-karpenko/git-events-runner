@@ -4,6 +4,7 @@ use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, WebhookTrigger, WebhookTriggerSpec};
 use crate::secrets_cache::{ExpiringSecretCache, SecretCache};
 use crate::Error;
+use axum::routing::post;
 use axum::{
     extract::{FromRequest, Path, State},
     http::{HeaderMap, StatusCode},
@@ -67,8 +68,6 @@ enum WebError {
     AuthorizationError,
     #[strum(to_string = "KubeError: {msg}")]
     KubeError { msg: String },
-    #[strum(to_string = "method isn't not implemented")]
-    NotImplemented,
     #[strum(to_string = "TaskScheduler: {msg}")]
     SchedulerError { msg: String },
     #[strum(to_string = "Unknown: {msg}")]
@@ -118,13 +117,10 @@ pub async fn build_hooks_web(
     };
 
     let app = Router::new()
-        .route(
-            "/:namespace/:trigger",
-            get(handle_get_trigger_webhook).post(handle_post_trigger_webhook),
-        )
+        .route("/:namespace/:trigger", post(handle_post_trigger_webhook))
         .route(
             "/:namespace/:trigger/:source",
-            get(handle_get_source_webhook).post(handle_post_source_webhook),
+            post(handle_post_source_webhook),
         )
         .with_state(state);
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
@@ -176,17 +172,6 @@ async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) 
     (StatusCode::NOT_IMPLEMENTED, "Not implemented".into())
 }
 
-async fn handle_get_trigger_webhook(
-    State(_state): State<WebState>,
-    Path((namespace, trigger)): Path<(String, String)>,
-    _headers: HeaderMap,
-) -> Result<WebResponseJson, WebError> {
-    warn!("webhook: get trigger hook isn't implemented");
-    debug!("webhook: GET, namespace={namespace}, trigger={trigger}");
-
-    Err(WebError::NotImplemented)
-}
-
 async fn handle_post_trigger_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
@@ -217,17 +202,6 @@ async fn handle_post_trigger_webhook(
         warn!("try to run forbidden multi-source hook on trigger {trigger_hash_key}");
         Err(WebError::ForbiddenMultiSource)
     }
-}
-
-async fn handle_get_source_webhook(
-    State(_state): State<WebState>,
-    Path((namespace, trigger, source)): Path<(String, String, String)>,
-    _headers: HeaderMap,
-) -> Result<WebResponseJson, WebError> {
-    warn!("webhook: get source hook isn't implemented");
-    debug!("webhook: GET, namespace={namespace}, trigger={trigger}, source={source}");
-
-    Err(WebError::NotImplemented)
 }
 
 async fn handle_post_source_webhook(
@@ -314,7 +288,6 @@ impl IntoResponse for WebError {
             WebError::Forbidden => StatusCode::FORBIDDEN,
             WebError::KubeError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
             WebError::SchedulerError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
-            WebError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
             WebError::AuthorizationError => StatusCode::INTERNAL_SERVER_ERROR,
             WebError::UnknownError { msg: _ } => StatusCode::INTERNAL_SERVER_ERROR,
         };
