@@ -1,7 +1,7 @@
 name: Build/push image
 on:
   push:
-    tags: [ 'v*.*.*' ]
+    tags: ["v*.*.*"]
 
 env:
   REGISTRY: ghcr.io
@@ -18,6 +18,7 @@ jobs:
         binary:
           - git-events-runner
           - gitrepo-cloner
+          - action-worker
 
     steps:
       - name: Checkout repository
