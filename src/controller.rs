@@ -1,7 +1,9 @@
 use crate::{
     cli::CliConfig,
-    resources::trigger::{ScheduleTrigger, ScheduleTriggerSpec},
-    secrets_cache::ExpiringSecretCache,
+    resources::{
+        trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
+        CustomApiResource, Reconcilable,
+    },
     Error, Result,
 };
 use chrono::{DateTime, Utc};
@@ -20,35 +22,14 @@ use kube::{
 };
 use sacs::{
     scheduler::{
-        GarbageCollector, RuntimeThreads, Scheduler, SchedulerBuilder, TaskScheduler,
-        WorkerParallelism, WorkerType,
+        GarbageCollector, RuntimeThreads, Scheduler, SchedulerBuilder, TaskScheduler, WorkerParallelism, WorkerType,
     },
     task::TaskId,
 };
 use serde::{de::DeserializeOwned, Serialize};
-use std::{
-    clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration,
-};
+use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration};
 use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
-
-pub const API_GROUP: &str = "git-events-runner.rs";
-pub const CURRENT_API_VERSION: &str = "v1alpha1";
-
-/// Actual triggers state
-pub struct TriggersState<S> {
-    pub(crate) tasks: HashMap<String, TaskId>,
-    pub(crate) specs: HashMap<String, S>,
-}
-
-impl<S> Default for TriggersState<S> {
-    fn default() -> Self {
-        Self {
-            tasks: Default::default(),
-            specs: HashMap::<String, S>::new(),
-        }
-    }
-}
 
 /// State shared between the controllers and the web server
 #[derive(Clone)]
@@ -57,8 +38,6 @@ pub struct State {
     pub diagnostics: Arc<RwLock<Diagnostics>>,
     /// Web servers readiness
     pub ready: Arc<RwLock<bool>>,
-    /// Shared secrets cache/retriever
-    pub secrets_cache: Arc<ExpiringSecretCache>,
     /// Cli config
     pub cli_config: Arc<CliConfig>,
     /// Current controller identity
@@ -66,15 +45,10 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(
-        cli_config: Arc<CliConfig>,
-        secrets_cache: Arc<ExpiringSecretCache>,
-        identity: String,
-    ) -> Self {
+    pub fn new(cli_config: Arc<CliConfig>, identity: String) -> Self {
         Self {
             diagnostics: Default::default(),
             ready: Default::default(),
-            secrets_cache,
             cli_config,
             identity,
         }
@@ -104,17 +78,15 @@ impl Diagnostics {
 
 // Context for our reconcilers
 #[derive(Clone)]
-pub struct Context<S> {
+pub struct Context {
     /// Kubernetes client
     pub client: Client,
     /// Diagnostics read by the web server
     pub diagnostics: Arc<RwLock<Diagnostics>>,
-    /// Scheduler to run periodic tasks
+    /// Scheduler to run periodic tasks of ScheduleTrigger (WebhookTrigger has it's own scheduler)
     pub scheduler: Arc<RwLock<Scheduler>>,
     /// Actual state of all Triggers
-    pub triggers: Arc<RwLock<TriggersState<S>>>,
-    /// Shared secrets cache/retriever
-    pub secrets_cache: Arc<ExpiringSecretCache>,
+    pub triggers: Arc<RwLock<TriggersState>>,
     /// Cli config
     pub cli_config: Arc<CliConfig>,
     /// Current controller identity
@@ -124,22 +96,31 @@ pub struct Context<S> {
 /// State wrapper around the controller outputs for the web server
 impl State {
     /// Create a Controller Context that can update State
-    pub fn to_context<S>(
+    pub fn to_context(
         &self,
         client: Client,
         scheduler: Arc<RwLock<Scheduler>>,
-        triggers: Arc<RwLock<TriggersState<S>>>,
-    ) -> Arc<Context<S>> {
+        triggers: Arc<RwLock<TriggersState>>,
+    ) -> Arc<Context> {
         Arc::new(Context {
             client,
             diagnostics: self.diagnostics.clone(),
-            secrets_cache: self.secrets_cache.clone(),
             scheduler,
             triggers,
             cli_config: self.cli_config.clone(),
             identity: self.identity.clone(),
         })
     }
+}
+
+/// Actual (real world) schedule triggers state
+#[derive(Default)]
+pub struct TriggersState {
+    /// All scheduled tasks
+    pub(crate) tasks: HashMap<String, TaskId>,
+    /// All specs of scheduled triggers
+    // TODO: do we really need this specs? seems we have all resources cached
+    pub(crate) schedules: HashMap<String, TriggerSchedule>,
 }
 
 /// Initialize the controllers and shared state (given the crd is installed)
@@ -157,11 +138,15 @@ pub async fn run_leader_controllers(
         .build();
     let scheduler = Arc::new(RwLock::new(scheduler));
 
+    // separate scope to release references in the shared state
     {
+        // TODO: refactor to have single task since we have single reconcilable resource so far
+        // but this should be don in separate PR to have history in case of possible revert
         let mut controllers = vec![];
-        let triggers_state = Arc::new(RwLock::new(TriggersState::<ScheduleTriggerSpec>::default()));
+        let triggers_state = Arc::new(RwLock::new(TriggersState::default()));
         let context = state.to_context(client.clone(), scheduler.clone(), triggers_state);
 
+        // first controller to handle
         let triggers_api = Api::<ScheduleTrigger>::all(client.clone());
         check_api_by_list(&triggers_api, "Triggers").await;
         let mut shutdown = shutdown_channel.clone();
@@ -184,6 +169,7 @@ pub async fn run_leader_controllers(
     }
 
     info!("Shutting down ScheduleTriggers task scheduler");
+    // we have to extract scheduler from shared ref (Arc) because shutdown method consumes it
     let scheduler = Arc::into_inner(scheduler)
         .expect("more than one copies of scheduler is present, looks like a BUG!")
         .into_inner();
@@ -193,6 +179,8 @@ pub async fn run_leader_controllers(
         .unwrap_or(())
 }
 
+/// Call `List` on custom resource to verify if required custom Api is present.
+/// ATTENTION: It exits from whole application if CRD isn't present.
 async fn check_api_by_list<K>(api: &Api<K>, api_name: &str)
 where
     K: Clone + DeserializeOwned + Debug,
@@ -202,36 +190,22 @@ where
             "CRD `{}` is not queryable; {e:?}. Is the CRD installed/updated?",
             api_name
         );
-        info!("Installation: git-events-runner crds | kubectl apply -f -");
+        info!("Installation: {} crds | kubectl apply -f -", env!("CARGO_PKG_NAME"));
         std::process::exit(1);
     }
 }
 
-pub(crate) trait CustomApiResource {
-    fn kind(&self) -> &str;
-}
-
-#[allow(async_fn_in_trait)]
-pub trait Reconcilable<S> {
-    async fn reconcile(&self, ctx: Arc<Context<S>>) -> Result<ReconcileAction>;
-    async fn cleanup(&self, ctx: Arc<Context<S>>) -> Result<ReconcileAction>;
-    fn finalizer_name(&self) -> Option<&'static str> {
-        None
-    }
-}
-
-fn error_policy<K, S>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context<S>>) -> ReconcileAction
+/// Reconciliation errors handler
+fn error_policy<K, S>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context>) -> ReconcileAction
 where
     K: Reconcilable<S>,
 {
-    warn!("reconcile failed: {:?}", error);
+    warn!("Reconcile failed: {:?}", error);
     ReconcileAction::await_change()
 }
 
-async fn reconcile_namespaced<K, S>(
-    resource: Arc<K>,
-    ctx: Arc<Context<S>>,
-) -> Result<ReconcileAction>
+/// Namespaced resources reconciler
+async fn reconcile_namespaced<K, S>(resource: Arc<K>, ctx: Arc<Context>) -> Result<ReconcileAction>
 where
     K: Resource + Reconcilable<S> + CustomApiResource,
     K: Debug + Clone + DeserializeOwned + Serialize,
@@ -241,12 +215,7 @@ where
     let ns = resource.namespace().unwrap();
     let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
 
-    info!(
-        "Reconciling {} `{}/{}`",
-        resource.kind(),
-        resource.name_any(),
-        ns
-    );
+    info!("Reconciling {} `{}/{}`", resource.kind(), resource.name_any(), ns); // TODO: change something here to avoid ASCII control chars in output
     if let Some(finalizer_name) = resource.finalizer_name() {
         finalizer(&resource_api, finalizer_name, resource, |event| async {
             match event {

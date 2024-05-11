@@ -96,6 +96,7 @@ impl Cli {
             let log_format = fmt::format().with_level(true).with_target(config.debug);
 
             let subscriber = tracing_subscriber::fmt().with_env_filter(log_filter);
+            // TODO: investigate issue with reconciler logs with ascii control chars in the body
             // if config.json_log {
             //     subscriber
             //         .event_format(log_format.json().flatten_event(true))

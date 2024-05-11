@@ -1,8 +1,7 @@
-use crate::cache::ApiCache;
+use crate::cache::{ApiCache, SecretsCache};
 use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
-use crate::resources::trigger::{Trigger, WebhookTrigger, WebhookTriggerSpec};
-use crate::secrets_cache::{ExpiringSecretCache, SecretCache};
+use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
 use crate::Error;
 use axum::routing::post;
 use axum::{
@@ -27,15 +26,19 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 
+/// State is attached to each web request
 #[derive(Clone)]
 struct WebState {
-    scheduler: Arc<RwLock<Scheduler>>,
-    client: Client,
-    secrets_cache: Arc<ExpiringSecretCache>,
-    source_clone_folder: String,
-    identity: String,
+    client: Client,                    // we need it to call Trigger::create_trigger_task()
+    scheduler: Arc<RwLock<Scheduler>>, // to post tasks, with Once schedule
+    source_clone_folder: String,       // config to pass to Trigger::create_trigger_task()
+    identity: String,                  // config to pass to Trigger::create_trigger_task()
 }
 
+/// Struct to convert it to response using set of From trait implementations.
+/// We return JSON with predefined status (ok/err/...) and mandatory message
+/// which explains status
+/// task_id is for successful calls to triggers
 #[derive(FromRequest, Serialize)]
 #[from_request(via(axum::Json), rejection(WebError))]
 struct WebResponseJson {
@@ -74,24 +77,27 @@ enum WebError {
     UnknownError { msg: String },
 }
 
+/// Returns web server Future with endpoints for health/live checks and metrics responder.
+/// It exits by receiving anything from `shutdown` channel.
+/// TODO: Use state to store metrics
 pub async fn build_utils_web(
     app_state: AppState,
     mut shutdown: watch::Receiver<bool>,
     port: u16,
 ) -> impl Future<Output = ()> {
+    let listen_to = format!("0.0.0.0:{port}");
     let app = Router::new()
         .route("/ready", get(handle_ready))
         .route("/alive", get(|| async { (StatusCode::OK, "Alive") }))
         .route("/metrics", get(handle_metrics))
         .with_state(app_state);
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+    let listener = TcpListener::bind(listen_to.clone())
         .await
         .expect("unable to create Utility beb listener");
-    let web = axum::serve(listener, app)
-        .with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
+    let web = axum::serve(listener, app).with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
 
     async move {
-        info!("Starting Utility web server on 0.0.0.0:{port}");
+        info!("Starting Utility web server on {listen_to}");
         if let Err(err) = web.await {
             error!("Error while Utility web server running: {err}");
         }
@@ -99,11 +105,14 @@ pub async fn build_utils_web(
     }
 }
 
+/// Returns webhooks server Future with two base endpoints:
+/// - all sources trigger: /namespace/trigger
+/// - single source trigger: /namespace/trigger/source
+/// It exits by receiving anything from `shutdown` channel.
 pub async fn build_hooks_web(
     client: Client,
     mut shutdown: watch::Receiver<bool>,
     scheduler: Arc<RwLock<Scheduler>>,
-    secrets_cache: Arc<ExpiringSecretCache>,
     port: u16,
     source_clone_folder: String,
     identity: String,
@@ -111,31 +120,29 @@ pub async fn build_hooks_web(
     let state = WebState {
         scheduler: scheduler.clone(),
         client,
-        secrets_cache,
         source_clone_folder,
         identity,
     };
 
+    let listen_to = format!("0.0.0.0:{port}");
     let app = Router::new()
         .route("/:namespace/:trigger", post(handle_post_trigger_webhook))
-        .route(
-            "/:namespace/:trigger/:source",
-            post(handle_post_source_webhook),
-        )
+        .route("/:namespace/:trigger/:source", post(handle_post_source_webhook))
         .with_state(state);
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+    let listener = TcpListener::bind(listen_to.clone())
         .await
         .expect("unable to create Webhooks listener");
-    let web = axum::serve(listener, app)
-        .with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
+    let web = axum::serve(listener, app).with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
 
     async move {
-        info!("Starting Hooks web server on 0.0.0.0:{port}");
+        info!("Starting Hooks web server on {listen_to}");
         if let Err(err) = web.await {
             error!("Error while Webhooks server running: {err}");
         }
 
-        // Sometimes controller works few milliseconds longer than expected, just wait few state-machine cycles to finish
+        // To shutdown task scheduler we have to extract it from shared reference (Arc), but
+        // sometimes controller works few milliseconds longer than expected,
+        // just wait few async-state-machine cycles to finish
         for _ in 0..10 {
             if Arc::strong_count(&scheduler) <= 1 {
                 info!("Shutting down WebhookTriggers task scheduler");
@@ -158,6 +165,7 @@ pub async fn build_hooks_web(
 }
 
 async fn handle_ready(State(state): State<AppState>) -> (StatusCode, &'static str) {
+    // depends on global readiness state
     if *state.ready.read().await {
         debug!("utility web: ready");
         (StatusCode::OK, "Ready")
@@ -172,6 +180,7 @@ async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) 
     (StatusCode::NOT_IMPLEMENTED, "Not implemented".into())
 }
 
+/// Trigger jobs for all sources of the trigger
 async fn handle_post_trigger_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
@@ -190,20 +199,21 @@ async fn handle_post_trigger_webhook(
         let task = trigger.create_trigger_task(
             state.client.clone(),
             sacs::task::TaskSchedule::Once,
-            None,
+            TriggerTaskSources::All,
             state.source_clone_folder,
             state.identity.clone(),
         );
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;
 
-        Ok(task_id.into())
+        Ok(task_id.into()) // include task_id into successful response
     } else {
-        warn!("try to run forbidden multi-source hook on trigger {trigger_hash_key}");
+        warn!("Try to run forbidden multi-source hook on trigger {trigger_hash_key}");
         Err(WebError::ForbiddenMultiSource)
     }
 }
 
+/// Single source trigger run
 async fn handle_post_source_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
@@ -222,7 +232,7 @@ async fn handle_post_source_webhook(
         let task = trigger.create_trigger_task(
             state.client.clone(),
             sacs::task::TaskSchedule::Once,
-            Some(source.clone()),
+            TriggerTaskSources::Single(source.clone()), // by specifying single source we restrict scope of task
             state.source_clone_folder,
             state.identity.clone(),
         );
@@ -303,23 +313,17 @@ impl From<kube::Error> for WebError {
                 if err.code == 404 {
                     Self::TriggerNotFound
                 } else {
-                    Self::KubeError {
-                        msg: err.to_string(),
-                    }
+                    Self::KubeError { msg: err.to_string() }
                 }
             }
-            _ => Self::KubeError {
-                msg: value.to_string(),
-            },
+            _ => Self::KubeError { msg: value.to_string() },
         }
     }
 }
 
 impl From<sacs::Error> for WebError {
     fn from(value: sacs::Error) -> Self {
-        Self::SchedulerError {
-            msg: value.to_string(),
-        }
+        Self::SchedulerError { msg: value.to_string() }
     }
 }
 
@@ -333,6 +337,9 @@ impl From<Error> for WebError {
 }
 
 impl WebState {
+    /// Check is webhook requires authorization
+    /// If so - verify auth header
+    /// Returns empty result if good or error to convert in web response if no
     async fn check_hook_authorization(
         &self,
         request_headers: &HeaderMap,
@@ -341,30 +348,28 @@ impl WebState {
     ) -> Result<(), WebError> {
         if let Some(auth_config) = &webhook_spec.webhook.auth_config {
             if let Some(header) = request_headers.get(
-                auth_config.header.clone().unwrap_or(
-                    RuntimeConfig::get()
-                        .trigger
-                        .webhook
-                        .default_auth_header
-                        .clone(),
-                ),
+                auth_config
+                    .header
+                    .clone()
+                    .unwrap_or(RuntimeConfig::get().trigger.webhook.default_auth_header.clone()),
             ) {
-                let secret = self
-                    .secrets_cache
-                    .as_ref()
-                    .get(namespace, &auth_config.secret_ref.name, &auth_config.key)
+                // try to get secret from cache
+                // let secret = self
+                //     .secrets_cache
+                //     .as_ref()
+                let secret = SecretsCache::get(namespace, &auth_config.secret_ref.name, &auth_config.key)
                     .await
-                    .map_err(|_| WebError::AuthorizationError)?;
+                    .map_err(|_| WebError::AuthorizationError)?; // something went wrong during interaction with secrets cache
                 if *secret == *header {
-                    Ok(())
+                    Ok(()) // hit!
                 } else {
-                    Err(WebError::Forbidden)
+                    Err(WebError::Forbidden) // header is present but provided value is incorrect
                 }
             } else {
-                Err(WebError::Unauthorized)
+                Err(WebError::Unauthorized) // auth is required by header isn't present in the request
             }
         } else {
-            Ok(())
+            Ok(()) // no need to auth
         }
     }
 }

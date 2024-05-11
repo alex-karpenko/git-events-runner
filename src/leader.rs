@@ -1,17 +1,20 @@
+// Since `kubert` still uses outdated `kube` and `k8s_openapi` crates
+// we have to depend to two different versions of those crates
+// by importing old version with different names with prefix `kubert_`.
+// This module is only place where it's used.
 use crate::Result;
 use kubert::{
     lease::{Claim, ClaimParams, Error},
     LeaseManager,
 };
-use kubert_k8s_openapi::{
-    api::coordination::v1 as coordv1, apimachinery::pkg::apis::meta::v1 as metav1,
-};
+use kubert_k8s_openapi::{api::coordination::v1 as coordv1, apimachinery::pkg::apis::meta::v1 as metav1};
 use kubert_kube::Client;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::watch, task::JoinHandle};
 use tracing::{debug, info};
 
-pub async fn new(
+/// Create lease, manager, tokio task to handle state changes
+pub async fn leader_lease_handler(
     identity: &String,
     namespace: Option<String>,
     name: &String,
@@ -37,6 +40,7 @@ pub async fn new(
         )
         .await;
 
+    // Handle 409 error as good/expected state: lease already exists
     if let Err(err) = lease {
         if let kubert_kube::Error::Api(err) = err {
             if err.code != 409 {

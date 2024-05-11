@@ -7,11 +7,14 @@ use kube::{
 };
 use tracing::{debug, info, warn};
 
+/// Watch and log changes of OURS K8s jobs.
+/// We identify jobs as ours by label (ACTION_JOB_IDENTITY_LABEL) with value of our own identity.
+/// So each controller instance watches it's own jobs oly.
 pub async fn watch(client: Client, identity: String) {
     let jobs_api: Api<Job> = Api::all(client.clone());
-    let watcher_config = watcher::Config::default()
-        .labels(format!("{ACTION_JOB_IDENTITY_LABEL}={identity}").as_str());
+    let watcher_config = watcher::Config::default().labels(format!("{ACTION_JOB_IDENTITY_LABEL}={identity}").as_str());
     let jobs_stream = watcher(jobs_api, watcher_config);
+
     jobs_stream
         .applied_objects()
         .predicate_filter(predicates::generation)
@@ -22,6 +25,9 @@ pub async fn watch(client: Client, identity: String) {
                 let status = job.status.unwrap();
 
                 debug!("{status:?}");
+                // Since we run jobs with parallelism=1 and w/o restarts,
+                // we look for just `succeed` or `failed` in the status,
+                // but not for counters under them
                 if status.succeeded.is_some() {
                     info!("Job {ns}/{name} completed successfully.");
                 } else if status.failed.is_some() {

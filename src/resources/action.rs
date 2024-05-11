@@ -1,15 +1,14 @@
 use super::{
     random_string,
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
+    CustomApiResource,
 };
 use crate::{config::RuntimeConfig, Error, Result};
 use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
-        core::v1::{
-            Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount,
-        },
+        core::v1::{Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount},
     },
     apimachinery::pkg::apis::meta::v1::OwnerReference,
 };
@@ -78,9 +77,7 @@ pub struct ClusterActionSourceOverride {
     reference: TriggerGitRepoReference,
 }
 
-#[derive(
-    Deserialize, Serialize, Clone, Debug, Default, JsonSchema, EnumString, Display, PartialEq,
-)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, EnumString, Display, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
 pub enum TriggerClusterSourceKind {
@@ -107,11 +104,24 @@ pub struct ActionJob {
     preserve_git_folder: bool,
 }
 
+impl CustomApiResource for Action {
+    fn kind(&self) -> &str {
+        "Action"
+    }
+}
+
+impl CustomApiResource for ClusterAction {
+    fn kind(&self) -> &str {
+        "ClusterAction"
+    }
+}
+
 impl ActionExecutor for Action {}
 impl ActionExecutor for ClusterAction {}
 
 #[allow(private_bounds)]
 pub(crate) trait ActionExecutor: ActionInternals {
+    /// Creates K8s Job spec and run actual job from it
     #[allow(clippy::too_many_arguments)]
     async fn execute(
         &self,
@@ -123,17 +133,10 @@ pub(crate) trait ActionExecutor: ActionInternals {
         ns: &str,
         identity: String,
     ) -> Result<Job> {
-        let job = self.create_job_spec(
-            source_kind,
-            source_name,
-            source_commit,
-            trigger_ref,
-            ns,
-            identity,
-        )?;
-        let jobs_api: Api<Job> = Api::namespaced(client.clone(), ns);
+        let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns, identity)?;
 
         info!("Create job {}/{}", ns, job.name_any());
+        let jobs_api: Api<Job> = Api::namespaced(client.clone(), ns);
         jobs_api
             .create(&PostParams::default(), &job)
             .await
@@ -141,12 +144,12 @@ pub(crate) trait ActionExecutor: ActionInternals {
     }
 }
 
-trait ActionInternals: Sized + Resource {
-    fn kind(&self) -> String;
+trait ActionInternals: Sized + Resource + CustomApiResource {
     fn action_job_spec(&self) -> ActionJob;
     fn source_override_spec(&self) -> Option<ActionSourceOverride>;
     fn get_owner_reference(&self) -> OwnerReference;
 
+    /// format job name
     fn job_name(&self) -> String {
         let timestamp = DateTime::<Local>::from(SystemTime::now())
             .format("%Y%m%d-%H%M%S")
@@ -155,6 +158,7 @@ trait ActionInternals: Sized + Resource {
         format!("{}-{}-{}", self.name_any(), timestamp, random_string(2)).to_lowercase()
     }
 
+    /// just create K8s Job specification
     fn create_job_spec(
         &self,
         source_kind: &TriggerSourceKind,
@@ -170,17 +174,13 @@ trait ActionInternals: Sized + Resource {
 
         let mut labels: BTreeMap<String, String> = BTreeMap::new();
         labels.insert(ACTION_JOB_IDENTITY_LABEL.into(), identity);
-        labels.insert(ACTION_JOB_ACTION_KIND_LABEL.into(), self.kind());
+        labels.insert(ACTION_JOB_ACTION_KIND_LABEL.into(), self.kind().to_string());
         labels.insert(ACTION_JOB_ACTION_NAME_LABEL.into(), self.name_any());
         labels.insert(ACTION_JOB_SOURCE_KIND_LABEL.into(), source_kind.to_string());
         labels.insert(ACTION_JOB_SOURCE_NAME_LABEL.into(), source_name.into());
 
         let args = if let Some(source_override) = source_override {
-            self.get_gitrepo_cloner_args(
-                &source_override.kind,
-                &source_override.name,
-                &source_override.reference,
-            )
+            self.get_gitrepo_cloner_args(&source_override.kind, &source_override.name, &source_override.reference)
         } else {
             self.get_gitrepo_cloner_args(
                 source_kind,
@@ -197,7 +197,6 @@ trait ActionInternals: Sized + Resource {
 
         let job = Job {
             metadata: ObjectMeta {
-                // TODO: make func
                 name: Some(self.job_name()),
                 namespace: Some(ns.to_string()),
                 labels: Some(labels),
@@ -207,9 +206,7 @@ trait ActionInternals: Sized + Resource {
             spec: Some(JobSpec {
                 backoff_limit: Some(0),
                 parallelism: Some(1),
-                ttl_seconds_after_finished: Some(
-                    RuntimeConfig::get().action.ttl_seconds_after_finished,
-                ),
+                ttl_seconds_after_finished: Some(RuntimeConfig::get().action.ttl_seconds_after_finished),
                 template: PodTemplateSpec {
                     metadata: Default::default(),
                     spec: Some(PodSpec {
@@ -256,9 +253,7 @@ trait ActionInternals: Sized + Resource {
                             )),
                             volume_mounts: Some(vec![VolumeMount {
                                 name: config.action.workdir.volume_name.clone(),
-                                mount_path: action_job
-                                    .workdir
-                                    .unwrap_or(config.action.workdir.mount_path.clone()),
+                                mount_path: action_job.workdir.unwrap_or(config.action.workdir.mount_path.clone()),
                                 ..Default::default()
                             }]),
                             ..Default::default()
@@ -280,6 +275,8 @@ trait ActionInternals: Sized + Resource {
         Ok(job)
     }
 
+    /// Prepare list of special environment variables to pass to worker container
+    /// use `format_action_job_env_var` helper to unify approach
     fn get_action_job_envs(
         &self,
         source_kind: &TriggerSourceKind,
@@ -317,18 +314,9 @@ trait ActionInternals: Sized + Resource {
                 "ACTION_SOURCE_KIND",
                 &source_override.kind.to_string(),
             ));
-            envs.push(format_action_job_env_var(
-                "ACTION_SOURCE_NAME",
-                &source_override.name,
-            ));
-            envs.push(format_action_job_env_var(
-                "ACTION_SOURCE_REF_TYPE",
-                ref_type.as_str(),
-            ));
-            envs.push(format_action_job_env_var(
-                "ACTION_SOURCE_REF_NAME",
-                ref_name,
-            ));
+            envs.push(format_action_job_env_var("ACTION_SOURCE_NAME", &source_override.name));
+            envs.push(format_action_job_env_var("ACTION_SOURCE_REF_TYPE", ref_type.as_str()));
+            envs.push(format_action_job_env_var("ACTION_SOURCE_REF_NAME", ref_name));
             if source_override.kind == TriggerSourceKind::GitRepo {
                 envs.push(format_action_job_env_var("ACTION_SOURCE_NAMESPACE", ns));
             }
@@ -337,6 +325,7 @@ trait ActionInternals: Sized + Resource {
         envs
     }
 
+    /// prepares all needed arguments for cloner container entrypoint
     fn get_gitrepo_cloner_args(
         &self,
         source_kind: &TriggerSourceKind,
@@ -374,10 +363,6 @@ trait ActionInternals: Sized + Resource {
 }
 
 impl ActionInternals for ClusterAction {
-    fn kind(&self) -> String {
-        String::from("ClusterAction")
-    }
-
     fn action_job_spec(&self) -> ActionJob {
         self.spec.action_job.clone()
     }
@@ -385,16 +370,14 @@ impl ActionInternals for ClusterAction {
     fn source_override_spec(&self) -> Option<ActionSourceOverride> {
         // Since ClusterAction restricts repo type to ClusterGitRepo only,
         // we create ActionSourceOverride from ClusterActionSourceOverride
-        self.spec
-            .source_override
-            .as_ref()
-            .map(|value| ActionSourceOverride {
-                kind: TriggerSourceKind::ClusterGitRepo,
-                name: value.name.clone(),
-                reference: value.reference.clone(),
-            })
+        self.spec.source_override.as_ref().map(|value| ActionSourceOverride {
+            kind: TriggerSourceKind::ClusterGitRepo,
+            name: value.name.clone(),
+            reference: value.reference.clone(),
+        })
     }
 
+    /// returns reference to action to set as owner to Job
     fn get_owner_reference(&self) -> OwnerReference {
         self.controller_owner_ref(&())
             .expect("unable to get owner reference, looks like a BUG!")
@@ -402,10 +385,6 @@ impl ActionInternals for ClusterAction {
 }
 
 impl ActionInternals for Action {
-    fn kind(&self) -> String {
-        String::from("Action")
-    }
-
     fn action_job_spec(&self) -> ActionJob {
         self.spec.action_job.clone()
     }
@@ -420,16 +399,13 @@ impl ActionInternals for Action {
     }
 }
 
+/// helper to create unified env var.
+/// uses configured prefix to attach to each var.
 fn format_action_job_env_var(name: &str, value: &str) -> EnvVar {
     EnvVar {
         name: format!(
             "{}{name}",
-            RuntimeConfig::get()
-                .action
-                .containers
-                .worker
-                .variables_prefix
-                .clone()
+            RuntimeConfig::get().action.containers.worker.variables_prefix.clone()
         ),
         value: Some(value.to_owned()),
         value_from: None,

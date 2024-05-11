@@ -3,9 +3,8 @@ pub mod cli;
 pub mod config;
 pub mod controller;
 pub mod jobs;
-pub mod leader_lock;
+pub mod leader;
 pub mod resources;
-pub mod secrets_cache;
 pub mod signals;
 pub mod web;
 
@@ -37,8 +36,6 @@ pub enum Error {
     ),
 
     #[error("Finalizer Error: {0}")]
-    // NB: awkward type because finalizer::Error embeds the reconciler error (which is this)
-    // so boxing this error to break cycles
     FinalizerError(
         #[source]
         #[from]

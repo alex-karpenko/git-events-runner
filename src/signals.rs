@@ -9,6 +9,7 @@ use tracing::{debug, info};
 pub type ShutdownReceiver = watch::Receiver<bool>;
 pub type ShutdownSender = watch::Sender<bool>;
 
+/// Holds handlers to all expected sources
 #[derive(Debug)]
 pub struct SignalHandler {
     terminate: Signal,
@@ -18,6 +19,7 @@ pub struct SignalHandler {
 }
 
 impl SignalHandler {
+    /// Init struct by handlers
     pub fn new() -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             terminate: signal(SignalKind::terminate())?,
@@ -27,6 +29,7 @@ impl SignalHandler {
         })
     }
 
+    /// Wait for ANY signal
     pub async fn wait_for_signal(&mut self) {
         debug!("Signal handler has been installed");
         let signal = select! {

@@ -1,7 +1,5 @@
 use crate::{Error, Result};
-use git2::{
-    CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions,
-};
+use git2::{CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions};
 use k8s_openapi::api::core::v1::Secret;
 use kube::{Api, Client, CustomResource};
 use rustls::{
@@ -124,9 +122,7 @@ pub struct SecretRef {
     pub(crate) namespace: Option<String>,
 }
 
-impl GitRepoGetter for GitRepo {}
-impl GitRepoGetter for ClusterGitRepo {}
-
+/// Shared private behavior of all kinds of git repo
 trait GitRepoInternals {
     fn auth_config(&self) -> &Option<GitAuthConfig>;
     fn tls_config(&self) -> &Option<TlsConfig>;
@@ -170,6 +166,10 @@ impl GitRepoInternals for ClusterGitRepo {
     }
 }
 
+impl GitRepoGetter for GitRepo {}
+impl GitRepoGetter for ClusterGitRepo {}
+
+/// Getter trait to implement shared behavior: it's able to get content (clone) of repo's particular reference
 #[allow(private_bounds, async_fn_in_trait)]
 pub trait GitRepoGetter: GitRepoInternals {
     async fn fetch_repo_ref(
@@ -180,6 +180,7 @@ pub trait GitRepoGetter: GitRepoInternals {
         secrets_ns: &String,
     ) -> Result<Repository> {
         // Determine which secrets are mandatory and fetch them
+        // TODO: refactor to use secrets cache and remove client from parameters
         let auth_secrets: HashMap<String, String> = if let Some(auth_config) = self.auth_config() {
             let mut secret_keys: HashMap<&String, String> = HashMap::new();
             match auth_config.auth_type {
@@ -197,19 +198,9 @@ pub trait GitRepoGetter: GitRepoInternals {
             let ns = if self.is_namespaced() {
                 secrets_ns
             } else {
-                auth_config
-                    .secret_ref
-                    .namespace
-                    .as_ref()
-                    .unwrap_or(secrets_ns)
+                auth_config.secret_ref.namespace.as_ref().unwrap_or(secrets_ns)
             };
-            get_secret_strings(
-                client.clone(),
-                &auth_config.secret_ref.name,
-                secret_keys,
-                ns,
-            )
-            .await?
+            get_secret_strings(client.clone(), &auth_config.secret_ref.name, secret_keys, ns).await?
         } else {
             HashMap::new()
         };
@@ -225,8 +216,7 @@ pub trait GitRepoGetter: GitRepoInternals {
                     ca_cert.secret_ref.namespace.as_ref().unwrap_or(secrets_ns)
                 };
 
-                get_secret_strings(client.clone(), &ca_cert.secret_ref.name, secret_keys, ns)
-                    .await?
+                get_secret_strings(client.clone(), &ca_cert.secret_ref.name, secret_keys, ns).await?
             } else {
                 HashMap::new()
             }
@@ -242,18 +232,11 @@ pub trait GitRepoGetter: GitRepoInternals {
             match auth_config.auth_type {
                 GitAuthType::Basic => {
                     callbacks.credentials(move |_url, _username_from_url, _allowed_types| {
-                        Cred::userpass_plaintext(
-                            auth_secrets["username"].as_str(),
-                            auth_secrets["password"].as_str(),
-                        )
+                        Cred::userpass_plaintext(auth_secrets["username"].as_str(), auth_secrets["password"].as_str())
                     });
                 }
                 GitAuthType::Token => {
-                    fetch_opt.custom_headers(&[format!(
-                        "Authorization: {}",
-                        auth_secrets["token"]
-                    )
-                    .as_str()]);
+                    fetch_opt.custom_headers(&[format!("Authorization: {}", auth_secrets["token"]).as_str()]);
                 }
                 GitAuthType::Ssh => {
                     callbacks.credentials(move |_url, username_from_url, _allowed_types| {
@@ -270,6 +253,7 @@ pub trait GitRepoGetter: GitRepoInternals {
 
         if let Some(tls_config) = self.tls_config() {
             if tls_config.no_verify_ssl {
+                // ignore ca verification - lets consider it as valid
                 callbacks.certificate_check(move |_cert, _hostname| {
                     debug!("certificate check callback: no_verify_ssl=true");
                     Ok(CertificateCheckStatus::CertificateOk)
@@ -277,6 +261,8 @@ pub trait GitRepoGetter: GitRepoInternals {
             } else {
                 debug!("certificate check callback: no_verify_ssl=false");
                 if tls_config.ca_cert.is_some() {
+                    // if we have our own CA specified:
+                    // create root CA store from system one and add our CA to it
                     let mut ca = tls_secrets.get("ca.crt").unwrap().as_bytes();
                     let ca = rustls_pemfile::certs(&mut ca).flatten();
                     // TODO: make system trust store global
@@ -288,15 +274,16 @@ pub trait GitRepoGetter: GitRepoInternals {
                     root_cert_store.add_parsable_certificates(ca);
                     let root_cert_store = Arc::new(root_cert_store);
                     callbacks.certificate_check(move |cert, hostname| {
-                        let cert_verifier = WebPkiServerVerifier::builder(root_cert_store.clone())
-                            .build()
-                            .map_err(|_| {
-                                git2::Error::new(
-                                    git2::ErrorCode::Certificate,
-                                    git2::ErrorClass::Callback,
-                                    "unable to build root CA store",
-                                )
-                            })?;
+                        let cert_verifier =
+                            WebPkiServerVerifier::builder(root_cert_store.clone())
+                                .build()
+                                .map_err(|_| {
+                                    git2::Error::new(
+                                        git2::ErrorCode::Certificate,
+                                        git2::ErrorClass::Callback,
+                                        "unable to build root CA store",
+                                    )
+                                })?;
 
                         let end_entity = {
                             if let Some(cert) = cert.as_x509() {
@@ -316,38 +303,34 @@ pub trait GitRepoGetter: GitRepoInternals {
                                 "unable to get server name",
                             )
                         })?;
-                        let result = cert_verifier.verify_server_cert(
-                            &end_entity,
-                            &[],
-                            &hostname,
-                            &[],
-                            UnixTime::now(),
-                        );
+
+                        // verify server's c ert against just create trust store
+                        let result =
+                            cert_verifier.verify_server_cert(&end_entity, &[], &hostname, &[], UnixTime::now());
                         match result {
+                            // if everything verified - return ok
                             Ok(_) => Ok(CertificateCheckStatus::CertificateOk),
                             Err(err) => {
                                 warn!("unable to verify server certificate with custom CA: {err}");
+                                // if not - pass responsibility to usual verification method
                                 Ok(CertificateCheckStatus::CertificatePassthrough)
                             }
                         }
                     });
                 } else {
-                    callbacks.certificate_check(move |_, _| {
-                        Ok(CertificateCheckStatus::CertificatePassthrough)
-                    });
+                    // no custom CA - lets verify cert in usual way
+                    callbacks.certificate_check(move |_, _| Ok(CertificateCheckStatus::CertificatePassthrough));
                 }
             }
         }
 
         fetch_opt.remote_callbacks(callbacks);
-        fetch_opt.depth(1);
+        fetch_opt.depth(1); // don't clone whole repo, just single ref we need
         init_opts.origin_url(self.repo_uri());
 
         let repo = Repository::init_opts(path, &init_opts).map_err(Error::GitrepoAccessError)?;
         {
-            let mut remote = repo
-                .find_remote("origin")
-                .map_err(Error::GitrepoAccessError)?;
+            let mut remote = repo.find_remote("origin").map_err(Error::GitrepoAccessError)?;
             remote
                 .fetch(&[ref_name], Some(&mut fetch_opt), None)
                 .map_err(Error::GitrepoAccessError)?;
@@ -357,6 +340,16 @@ pub trait GitRepoGetter: GitRepoInternals {
     }
 }
 
+/// TODO: refactor it to use secrets cache
+/// Retrieve all keys from the specified secret
+///
+/// keys is map of "key in the secret" -> "key to put in the result map".
+/// it's useful to retrieve come configured keys and expose some pre-defined (expected) keys
+/// i.e. in the actual secret we have key "pass", but we want to address it as "password".
+/// use this approach to unify secrets keys for authorization in remote repos.
+///
+/// actually this is quite awkward approach and it's subject to complete reworking
+///
 async fn get_secret_strings<'a>(
     client: Client,
     secret_name: &'a String,
@@ -367,17 +360,16 @@ async fn get_secret_strings<'a>(
     let secret_ref = secret_api.get(secret_name).await?;
     let mut secrets: HashMap<String, String> = HashMap::new();
 
+    let secret_data_b64 = secret_ref
+        .clone()
+        .data
+        .ok_or_else(|| Error::SecretDecodingError(format!("no `data` part in the secret `{}`", secret_name)))?;
+
     for (secret_key, expected_key) in secret_keys.into_iter() {
-        let secret_data_b64 = secret_ref.clone().data.ok_or_else(|| {
-            Error::SecretDecodingError(format!("no `data` part in the secret `{}`", secret_name))
-        })?;
         let secret_data = secret_data_b64
             .get(secret_key)
             .ok_or_else(|| {
-                Error::SecretDecodingError(format!(
-                    "no `{}` key in the secret `{}`",
-                    secret_key, secret_name
-                ))
+                Error::SecretDecodingError(format!("no `{}` key in the secret `{}`", secret_key, secret_name))
             })?
             .to_owned();
         let secret_data = String::from_utf8(secret_data.0).map_err(|_e| {
