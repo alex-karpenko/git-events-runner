@@ -171,5 +171,5 @@ runtimeConfig:
         image: ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:{{ .Chart.AppVersion }}
       worker:
         name: action-worker
-        image: docker.io/bash:latest
+        image: ghcr.io/alex-karpenko/git-events-runner/action-worker:{{ .Chart.AppVersion }}
         variablesPrefix: ACTION_JOB_
