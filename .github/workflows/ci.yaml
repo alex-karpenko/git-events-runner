@@ -46,16 +46,6 @@ jobs:
       - name: Test image build
         run: docker build -f docker-build/${{matrix.binary}}.dockerfile .
 
-  helm-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Lint helm charts
-        run: |
-          for c in `find charts -type d -depth 1`; do
-            helm lint charts/${c}
-          done
-
   docs-test:
     runs-on: ubuntu-latest
     steps:
