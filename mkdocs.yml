@@ -38,7 +38,8 @@ markdown_extensions:
   - toc:
       permalink: true
       title: On this page
-
+  - pymdownx.highlight
+  - pymdownx.superfences
 nav:
   - Introduction:
       - Introduction: index.md

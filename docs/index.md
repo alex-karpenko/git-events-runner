@@ -25,4 +25,4 @@ Everything is glued by dedicated Kubernetes controller inside a cluster.
 * Replacement of CI/CD functionality, provided by repository vendor (Github actions for example)
 where direct access to Kubernetes or cloud resources is needed but with guarantied permissions restrictions.
 
-Each item above implies using of approved code from some configured Git repository, branch, tag or even commit.
+> Each item above implies using of approved code from some configured Git repository, branch, tag or even commit.
