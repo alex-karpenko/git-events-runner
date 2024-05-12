@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "git-events-runner.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "git-events-runner.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "git-events-runner.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          args:
+            - run
+            - --webhooks-port
+            - {{ .Values.service.webhook.port | default 8080 | quote }}
+            - --utility-port
+            - {{ .Values.service.utility.port | default 3000 | quote }}
+            - --schedule-parallelism
+            - {{ .Values.service.scheduleParallelism | default 16 | quote }}
+            - --webhooks-parallelism
+            - {{ .Values.service.webhooksParallelism | default 16 | quote }}
+            - --secrets-cache-time
+            - {{ .Values.controllerOptions.secretsCacheTime | default 60 | quote }}
+            - --source-clone-folder
+            - {{ .Values.controllerOptions.sourceCloneFolder.mountPath | default "/tmp/git-events-runner" | quote }}
+            - --config-map-name
+            - {{ include "git-events-runner.configMapName" . }}
+            - --leader-lease-name
+            - {{ include "git-events-runner.leaderLeaseName" . }}
+            - --leader-lease-duration
+            - {{ .Values.controllerOptions.leaderLease.duration | default 30 | quote }}
+            - --leader-lease-grace
+            - {{ .Values.controllerOptions.leaderLease.grace | default 20 | quote }}
+            {{- if eq .Values.controllerOptions.logLevel "debug" }}
+            - --debug
+            {{- else if eq .Values.controllerOptions.logLevel "info" }}
+            - --verbose
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: utility
+              containerPort: {{ .Values.service.utility.port }}
+              protocol: TCP
+            - name: webhook
+              containerPort: {{ .Values.service.webhook.port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+          {{- with .Values.controllerOptions.sourceCloneFolder }}
+            - name: {{ .volumeName }}
+              mountPath: {{ .mountPath }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+      {{- with .Values.controllerOptions.sourceCloneFolder }}
+        - name: {{ .volumeName }}
+          emptyDir: {}
+      {{- end }}
+      {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

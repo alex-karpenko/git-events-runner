@@ -1,0 +1,41 @@
+name: Build docs
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Configure Git Credentials
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email github-actions[bot]@users.noreply.github.com
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+
+      - name: Configure cache
+        run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
+
+      - name: Apply cache
+        uses: actions/cache@v4
+        with:
+          key: mkdocs-${{ env.cache_id }}
+          path: .cache
+          restore-keys: |
+            mkdocs-
+
+      - name: Install dependencies
+        run: pip install -r .github/mkdocs-requirements.txt
+
+      - name: Publish docs
+        run: mkdocs gh-deploy --force

@@ -1,0 +1,22 @@
+image:
+  repository: git-events-runner
+  tag: local
+
+rbac:
+  create: true
+  controller:
+    secretsNamespaces:
+      - default
+    jobsNamespaces:
+      - default
+
+actionJobServiceAccounts:
+  namespaces:
+    - default
+
+runtimeConfig:
+  action:
+    ttlSecondsAfterFinished: 30
+    containers:
+      cloner:
+        image: gitrepo-cloner:local

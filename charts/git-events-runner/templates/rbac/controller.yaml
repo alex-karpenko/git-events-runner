@@ -1,0 +1,216 @@
+{{- if .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - git-events-runner.rs
+    resources:
+      - "*"
+    verbs:
+      - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - "*"
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - "*"
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+    resourceNames:
+      - {{ include "git-events-runner.configMapName" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "git-events-runner.fullname" . }}-controller
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-events-runner.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller-cluster
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "git-events-runner.fullname" . }}-controller
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-events-runner.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller-cluster
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "git-events-runner.fullname" . }}-controller
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-events-runner.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+
+{{- if .Values.rbac.controller.secretsNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller-secrets
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+{{- if has "*" .Values.rbac.controller.secretsNamespaces }}
+{{/*
+Allow cluster-wide access to all secrets in all namespaces
+*/}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller-secrets
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "git-events-runner.fullname" . }}-controller-secrets
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-events-runner.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+{{/*
+Allow per-namespace access top secrets
+*/}}
+{{- range .Values.rbac.controller.secretsNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "git-events-runner.fullname" $ }}-controller-secrets
+  namespace: {{ . }}
+  labels:
+    {{- include "git-events-runner.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "git-events-runner.fullname" $ }}-controller-secrets
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-events-runner.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.rbac.controller.jobsNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller-jobs
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - "*"
+{{- if has "*" .Values.rbac.controller.jobsNamespaces }}
+{{/*
+Allow cluster-wide access to all secrets in all namespaces
+*/}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "git-events-runner.fullname" . }}-controller-jobs
+  labels:
+    {{- include "git-events-runner.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "git-events-runner.fullname" . }}-controller-jobs
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-events-runner.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+{{/*
+Allow per-namespace access top secrets
+*/}}
+{{- range .Values.rbac.controller.jobsNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "git-events-runner.fullname" $ }}-controller-jobs
+  namespace: {{ . }}
+  labels:
+    {{- include "git-events-runner.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "git-events-runner.fullname" $ }}-controller-jobs
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-events-runner.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- end }}
