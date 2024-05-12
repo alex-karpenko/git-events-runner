@@ -1,6 +1,6 @@
 site_name: Git Events Runner
 site_author: Oleksii Karpenko
-repo_name: Git Events Runner
+repo_name: git-events-runner
 repo_url: https://github.com/alex-karpenko/git-events-runner
 copyright: Copyright &copy; 2024 Oleksii Karpenko
 remote_branch: gh-pages
@@ -21,11 +21,13 @@ theme:
   palette:
     # Palette toggle for light mode
     - scheme: default
+      primary: blue grey
       toggle:
         icon: material/brightness-7
         name: Dark mode
     # Palette toggle for dark mode
     - scheme: slate
+      primary: black
       toggle:
         icon: material/brightness-4
         name: Light mode
