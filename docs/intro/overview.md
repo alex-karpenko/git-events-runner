@@ -18,7 +18,7 @@ Detailed explanations of all custom resources with examples can be found in the 
 
 Imagine we need to run script `deploy.sh` from the root of Git repo `https://git.example.com/the-best-team/cool-project` when anything was changed in the `main` branch (we have fine-grained branch protection and no one can merge to the `main` without approvement). That script, for example, upgrades Helm release in our K8s cluster in the namespace of the trigger:
 
-```shell
+```bash
 #!/bin/bash
 
 # 1st argument is path to the folder with Helm chart
@@ -117,7 +117,7 @@ spec:
         branch: main
   action:
     kind: Action
-    name: run-deploy-sh # the same action too
+    name: run-deploy-sh # the same action
   webhook:
     multiSource: true
     authConfig:
@@ -135,7 +135,16 @@ Notice that we:
 
 Both types of triggers are namespaced resources. However Acton and GitRepo have their cluster-level counterparts. This means:
 
-* Trigger
+* Triggers can refer any kind of actions or sources: namespaced or cluster-wide.
+* WebhookTrigger can use Secrets in its own namespace only.
+* GitRepo can use Secrets in its own namespace only, but ClusterGitRepo can refer secrets in other namespaces but with respect to controller's permissions.
+* Both Action and ClusterAction can create Jobs in the trigger's namespace only.
+
+Cluster-wide sources and actions are useful:
+
+* in multi-tenant clusters;
+* to share restricted configs between tenants/namespaces;
+* just to avoid repetitions of configurations.
 
 ## Security aspects
 
