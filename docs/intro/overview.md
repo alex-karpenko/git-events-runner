@@ -43,7 +43,7 @@ spec:
   authConfig:
     type: basic
     secretRef:
-      name: cool-project-creds
+      name: cool-project-auth
 ```
 * ScheduleTrigger:
 ```yaml
@@ -148,7 +148,7 @@ Cluster-wide sources and actions are useful:
 
 ## Security aspects
 
-TBW
+Safetiness
 
 ## Differences from GitOps
 
