@@ -18,6 +18,8 @@ theme:
     - search.share
     - search.suggest
     - toc.follow
+    - content.code.copy
+    - content.code.select
   palette:
     # Palette toggle for light mode
     - scheme: default
