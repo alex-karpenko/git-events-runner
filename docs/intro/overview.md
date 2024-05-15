@@ -144,12 +144,28 @@ Cluster-wide sources and actions are useful:
 
 * in multi-tenant clusters;
 * to share restricted configs between tenants/namespaces;
-* just to avoid repetitions of configurations.
+* just to avoid repetitions of configuration.
 
 ## Security aspects
 
-Safetiness
+This is pretty risky to bring some code (shell or Python scripts, Ansible playbooks, etc.) to Kubernetes cluster and run it as a Job. So the first security concern is to **ensure we use only code we trust to**:
+
+* At the Git side this can be guarantied by applying strict code review requirements, restrict permissions to merge code to protected branches or to use protected tags.
+* At the Git Events Runner side you should configure trigger to use only some specific (secured, restricted) branches and tags.
+
+Second important aspect is **permissions within Kubernetes cluster** which operator uses by itself and to run Jobs. And there whole huge set of instruments provided by Kubernetes can (and should) be used:
+
+* Role Based Access Control (RBAC) in conjunction with ServiceAccounts (SA).
+* Running operator with its own SA but Jobs with their separate SAs.
+* Restrictions inside Job containers.
+* Using approved Job images only (ClusterAction as shared restricted resource).
 
 ## Differences from GitOps
 
-TBW
+At the first glance, Git Events Runner has some similarities with GitOps, however actually it implements completely different approach.
+
+First of all, GitOps is about **desired configuration** of application (or infrastructure), and it's about **actual state** of application: main task of GitOps operator (let's call it so) is to *make actual state the same as desired*, and doesn't matter where were changes: at application side (actual state) or in the git repo with config (desired state). So GitOps operator reacts on changes at both sides: desired (git) and actual (application or infrastructure).
+
+Git Events Runner is also intended to react on changes at Git side but not at application/infrastructure (actual) side. This is a huge difference: we just use Git to store code, configs, etc. which we need to execute within Kubernetes cluster. So we even don't have such entity as "actual state": **Git Events Runner is about "changes as events"**.
+
+Yes, theoretically it's possible to implement GitOps approach using Git Events Runner but lots of brilliant GitOps solutions are already implemented.
