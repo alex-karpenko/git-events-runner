@@ -23,6 +23,7 @@
         "printcolumn",
         "rustls",
         "schedulable",
+        "scheduletrigger",
         "scheduletriggers",
         "schemars",
         "thiserror",

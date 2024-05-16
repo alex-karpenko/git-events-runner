@@ -134,7 +134,7 @@ impl Default for ActionConfig {
             workdir: ActionWorkdirConfig::default(),
             containers: ActionContainersConfig::default(),
             default_service_account: None,
-            ttl_seconds_after_finished: 300,
+            ttl_seconds_after_finished: 7200,
         }
     }
 }
