@@ -9,7 +9,10 @@ target/
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-#
+# Idea files
+.idea/
+
+# Local development atrifacts
 /*.yaml
 .venv/
 site/

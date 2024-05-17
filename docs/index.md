@@ -19,7 +19,7 @@ Everything is glued by dedicated Kubernetes controller inside a cluster.
 
 ## Where it applies
 
-* `Continues Deployment` (CD) process, where Kubernetes resources are involved.
+* Various Continues Deployment (CD) processes, where Kubernetes resources are involved.
 * Running periodic tasks in Kubernetes, based of code in Git repo.
 * Triggering tasks in Kubernetes by webhooks, based of code in Git repo.
 * Replacement of CI/CD functionality, provided by repository vendor (Github actions for example)
