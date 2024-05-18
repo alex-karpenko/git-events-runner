@@ -48,17 +48,18 @@ nav:
       - Overview: intro/overview.md
       - Quick start: intro/quick-start.md
       - Current state: intro/state.md
+      - License: lic.md
   - Guides:
       - Core Concepts: guides/concepts.md
       - Installation: guides/install.md
+      - Configuration: guides/config.md
       - Resources:
           - Sources: resources/sources.md
           - Triggers: resources/triggers.md
           - Actions: resources/actions.md
-      - Configuration: guides/config.md
       - Examples: guides/examples.md
   - Development:
       - Changelog: changelog.md
       - Roadmap: roadmap.md
       - Bugs: bugs.md
-  - License: lic.md
+
