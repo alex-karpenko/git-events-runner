@@ -44,6 +44,8 @@ That repository is public, so no authorization is needed.
 Please refer to [detailed](../resources/sources.md) documentation to create more sophisticated resources with different
 security and transport options.
 
+> All scripts and manifests for this quick start example can be found in the `docs/examples` folder.
+
 ## Action
 
 Our example task is to upgrade...
@@ -276,4 +278,4 @@ Since both schedule and webhook triggers use the same service account, the next 
 completed, but it will create an actual job only in case if something changed in the source repo.
 All other runs it will just watch for such changes and do nothing.
 
-You can find all possible installation options in the detailed [installation guide](../guides/install.md).  
+You can find all possible installation options in the detailed [installation guide](../guides/install.md).
