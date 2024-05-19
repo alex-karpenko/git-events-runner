@@ -50,7 +50,7 @@ nav:
       - Current state: intro/state.md
       - License: lic.md
   - Guides:
-      - Core Concepts: guides/concepts.md
+      - Core concepts: guides/concepts.md
       - Installation: guides/install.md
       - Configuration: guides/config.md
       - Resources:
