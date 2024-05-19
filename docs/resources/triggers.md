@@ -4,8 +4,12 @@ TBW
 
 ## ScheduleTrigger
 
-TBW
+```yaml title="ScheduleTrigger"
+--8<-- "docs/examples/scheduletrigger.yaml"
+```
 
 ## WebhookTrigger
 
-TBW
+```yaml title="WebhookTrigger"
+--8<-- "docs/examples/webhooktrigger.yaml"
+```
