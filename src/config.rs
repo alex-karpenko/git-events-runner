@@ -1,11 +1,12 @@
+use std::sync::{Arc, OnceLock};
+
 use futures::{future::ready, StreamExt};
 use k8s_openapi::{api::core::v1::ConfigMap, Metadata};
 use kube::{
-    runtime::{predicates, watcher, WatchStreamExt},
-    Api, Client,
+    Api,
+    Client, runtime::{predicates, watcher, WatchStreamExt},
 };
 use serde::Deserialize;
-use std::sync::{Arc, OnceLock};
 use tokio::sync::watch::{self, Sender};
 use tracing::{debug, error, info, warn};
 
@@ -18,9 +19,9 @@ static CONFIG_TX_CHANNEL: OnceLock<Sender<Arc<RuntimeConfig>>> = OnceLock::new()
 /// Global dynamic controller config
 /// It watches ConfigMap with configuration and posts changed configs to tokio::sync::watch channel
 /// This approach makes possible using of sync methods to retrieve config values,
-/// i.e. in Default trait implementations
+/// i.e., in Default trait implementations
 ///
-/// Default values reflects actual defaults, so if CM doesn't contain some values
+/// Default values reflect actual defaults, so if CM doesn't contain some value,
 /// they will always be filled with default values.
 ///
 impl RuntimeConfig {
@@ -31,7 +32,7 @@ impl RuntimeConfig {
         config.clone()
     }
 
-    /// Init all config infrastructure, retrieve initial config and returns Future for watching changes
+    /// Init whole config infrastructure, retrieve initial config and returns Future for watching changes
     pub async fn init_and_watch(client: Client, cm_name: String) {
         let (tx, _) = watch::channel(Arc::new(RuntimeConfig::default()));
         let _ = CONFIG_TX_CHANNEL.set(tx);
@@ -149,8 +150,8 @@ pub struct ActionWorkdirConfig {
 impl Default for ActionWorkdirConfig {
     fn default() -> Self {
         Self {
-            mount_path: String::from("/tmp/git-events-runner"),
-            volume_name: String::from("temp-repo-data"),
+            mount_path: String::from("/action_workdir"),
+            volume_name: String::from("action-workdir"),
         }
     }
 }
