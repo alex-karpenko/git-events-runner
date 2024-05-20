@@ -1,5 +1,5 @@
 apiVersion: git-events-runner.rs/v1alpha1
-kind: ScheduleTrigger
+kind: WebhookTrigger
 metadata:
   name: trigger-example
   namespace: default
@@ -49,20 +49,25 @@ spec:
       # - if reference was changed, but the file isn't present - call the action.
       file: doc/examples/scheduletrigger.yaml
 
-  # Mandatory schedule that defines when sources should be checked for changes.
-  # Allowed keys: interval, cron.
-  # These keys are mutually exclusive.
-  #
-  # Interval defines time in human-readable format (like 10s, 5m, 20h, 5h30m25s)
-  # between the finish of the previous run and start of the next run.
-  #
-  # Cron defines classic cron schedule.
-  # It uses seven items expression: seconds, minutes, hours, days (month), months, days (week), years.
-  # Seconds and years can be omitted: if an expression has 5 items, it runs at second 0 every year;
-  # if it has 6 items - the first item defines seconds.
-  schedule:
-    interval: 1m
-    cron: "*/15 9-20 * * 1-5"
+  # Mandatory definition of the webhook behavior,
+  webhook:
+    # If `true`, it's possible to call checks for all triggers' sources
+    # by single call to `/namespace/trigger`
+    # as well as call to a single source by `/namespace/trigger/source`
+    # If `false`, single source calls are allowed only.
+    # Default is `false`
+    multiSource: false
+    # Optionals (by strongly recommended) section with webhook authentication config.
+    authConfig:
+      # Mandatory reference to the Secret with auth token.
+      secretRef:
+        # Name of the secret
+        name: webhook-auth
+      # Mandatory key name in the Secret which contains authentication token
+      key: token
+      # Optional HTTP request header with auth token
+      # Default is `x-trigger-auth`
+      header: x-trigger-auth
 
   # Mandatory definition of the Action to use for this trigger.
   action:
