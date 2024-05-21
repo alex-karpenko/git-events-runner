@@ -97,7 +97,7 @@ When a trigger discovers that repo was changed, it creates a
 classic [Kubernetes Job](https://kubernetes.io/docs/concepts/workloads/controllers/job/) to run Action because action is
 a single-shot piece of work.
 
-[Action resources](../resources/actions.md) provide way slightly customize jobs, but general configuration is:
+[Action resources](../resources/actions.md) provide way to slightly customize jobs, but in general configuration is:
 
 * Single `initContainer` runs `gitrepo-cloner` image to clone needed repo/commit to predefined volume.
 * Single `container` runs `action-worker` image to do actual work.
@@ -107,3 +107,24 @@ a single-shot piece of work.
   some actual runtime parameters that can be useful in workers.
   Look into the detailed [actions reference](../resources/actions.md) for the full list of variables with descriptions.
 * Job has a zero backoff limit and single parallelism to ensure running only once.
+
+### Jobs' environment variables
+
+As mentioned above, `ACTION_JOB_` is just default prefix and may be configured to anything else.
+
+| Variable name                       | Mandatory | Description                                                                                |
+|-------------------------------------|-----------|--------------------------------------------------------------------------------------------|
+| ACTION_JOB_WORKDIR                  | Yes       | Worker container workdir (folder where source repo is cloned)                              |
+| ACTION_JOB_TRIGGER_SOURCE_KIND      | Yes       | Kind of the triggers' source (Gitrepo, ClusterGitRepo)                                     |     
+| ACTION_JOB_TRIGGER_SOURCE_NAME      | Yes       | Name of the triggers' source.                                                              |
+| ACTION_JOB_TRIGGER_SOURCE_NAMESPACE | No        | Namespace of the triggers' source (for GitRepo only).                                      |
+| ACTION_JOB_TRIGGER_SOURCE_COMMIT    | Yes       | Commit hash which is cloned into workdir.                                                  |
+| ACTION_JOB_TRIGGER_SOURCE_REF_TYPE  | Yes       | Type of the triggers' repo reference which is configured to watch on (branch, tag, commit) |
+| ACTION_JOB_TRIGGER_SOURCE_REF_NAME  | Yes       | Name of the triggers' repo reference.                                                      |
+| ACTION_JOB_ACTION_SOURCE_KIND       | No        | Kind of the actions' overridden source.                                                    |
+| ACTION_JOB_ACTION_SOURCE_NAME       | No        | Name of the actions' overridden source.                                                    |
+| ACTION_JOB_ACTION_SOURCE_NAMESPACE  | No        | Namespace on the actions' overridden source.                                               |
+| ACTION_JOB_ACTION_SOURCE_REF_TYPE   | No        | Reference type of the actions' overridden source.                                          |
+| ACTION_JOB_ACTION_SOURCE_REF_NAME   | No        | Name of the actions' overridden source.                                                    |
+
+Details about `source override` feature can be found in the [detailed documentation](../resources/actions.md). 
