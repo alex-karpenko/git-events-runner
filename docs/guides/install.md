@@ -76,6 +76,64 @@ cluster roles and necessary bindings to ensure working setup with minimal needed
 The recommended way to extend permissions of the controller or action jobs is to create custom roles and bind them with
 existing service accounts.
 
+The default name of the controllers' service account is its `{{ fullname }}` template: usually this is release name
+or `fullnameOverride` value (if specified).
+The default name of the jobs' service account id `{{ fullname }}-action-job`.
+So if you need additional permissions for controller of jobs, you can attach it to their service accounts.
+
+In the `actionJobServiceAccounts.namespaces` you may specify a list of namespaces where you plan to deploy custom
+resources.
+As a result, Helm will template and deploy service accounts, roles, etc. for action jobs to those namespaces.
+
+In the `rbac.controller` section you can specify additional namespaces to grant controller access on
+Secrets (`secretsNamespaces`) and to run Jobs (`jobsNamespaces`).
+
+#### Controller configuration
+
+Two additional non-standard sections to pay attention to:
+
+* `controllerOptions`: startup controller configuration, or static config options that can't be changed without restart
+  of the controller.
+* `runtimeConfig`: dynamic controller config, Helm deploys it as ConfigMap in the controllers' namespace and controller
+  watches on changes in this CM and reloads values in case of changes.
+
+More details about configuration is in the [dedicated section](config.md).
+Configuration provided in the default `runtimeConfig` section reflects the actual controllers' defaults and may be used
+as a handy template to set yours custom values.
+
 ## Docker images
 
+All project Dockerfiles are self-contained and don't require any additional dependencies to build.
+So you can use the content
+of [dockerfiles folder](https://github.com/alex-karpenko/git-events-runner/tree/main/docker-build) to build yours
+own variants of the images.
+
+There is a tiny handy script (`local-build.sh`) to build everything locally with `local` tag, which is default in the
+charts' `ci/local-default.yaml` test config.
+
 ## Build from sources
+
+To build controller from sources, you have to have Rust toolchain installed.
+Please read the [official documentation](https://www.rust-lang.org/tools/install) to get know how to prepare Rust build
+environment.
+
+Clone project repository from GitHub:
+
+```bash
+git clone https://github.com/alex-karpenko/git-events-runner.git
+```
+
+To build and run controller locally with default Kubernetes config:
+
+```bash
+# Build controller and gitrepo-cloner binaries
+cargo build
+
+# Install CRD manifests to the cluster
+cargo run --bin git-events-runner -- crds | kubectl apply -f -
+
+# Run controller locally with info loglevel
+cargo run --bin git-events-runner -- run -v
+```
+
+You can specify alternative Kubernetes config using `KUBECONFIG` environment variable.
