@@ -2,13 +2,13 @@
 
 ## Briefly
 
-**GitEventsRunner** is a Kubernetes operator to trigger `Jobs` with the Git repository content in the job's container.
+**Git Events Runner** is a Kubernetes operator to trigger `Jobs` with the Git repository content in the job's container.
 In other words it provides way to run code inside a Kubernetes cluster based on content of the Git repository commit
 in response to changes in the repository or triggered by a webhook.
 
 ## What is under the hood
 
-`GitEventsRunner` provides several custom resources (CRDs) to define such entities as:
+`Git Events Runner` provides several custom resources (CRDs) to define such entities as:
 
 * `Sources` - URI and auth parameters of git repositories which should be watching and using to run `Actions`.
 * `Triggers` - conditions and restrictions of changes in `Sources` which triggers `Actions`: which repos, branches or

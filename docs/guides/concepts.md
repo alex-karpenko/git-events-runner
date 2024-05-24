@@ -73,7 +73,7 @@ Use any valid version/tag instead of `latest` to get the specific version of man
 
 ## Images and binaries
 
-GitEventsRunner uses three types of images to run:
+Git Events Runner uses three types of images to run:
 
 * **git-events-runner**: pre-built image with single controller's binary, without shell, package managers, etc.;
 * **gitrepo-cloner**: pre-built image with single binary of utility to safely clone git repositories, it's used in the

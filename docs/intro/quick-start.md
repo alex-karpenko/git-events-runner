@@ -2,7 +2,7 @@
 
 ## Installation
 
-The easiest way to install GitEventsRunner operator to your Kubernetes cluster is to
+The easiest way to install Git Events Runner operator to your Kubernetes cluster is to
 use [Helm chart](https://github.com/alex-karpenko/helm-charts/tree/main/charts/git-events-runner).
 Add repo:
 
@@ -49,7 +49,7 @@ security and transport options.
 ## Action
 
 Our example task is to upgrade...
-GitEventsRunner controller in our cluster.
+Git Events Runner controller in our cluster.
 Yes, it's possible,
 just for example, but in real life don't trust public repositories with content not under your control.
 

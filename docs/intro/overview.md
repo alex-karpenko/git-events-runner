@@ -1,4 +1,4 @@
-# What is GitEventsRunner
+# What is Git Events Runner
 
 As mentioned [above](../index.md#briefly) this is custom Kubernetes operator which serves to:
 
@@ -8,7 +8,7 @@ As mentioned [above](../index.md#briefly) this is custom Kubernetes operator whi
 
 ## How it works
 
-- Central resources of the `GitEventsRunner` are [**triggers**](../resources/triggers.md), there are
+- Central resources of the `Git Events Runner` are [**triggers**](../resources/triggers.md), there are
   two - [`ScheduleTrigger`](../resources/triggers.md#scheduletrigger)
   and [`WebhookTrigger`](../resources/triggers.md#webhooktrigger).
 - Obviously triggers interact with some [**sources**](../resources/sources.md) to watch on changes, there are two kinds
@@ -100,7 +100,7 @@ spec:
     serviceAccount: git-events-runner-jobs
 ```
 
-Using these resources `GitEventsRunner` does following for each repo mentioned in the list of sources of the trigger:
+Using these resources `Git Events Runner` does following for each repo mentioned in the list of sources of the trigger:
 
 1. Clone specified branch (main is here) of the repo using URI and credentials (if needed) defined in GitRepo resource.
 2. Compare the latest commit hash with previously stored value (from previous run, if it was).
@@ -177,7 +177,7 @@ it as a Job. So the first security concern is to **ensure we use only code we tr
 
 * At the Git side this can be guarantied by applying strict code review requirements, restrict permissions to merge code
   to protected branches or to use protected tags.
-* At the GitEventsRunner side you should configure trigger to use only some specific (secured, restricted) branches
+* At the Git Events Runner side you should configure trigger to use only some specific (secured, restricted) branches
   and tags.
 
 Second important aspect is **permissions within Kubernetes cluster** which operator uses by itself and to run Jobs. And
@@ -190,7 +190,7 @@ there whole huge set of instruments provided by Kubernetes can (and should) be u
 
 ## Differences from GitOps
 
-At the first glance, GitEventsRunner has some similarities with GitOps, however actually it implements completely
+At the first glance, Git Events Runner has some similarities with GitOps, however actually it implements completely
 different approach.
 
 First of all, GitOps is about **desired configuration** of application (or infrastructure), and it's about **actual
@@ -198,9 +198,9 @@ state** of application: main task of GitOps operator (let's call it so) is to *m
 and doesn't matter where were changes: at application side (actual state) or in the git repo with config (desired
 state). So GitOps operator reacts on changes at both sides: desired (git) and actual (application or infrastructure).
 
-GitEventsRunner is also intended to react on changes at Git side but not at application/infrastructure (actual) side.
+Git Events Runner is also intended to react on changes at Git side but not at application/infrastructure (actual) side.
 This is a huge difference: we just use Git to store code, configs, etc. which we need to execute within Kubernetes
-cluster. So we even don't have such entity as "actual state": **GitEventsRunner is about "changes as events"**.
+cluster. So we even don't have such entity as "actual state": **Git Events Runner is about "changes as events"**.
 
-Yes, theoretically it's possible to implement GitOps approach using GitEventsRunner but lots of brilliant GitOps
+Yes, theoretically it's possible to implement GitOps approach using Git Events Runner but lots of brilliant GitOps
 solutions are already implemented.
