@@ -1,8 +1,11 @@
 .git/
 .github/
+.venv/
 .vscode/
-target/
 docker-build/
+docs/
+target/
 /*.yaml
+/*.yml
 /*.md
 .gitignore

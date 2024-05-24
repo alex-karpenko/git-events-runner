@@ -1,6 +1,6 @@
-site_name: Git Events Runner
+site_name: GitEventsRunner
 site_author: Oleksii Karpenko
-repo_name: Git Events Runner
+repo_name: git-events-runner
 repo_url: https://github.com/alex-karpenko/git-events-runner
 copyright: Copyright &copy; 2024 Oleksii Karpenko
 remote_branch: gh-pages
@@ -18,14 +18,18 @@ theme:
     - search.share
     - search.suggest
     - toc.follow
+    - content.code.copy
+    - content.code.select
   palette:
     # Palette toggle for light mode
     - scheme: default
+      primary: blue grey
       toggle:
         icon: material/brightness-7
         name: Dark mode
     # Palette toggle for dark mode
     - scheme: slate
+      primary: black
       toggle:
         icon: material/brightness-4
         name: Light mode
@@ -36,24 +40,25 @@ markdown_extensions:
   - toc:
       permalink: true
       title: On this page
-
+  - pymdownx.highlight
+  - pymdownx.superfences
 nav:
   - Introduction:
       - Introduction: index.md
       - Overview: intro/overview.md
       - Quick start: intro/quick-start.md
       - Current state: intro/state.md
+      - License: lic.md
   - Guides:
-      - Core Concepts: guides/concepts.md
+      - Core concepts: guides/concepts.md
       - Installation: guides/install.md
+      - Configuration: guides/config.md
       - Resources:
           - Sources: resources/sources.md
           - Triggers: resources/triggers.md
           - Actions: resources/actions.md
-      - Configuration: guides/config.md
-      - Examples: guides/examples.md
   - Development:
       - Changelog: changelog.md
       - Roadmap: roadmap.md
       - Bugs: bugs.md
-  - License: lic.md
+

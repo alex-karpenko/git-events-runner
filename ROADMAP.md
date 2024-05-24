@@ -2,16 +2,18 @@
 
 ## In work
 
-- doc: just create it
-
 ## Next release
 
+- action: add config parameters to specify node affinity, toleration, annotations and additional labels for action job.
 - gitrepo: extend file sensor to use globs instead of single file
 - controller: tracing
 - controller: metrics
 
 ## Wishes
 
+- action:
+    - config to restrict the maximum number of running acton jobs;
+    - config to restrict jobs' duration;
 - tests: automate everything possible
 - docker: publish images to docker hub too
 - refactor: improve logging, make it more formal and short, with just relevant info only
