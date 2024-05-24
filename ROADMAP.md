@@ -27,3 +27,4 @@
 - hooks: tls listener for webhooks
 - gitrepo: add support for private keys with passphrase
 - gitrepo: use Mozilla CA bundle instead of system and build controller/cloner images `FROM scratch`
+- controller: get rid of kubert dependency
