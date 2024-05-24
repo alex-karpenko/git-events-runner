@@ -1,6 +1,6 @@
 # Installation
 
-The easiest and the most elaborated way to install Git Events Runner controller with reasonable defaults and pretty
+The easiest and the most elaborated way to install GitEventsRunner controller with reasonable defaults and pretty
 customizable config is using Helm chart.
 This way uses pre-built project Docker images and installs controller as deployment resources to the Kubernetes cluster.
 
@@ -22,7 +22,7 @@ helm install git-events-runner alex-karpenko/git-events-runner \
     --namespace git-events-runner --create-namespace
 ```
 
-The usual way to use Git Events Runner in a single tenant cluster is to deploy it to the dedicated namespace where the
+The usual way to use GitEventsRunner in a single tenant cluster is to deploy it to the dedicated namespace where the
 controller runs and all other supplementary resources are created.
 As well as custom resources like sources, triggers and actions usually reside in the same namespace with their secrets.
 Such an approach facilitates secrets management and RBAC tuning.
@@ -61,7 +61,7 @@ We want to point out to some important parts of a release configuration.
 
 #### Replicas
 
-As [mentioned before](concepts.md#high-availability), Git Events Runner supports running several replicas at once, so
+As [mentioned before](concepts.md#high-availability), GitEventsRunner supports running several replicas at once, so
 if you need high-availability config, you have to set `replicaCount` to something greater than 1, usually 2 is
 reasonable starting choice for production environment to ensure HA and don't waste resources.
 Single replica is good for development and testing.
