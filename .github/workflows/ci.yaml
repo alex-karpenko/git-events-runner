@@ -1,5 +1,7 @@
 name: Continuous integration
 on:
+  schedule:
+    - cron: "30 5 * * 5"
   pull_request:
 
 jobs:
