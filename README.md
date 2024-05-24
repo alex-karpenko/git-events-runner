@@ -5,7 +5,6 @@
 <a href="https://github.com/alex-karpenko/git-events-runner/actions/workflows/audit.yaml" rel="nofollow"><img src="https://img.shields.io/github/actions/workflow/status/alex-karpenko/git-events-runner/audit.yaml?label=audit" alt="Audit status"></a>
 <a href="https://github.com/alex-karpenko/git-events-runner/actions/workflows/publish-images.yaml" rel="nofollow"><img src="https://img.shields.io/github/actions/workflow/status/alex-karpenko/git-events-runner/publish-images.yaml?label=build" alt="Images build status"></a>
 <a href="https://github.com/alex-karpenko/git-events-runner/actions/workflows/publish-docs.yaml" rel="nofollow"><img src="https://img.shields.io/github/actions/workflow/status/alex-karpenko/git-events-runner/publish-docs.yaml?label=docs" alt="Docs publishing status"></a>
-<a href="https://github.com/alex-karpenko/git-events-runner/blob/HEAD/LICENSE" rel="nofollow"><img src="https://img.shields.io/crates/l/git-events-runner" alt="License"></a>
 </p>
 
 **Git Events Runner** is a Kubernetes operator to trigger `Jobs` with the Git repository content in the job's container.
