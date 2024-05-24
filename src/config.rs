@@ -3,8 +3,8 @@ use std::sync::{Arc, OnceLock};
 use futures::{future::ready, StreamExt};
 use k8s_openapi::{api::core::v1::ConfigMap, Metadata};
 use kube::{
-    Api,
-    Client, runtime::{predicates, watcher, WatchStreamExt},
+    runtime::{predicates, watcher, WatchStreamExt},
+    Api, Client,
 };
 use serde::Deserialize;
 use tokio::sync::watch::{self, Sender};
