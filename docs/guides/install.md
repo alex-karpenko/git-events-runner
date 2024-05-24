@@ -111,6 +111,9 @@ own variants of the images.
 There is a tiny handy script (`local-build.sh`) to build everything locally with `local` tag, which is default in the
 charts' `ci/local-default.yaml` test config.
 
+You can find information about command line parameters in
+the [configuration section](config.md#command-line-parameters).
+
 ## Build from sources
 
 To build controller from sources, you have to have Rust toolchain installed.
@@ -136,4 +139,4 @@ cargo run --bin git-events-runner -- crds | kubectl apply -f -
 cargo run --bin git-events-runner -- run -v
 ```
 
-You can specify alternative Kubernetes config using `KUBECONFIG` environment variable.
+You can specify an alternative Kubernetes config file path using `KUBECONFIG` environment variable.

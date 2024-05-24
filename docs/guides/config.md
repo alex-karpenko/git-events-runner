@@ -1,16 +1,101 @@
 # Configuration
 
-TBW
+The Helm chart has two dedicated controllers' configuration sections, pretty well commented in
+the [`values.yaml`](https://github.com/alex-karpenko/helm-charts/blob/main/charts/git-events-runner/values.yaml):
 
-## Controller config
+* `controllerOptions`: defines values of some controllers' command line options.
+* `runtimeConfig`: defines content of the ConfigMap with dynamic controllers' config, or, in other words, with
+  overridden defaults.
+  It will be reloaded by controller each time it's changed.
 
-TBW
+Let's explain all of them with some details.
 
-### Override Defaults
+## Controller options
 
-TBW
+### logLevel
 
-### Command line parameters
+Allowed values: `info`, `debug`.
+
+Controller hs three possible log levels: debug, info, warning.
+If nothing is specified (this is equivalent to omit both `--debug` and `--verbose` command line options) the default
+level is warning.
+Using this parameter, you can change log level.
+
+### leaderLease
+
+This section declares the parameters of using Lease resource to manage leader elections. There are two parameters:
+
+* `duration`: leader election will be started if the current leaseholder doesn't confirm its lock during this time (in
+  seconds).
+* `grace`: leaseholder re-confirms (renews) its lock each this interval (in seconds).
+
+Logically, grace should be less than duration and difference between these two parameters should be enough to re-confirm
+lock.
+
+### scheduleParallelism, webhooksParallelism
+
+Allowed values: integer from 1 to 255.
+
+These parameters set, for each type of triggers, the maximum number of parallel tasks that the controller runs to watch
+for changes in the sources.
+
+> __Important__: This is not a maximum number of simultaneous action jobs.
+> This is a way to restrict controller only from running of huge number of simultaneous source verification tasks.
+> So there is no way (at least now) to restrict number of action jobs.
+
+### secretsCacheTime
+
+This parameter specifies the maximum number of seconds to hold values in the cache of secrets.
+
+Controller resolves content of the secrets each time it needs secret value (for example, WebhookTrigger can use auth
+token stored in a secret).
+To eliminate Kubernetes API overloading by huge number of requests for secret values, the controller has some kind of
+shared cache for secrets.
+It holds only vales used by controller.
+
+### sourceCloneFolder
+
+This section defines which folder (`mountPath`) will be used inside the controller to clone content of the sources
+during periodic
+verification for changes.
+
+At the same time, parameter `volumeName` defines name of the Pods' volume, which should be used for that folder.
+Helm chart defines controllers' Pod with this volume of type `emptyDir`.
+
+## Runtime config
+
+### trigger
+
+Defines triggers defaults:
+
+* `webhook.defaultAuthHeader`: default header name with authentication token in a WebhookTrigger request. May be changed
+  in the trigger config. Default is `x-trigger-auth`.
+
+### action
+
+This section defines lots of defaults of action jobs.
+
+| Parameter name                    | Default value                                                                  | Description                                                                                                                                |
+|-----------------------------------|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| ttlSecondsAfterFinished           | 7200                                                                           | Default time to leave of Job after finishing. After this time Jobs will be removed from the cluster with its Pod. Useful fo debug purpose. |
+| defaultServiceAccount             | `{{ fullname }}-action-job`                                                    | Default service account name for action jobs. Actual default depends on release name and `fullnameOverride` global parameter.              | 
+| workdir.mountPath                 | /action_workdir                                                                | Default folder to clone source content to. It's used for both cloner and worker container.                                                 |
+| workdir.volumeName                | action-workdir                                                                 | Volume name of workdir `emptyDir` volume.                                                                                                  |
+| containers.cloner.name            | action-cloner                                                                  | Name of the source cloner initContainer in the action Job.                                                                                 |
+| containers.cloner.image           | ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:{{ .Chart.AppVersion }} | Default image to use for source cloner container.                                                                                          |
+| containers.worker.name            | action-worker                                                                  | Name of the action worker container in the action Job.                                                                                     |
+| containers.worker.image           | ghcr.io/alex-karpenko/git-events-runner/action-worker:{{ .Chart.AppVersion }}  | Default image to use for the action worker container.                                                                                      |
+| containers.worker.variablesPrefix | ACTION_JOB_                                                                    | Prefix for environment variables of the action worker container, that controller creates to pass trigger and sources parameters.           |
+
+## Command line parameters
+
+Controller application has two subcommands:
+
+* `crds`: to print CRD manifests to the stdout.
+  It's useful to install CRD declarations to your cluster directly.
+  It has no additional options.
+* `run`: to run controller, all command line parameters are optional and have defaults.
+  All of them are described as a static configuration options above in this section.
 
 ```bash
 docker run --rm ghcr.io/alex-karpenko/git-events-runner/git-events-runner:latest --help
@@ -28,14 +113,6 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
-
-Controller app has two subcommands:
-
-* `crds`: to print CRD manifests to the stdout.
-  It's useful to install CRD declarations to your cluster directly.
-  It has no additional options.
-* `run`: to run controller, all command line parameters are optional and have defaults.
-  All of them are described as a static configuration options above in this section.
 
 ```bash
 docker run --rm ghcr.io/alex-karpenko/git-events-runner/git-events-runner:latest run --help
