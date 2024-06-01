@@ -2,15 +2,14 @@
 
 ## In work
 
-- docker: publish images to docker hub too
-- chart: update to specify container registry and use docker.io by default
-
-## Next release
-
 - action:
     - config to restrict the maximum number of running acton jobs;
     - config to restrict jobs' duration;
     - config parameters to specify node affinity, toleration, annotations and additional labels for action job.
+- chart: update to specify container registry and use docker.io by default
+
+## Next release
+
 - gitrepo: extend file sensor to use globs instead of single file
 - refactor: improve logging, make it more formal and short, with just relevant info only
 - controller: tracing
@@ -21,7 +20,7 @@
 - tests: automate everything possible
 - chart/cli: Make new subcommand to dump out default config and update it in the chart as part of CD
 - refactor: looks like scheduler shouldn't be under RwLock because it's `add` method uses internal mutability
-- gitrepo: update to use `gix` instead if `git2`, if possible
+- gitrepo: update to use `gix` instead of `git2`, if possible
 - hooks: implement hook requests rate control/throttling
 - hooks/gitrepo: rework secrets cache to watch requested secrets and update it on changes
 - cli: deploy, config, get state, remove
@@ -30,3 +29,8 @@
 - gitrepo: add support for private keys with passphrase
 - gitrepo: use Mozilla CA bundle instead of system and build controller/cloner images `FROM scratch`
 - controller: get rid of kubert dependency
+
+## Done
+
+- images: publish images to docker hub
+- images: update default action-worker image to use the latest Ubuntu LTS version
