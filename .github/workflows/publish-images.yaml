@@ -1,7 +1,7 @@
 name: Build/push image
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ["v*.*.*-test"]
 
 env:
   GH_REGISTRY: ghcr.io
