@@ -29,8 +29,8 @@ This section declares the parameters of using Lease resource to manage leader el
   seconds).
 * `grace`: leaseholder re-confirms (renews) its lock each this interval (in seconds).
 
-Logically, grace should be less than duration and difference between these two parameters should be enough to re-confirm
-lock.
+Logically, grace should be less than duration and the difference between these two parameters should be enough to
+re-confirm lock.
 
 ### scheduleParallelism, webhooksParallelism
 
@@ -89,11 +89,15 @@ This section defines lots of defaults of action jobs.
 
 ## Command line parameters
 
-Controller application has two subcommands:
+Controller application has three subcommands:
 
 * `crds`: to print CRD manifests to the stdout.
   It's useful to install CRD declarations to your cluster directly.
   It has no additional options.
+* `config`: to print a default dynamic config to the stdout.
+  It's useful to get base config and modify parts you want to customize.
+  Has only one optional parameter `--helm-template` to dump some templates instead of default values:
+  this option is useful in CI/CD pipelines to automate Helm chart linting and templating.
 * `run`: to run controller, all command line parameters are optional and have defaults.
   All of them are described as a static configuration options above in this section.
 
@@ -105,9 +109,10 @@ Kubernetes operator to run Jobs on events from Git
 Usage: git-events-runner <COMMAND>
 
 Commands:
-  crds  Print CRD definitions to stdout
-  run   Run K8s controller
-  help  Print this message or the help of the given subcommand(s)
+  crds    Print CRD definitions to stdout
+  config  Print default dynamic config YAML to stdout
+  run     Run K8s controller
+  help    Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
