@@ -2,11 +2,11 @@
 
 ## In work
 
+- chart: update to specify container registry and use docker.io by default
 - action:
     - config to restrict the maximum number of running acton jobs;
     - config to restrict jobs' duration;
     - config parameters to specify node affinity, toleration, annotations and additional labels for action job.
-- chart: update to specify container registry and use docker.io by default
 
 ## Next release
 
@@ -18,7 +18,6 @@
 ## Wishes
 
 - tests: automate everything possible
-- chart/cli: Make new subcommand to dump out default config and update it in the chart as part of CD
 - refactor: looks like scheduler shouldn't be under RwLock because it's `add` method uses internal mutability
 - gitrepo: update to use `gix` instead of `git2`, if possible
 - hooks: implement hook requests rate control/throttling
@@ -34,3 +33,4 @@
 
 - images: publish images to docker hub
 - images: update default action-worker image to use the latest Ubuntu LTS version
+- chart/cli: Make new subcommand to dump out default config and verify it in the chart as part of CI

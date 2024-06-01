@@ -1,12 +1,12 @@
-use std::sync::{Arc, OnceLock};
-
+use crate::Result;
 use futures::{future::ready, StreamExt};
 use k8s_openapi::{api::core::v1::ConfigMap, Metadata};
 use kube::{
     runtime::{predicates, watcher, WatchStreamExt},
     Api, Client,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, OnceLock};
 use tokio::sync::watch::{self, Sender};
 use tracing::{debug, error, info, warn};
 
@@ -83,6 +83,39 @@ impl RuntimeConfig {
             })
             .await
     }
+
+    /// Serialize default dynamic config to YAML string.
+    /// If opts is `HelmTemplate` - produces Helm templates for some parameters instead of the raw strings.
+    pub fn to_yaml_string(opts: YamlConfigOpts) -> Result<String> {
+        let config = match opts {
+            YamlConfigOpts::Raw => Self::default(),
+            YamlConfigOpts::HelmTemplate => {
+                let mut config = Self::default();
+
+                // Change some options to templates
+                config.action.default_service_account = Some(String::from(
+                    r#"{{ include "git-events-runner.actionJobServiceAccountName" . }}"#,
+                ));
+                config.action.containers.cloner.image =
+                    format!("{DEFAULT_CONTAINER_REPO}/gitrepo-cloner:{}", "{{ .Chart.AppVersion }}");
+                config.action.containers.worker.image =
+                    format!("{DEFAULT_CONTAINER_REPO}/action-worker:{}", "{{ .Chart.AppVersion }}");
+
+                config
+            }
+        };
+
+        Ok(serde_yaml::to_string(&config)?)
+    }
+}
+
+/// Options for [`to_yaml_string`] method.
+pub enum YamlConfigOpts {
+    /// Create just default config.
+    Raw,
+    /// Include Helm templates instead of some values.
+    /// We can use this to verify chart consistency with actual image.
+    HelmTemplate,
 }
 
 /// Convenient to convert ConfigMap directly into instance of RuntimeConfig
@@ -113,17 +146,18 @@ impl TryFrom<ConfigMap> for RuntimeConfig {
 // ATTENTION: Don't forget to reflect any changes into Helm values.yaml, runtimeConfig section
 // TODO: Make new subcommand to dump out default config and update it in the chart as part of CD
 
-#[derive(Clone, Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Serialize, Debug, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct RuntimeConfig {
     pub action: ActionConfig,
     pub trigger: TriggerConfig,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionConfig {
     pub workdir: ActionWorkdirConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_service_account: Option<String>,
     pub ttl_seconds_after_finished: i32,
     pub containers: ActionContainersConfig,
@@ -140,7 +174,7 @@ impl Default for ActionConfig {
     }
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionWorkdirConfig {
     pub mount_path: String,
@@ -156,14 +190,14 @@ impl Default for ActionWorkdirConfig {
     }
 }
 
-#[derive(Clone, Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Serialize, Debug, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersConfig {
     pub cloner: ActionContainersClonerConfig,
     pub worker: ActionContainersWorkerConfig,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersClonerConfig {
     pub name: String,
@@ -179,7 +213,7 @@ impl Default for ActionContainersClonerConfig {
     }
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersWorkerConfig {
     pub name: String,
@@ -197,13 +231,13 @@ impl Default for ActionContainersWorkerConfig {
     }
 }
 
-#[derive(Clone, Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Serialize, Debug, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct TriggerConfig {
     pub webhook: TriggerWebhookConfig,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct TriggerWebhookConfig {
     pub default_auth_header: String,
@@ -214,5 +248,18 @@ impl Default for TriggerWebhookConfig {
         Self {
             default_auth_header: String::from(DEFAULT_WEBHOOK_TRIGGER_AUTH_HEADER),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_ron_snapshot;
+
+    use super::*;
+
+    #[test]
+    fn yaml_config_consistency() {
+        let config_yaml_string = RuntimeConfig::to_yaml_string(YamlConfigOpts::HelmTemplate).unwrap();
+        assert_ron_snapshot!(config_yaml_string);
     }
 }
