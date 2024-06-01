@@ -100,6 +100,10 @@ pub struct ActionJob {
     command: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     service_account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annotations: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    labels: Option<BTreeMap<String, String>>,
     enable_cloner_debug: bool,
     preserve_git_folder: bool,
 }
@@ -172,12 +176,31 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         let action_job = self.action_job_spec();
         let source_override = self.source_override_spec();
 
+        // Create pod metadata if additional labels/annotations is defined
+        let pod_template_metadata = if action_job.labels.is_some() || action_job.annotations.is_some() {
+            let metadata = ObjectMeta {
+                labels: action_job.labels.clone(),
+                annotations: action_job.annotations.clone(),
+                ..Default::default()
+            };
+
+            Some(metadata)
+        } else {
+            None
+        };
+
+        // Fill out custom jobs' labels
         let mut labels: BTreeMap<String, String> = BTreeMap::new();
         labels.insert(ACTION_JOB_IDENTITY_LABEL.into(), identity);
         labels.insert(ACTION_JOB_ACTION_KIND_LABEL.into(), self.kind().to_string());
         labels.insert(ACTION_JOB_ACTION_NAME_LABEL.into(), self.name_any());
         labels.insert(ACTION_JOB_SOURCE_KIND_LABEL.into(), source_kind.to_string());
         labels.insert(ACTION_JOB_SOURCE_NAME_LABEL.into(), source_name.into());
+
+        // And add additional labels if defined
+        if let Some(additional_labels) = action_job.labels {
+            labels.extend(additional_labels);
+        }
 
         let args = if let Some(source_override) = source_override {
             self.get_gitrepo_cloner_args(&source_override.kind, &source_override.name, &source_override.reference)
@@ -200,6 +223,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
                 name: Some(self.job_name()),
                 namespace: Some(ns.to_string()),
                 labels: Some(labels),
+                annotations: action_job.annotations,
                 owner_references: Some(vec![self.get_owner_reference()]),
                 ..Default::default()
             },
@@ -208,7 +232,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
                 parallelism: Some(1),
                 ttl_seconds_after_finished: Some(RuntimeConfig::get().action.ttl_seconds_after_finished),
                 template: PodTemplateSpec {
-                    metadata: Default::default(),
+                    metadata: pod_template_metadata,
                     spec: Some(PodSpec {
                         service_account_name: service_account,
                         init_containers: Some(vec![Container {

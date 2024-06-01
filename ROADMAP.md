@@ -4,9 +4,9 @@
 
 - chart: update to specify container registry and use docker.io by default
 - action:
+    - config parameters to specify node affinity/selector, toleration.
     - config to restrict the maximum number of running acton jobs;
     - config to restrict jobs' duration;
-    - config parameters to specify node affinity, toleration, annotations and additional labels for action job.
 
 ## Next release
 
@@ -34,3 +34,5 @@
 - images: publish images to docker hub
 - images: update default action-worker image to use the latest Ubuntu LTS version
 - chart/cli: Make new subcommand to dump out default config and verify it in the chart as part of CI
+- action:
+    - config parameters to specify additional annotations and labels for action job.
