@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Details
+#### Added
+- Add subcommand to dump default dynamic config by @alex-karpenko in [#8](https://github.com/alex-karpenko/git-events-runner/pull/8)
+
 #### Changed
 - Bump requests from 2.31.0 to 2.32.2 by @dependabot[bot] in [#4](https://github.com/alex-karpenko/git-events-runner/pull/4)
 - Push images to docker.io registry by @alex-karpenko in [#6](https://github.com/alex-karpenko/git-events-runner/pull/6)
