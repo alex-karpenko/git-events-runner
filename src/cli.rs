@@ -11,6 +11,8 @@ const DEFAULT_LEADER_LOCK_LEASE_NAME: &str = "git-events-runner-leader-lock";
 pub enum Cli {
     /// Print CRD definitions to stdout
     Crds,
+    /// Print default dynamic config YAML to stdout
+    Config(CliConfigDumpOptions),
     /// Run K8s controller
     Run(CliConfig),
 }
@@ -67,6 +69,13 @@ pub struct CliConfig {
     // /// Write logs in JSON format
     // #[arg(short, long)]
     // json_log: bool,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct CliConfigDumpOptions {
+    /// Include some templates for Helm chart
+    #[arg(short = 't', long)]
+    pub helm_template: bool,
 }
 
 impl Cli {

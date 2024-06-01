@@ -1,7 +1,6 @@
 use git_events_runner::{
-    cache::ApiCacheStore,
-    cache::SecretsCache,
-    cli::{Cli, CliConfig},
+    cache::{ApiCacheStore, SecretsCache},
+    cli::{Cli, CliConfig, CliConfigDumpOptions},
     config::RuntimeConfig,
     controller::{run_leader_controllers, State},
     jobs, leader,
@@ -26,6 +25,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli {
         Cli::Crds => generate_crds(),
+        Cli::Config(options) => generate_config_yaml(options),
         Cli::Run(cli_config) => run(cli_config).await,
     }
 }
@@ -162,6 +162,20 @@ fn generate_crds() -> anyhow::Result<()> {
     for crd in crds {
         print!("---\n{crd}");
     }
+
+    Ok(())
+}
+
+/// Print default dynamic config to stdout as YAML
+fn generate_config_yaml(options: CliConfigDumpOptions) -> anyhow::Result<()> {
+    let opts = if options.helm_template {
+        git_events_runner::config::YamlConfigOpts::HelmTemplate
+    } else {
+        git_events_runner::config::YamlConfigOpts::Raw
+    };
+
+    let yaml_str = RuntimeConfig::to_yaml_string(opts)?;
+    print!("{yaml_str}");
 
     Ok(())
 }

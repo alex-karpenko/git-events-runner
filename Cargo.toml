@@ -7,7 +7,7 @@ keywords = ["kubernetes", "operator", "git", "events", "runner"]
 license = "MIT"
 name = "git-events-runner"
 repository = "https://github.com/alex-karpenko/git-events-runner"
-version = "0.1.0"
+version = "0.1.1"
 
 [[bin]]
 doc = false
@@ -74,3 +74,6 @@ tokio = { version = "1", features = [
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 uuid = { version = "1.8.0", features = ["v4"] }
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob", "ron", "redactions", "filters"] }
