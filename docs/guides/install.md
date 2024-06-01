@@ -27,7 +27,8 @@ controller runs and all other supplementary resources are created.
 As well as custom resources like sources, triggers and actions usually reside in the same namespace with their secrets.
 Such an approach facilitates secrets management and RBAC tuning.
 
-For the multi-tenant clusters, you also can use the same chart, but probably some additional customization is needed.
+For the multi-tenant clusters, you also can use the same chart, but probably
+some [additional customization](#multi-namespace-installation) is needed.
 
 ### Custom resources definitions
 
@@ -100,6 +101,26 @@ Two additional non-standard sections to pay attention to:
 More details about configuration is in the [dedicated section](config.md).
 Configuration provided in the default `runtimeConfig` section reflects the actual controllers' defaults and may be used
 as a handy template to set yours custom values.
+
+#### Multi namespace installation
+
+As we mentioned before, typical installation is single-namespaced: controller with all supplementary and custom
+resources are deployed to the single namespace.
+But in multi-tenant clusters you may need to spread custom resources (triggers, sources, actions) to different
+namespaces to reflect your responsibility model
+
+In this case, you have to add some additional customization to the Helm release config using the following variables:
+
+* `controllerNamespace`: namespace where controllers' resources should be deployed;
+* `createNamespace`: boolean value to specify whether to create controllers' namespace.
+
+The preferred way is to create controllers' namespace manually and specify it either in yours custom `values.yaml` or
+via `--set controllerNamespace=...` Helm command line option.
+
+Besides that, you have to add tenants namespaces to the lists for creating service accounts and RBAC resources, please
+refer to the comments in the
+chart [`values.yaml`](https://github.com/alex-karpenko/helm-charts/blob/main/charts/git-events-runner/values.yaml)
+file, sections `actionJobServiceAccounts` and `rbac`.
 
 ## Docker images
 
