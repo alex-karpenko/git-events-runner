@@ -1,9 +1,10 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 RUN apt update -qqy && \
+    apt upgrade -qqy && \
     apt install -qqy --no-install-recommends \
     #
-    libicu70 tzdata zip unzip curl \
+    libicu74 tzdata zip unzip curl \
     python3 python3-pip python3-boto3 \
     ansible \
     #
@@ -19,7 +20,6 @@ RUN apt update -qqy && \
     curl -sLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256" && \
     echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check && \
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
-    rm kubectl kubectl.sha256 && \
-    useradd -rm -d /home/ubuntu -s /bin/bash -g root -u 1000 ubuntu
+    rm kubectl kubectl.sha256
 
 USER ubuntu
