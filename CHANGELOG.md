@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 #### Fixed
 - Fix links in the README by @alex-karpenko
+- Change action-worker base image to Ubuntu 24.04 by @alex-karpenko in [#7](https://github.com/alex-karpenko/git-events-runner/pull/7)
 
 ## New Contributors
 * @dependabot[bot] made their first contribution in [#4](https://github.com/alex-karpenko/git-events-runner/pull/4)
