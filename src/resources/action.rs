@@ -100,6 +100,10 @@ pub struct ActionJob {
     command: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     service_account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annotations: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    labels: Option<BTreeMap<String, String>>,
     enable_cloner_debug: bool,
     preserve_git_folder: bool,
 }
@@ -179,6 +183,23 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         labels.insert(ACTION_JOB_SOURCE_KIND_LABEL.into(), source_kind.to_string());
         labels.insert(ACTION_JOB_SOURCE_NAME_LABEL.into(), source_name.into());
 
+        if let Some(additional_labels) = self.action_job_spec().labels {
+            labels.extend(additional_labels);
+        }
+
+        let pod_template_metadata =
+            if self.action_job_spec().labels.is_some() || self.action_job_spec().annotations.is_some() {
+                let metadata = ObjectMeta {
+                    labels: self.action_job_spec().labels,
+                    annotations: self.action_job_spec().annotations,
+                    ..Default::default()
+                };
+
+                Some(metadata)
+            } else {
+                None
+            };
+
         let args = if let Some(source_override) = source_override {
             self.get_gitrepo_cloner_args(&source_override.kind, &source_override.name, &source_override.reference)
         } else {
@@ -200,6 +221,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
                 name: Some(self.job_name()),
                 namespace: Some(ns.to_string()),
                 labels: Some(labels),
+                annotations: self.action_job_spec().annotations,
                 owner_references: Some(vec![self.get_owner_reference()]),
                 ..Default::default()
             },
@@ -208,7 +230,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
                 parallelism: Some(1),
                 ttl_seconds_after_finished: Some(RuntimeConfig::get().action.ttl_seconds_after_finished),
                 template: PodTemplateSpec {
-                    metadata: Default::default(),
+                    metadata: pod_template_metadata,
                     spec: Some(PodSpec {
                         service_account_name: service_account,
                         init_containers: Some(vec![Container {

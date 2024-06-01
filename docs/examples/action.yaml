@@ -6,6 +6,15 @@ metadata:
 spec:
   # Optional definition of the Job to run to complete this action
   actionJob:
+    # Optional additional labels to attach to the Job and Pod template.
+    # Action attaches some labels to track Jobs' state and activity,
+    # these labels will be added to the existing.
+    labels:
+      my-specific-label-1: labels-value-1
+      my-specific-label-2: labels-value-2
+    # Optional annotations to add to the Job and Pod template.
+    annotations:
+      git-events-runner.rs/demo: "true"
     # Optional entrypoint of the worker container,
     # Default is ENTRYPOINT of the worker image
     command: entrypoint.sh
