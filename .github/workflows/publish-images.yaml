@@ -47,7 +47,7 @@ jobs:
         with:
           images: |
             ${{ env.GH_REGISTRY }}/${{ github.repository }}/${{ matrix.binary }}
-            ${{ env.DOCKER_REGISTRY }}/alexkarpenko/${{ matrix.binary }}
+            ${{ env.DOCKER_REGISTRY }}/oleksiikarpenko/${{ matrix.binary }}
 
       - name: Build and push Docker image
         id: build-and-push
