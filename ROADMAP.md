@@ -5,7 +5,6 @@
 - chart: update to specify container registry and use docker.io by default
 - action:
     - config to restrict the maximum number of running acton jobs;
-    - config to restrict jobs' duration;
 
 ## Next release
 
@@ -36,3 +35,4 @@
 - action:
     - config parameters to specify additional annotations and labels for action job;
     - config parameters to specify node affinity/selector, toleration;
+    - config to restrict jobs' duration;
