@@ -8,7 +8,10 @@ use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
-        core::v1::{Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount},
+        core::v1::{
+            Affinity, Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Toleration, Volume,
+            VolumeMount,
+        },
     },
     apimachinery::pkg::apis::meta::v1::OwnerReference,
 };
@@ -104,6 +107,12 @@ pub struct ActionJob {
     annotations: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     labels: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tolerations: Option<Vec<Toleration>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    affinity: Option<Affinity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    node_selector: Option<BTreeMap<String, String>>,
     enable_cloner_debug: bool,
     preserve_git_folder: bool,
 }
@@ -235,6 +244,9 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
                     metadata: pod_template_metadata,
                     spec: Some(PodSpec {
                         service_account_name: service_account,
+                        node_selector: action_job.node_selector,
+                        affinity: action_job.affinity,
+                        tolerations: action_job.tolerations,
                         init_containers: Some(vec![Container {
                             name: config.action.containers.cloner.name.clone(),
                             image: Some(

@@ -30,6 +30,7 @@
         "scheduletriggers",
         "schemars",
         "thiserror",
+        "tolerations",
         "userpass",
         "webhooktriggers",
         "workdir"
