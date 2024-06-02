@@ -113,6 +113,10 @@ pub struct ActionJob {
     affinity: Option<Affinity>,
     #[serde(skip_serializing_if = "Option::is_none")]
     node_selector: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ttl_seconds_after_finished: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_deadline_seconds: Option<i64>,
     enable_cloner_debug: bool,
     preserve_git_folder: bool,
 }
@@ -227,6 +231,13 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
             RuntimeConfig::get().action.default_service_account.clone()
         };
 
+        let ttl_seconds_after_finished = action_job
+            .ttl_seconds_after_finished
+            .unwrap_or(RuntimeConfig::get().action.ttl_seconds_after_finished);
+        let active_deadline_seconds = action_job
+            .active_deadline_seconds
+            .unwrap_or(RuntimeConfig::get().action.active_deadline_seconds);
+
         let job = Job {
             metadata: ObjectMeta {
                 name: Some(self.job_name()),
@@ -239,7 +250,8 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
             spec: Some(JobSpec {
                 backoff_limit: Some(0),
                 parallelism: Some(1),
-                ttl_seconds_after_finished: Some(RuntimeConfig::get().action.ttl_seconds_after_finished),
+                ttl_seconds_after_finished: Some(ttl_seconds_after_finished),
+                active_deadline_seconds: Some(active_deadline_seconds),
                 template: PodTemplateSpec {
                     metadata: pod_template_metadata,
                     spec: Some(PodSpec {

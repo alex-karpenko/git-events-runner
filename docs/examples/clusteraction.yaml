@@ -38,6 +38,12 @@ spec:
     # details about repo from the worker.
     # This option allows access to the .git folder in worker container.
     preserveGitFolder: false
+    # Time limit to complete action Job.
+    # Incomplete Job wil be terminated after this time.
+    active_deadline_seconds: 3600
+    # Time limit to preserve finished action Job in a cluster.
+    # Finished Job wil be deleted after this time.
+    ttl_seconds_after_finished: 7200
     # Optional additional labels to attach to the Job and Pod template.
     # Action attaches some labels to track Jobs' state and activity,
     # these labels will be added to the existing.

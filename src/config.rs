@@ -13,6 +13,8 @@ use tracing::{debug, error, info, warn};
 const CONFIG_MAP_DATA_NAME: &str = "runtimeConfig";
 const DEFAULT_CONTAINER_REPO: &str = "ghcr.io/alex-karpenko/git-events-runner";
 const DEFAULT_WEBHOOK_TRIGGER_AUTH_HEADER: &str = "x-trigger-auth";
+const DEFAULT_TTL_SECONDS_AFTER_FINISHED: i32 = 7200;
+const DEFAULT_ACTIVE_DEADLINE_SECONDS: i64 = 3600;
 
 static CONFIG_TX_CHANNEL: OnceLock<Sender<Arc<RuntimeConfig>>> = OnceLock::new();
 
@@ -160,6 +162,7 @@ pub struct ActionConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_service_account: Option<String>,
     pub ttl_seconds_after_finished: i32,
+    pub active_deadline_seconds: i64,
     pub containers: ActionContainersConfig,
 }
 
@@ -169,7 +172,8 @@ impl Default for ActionConfig {
             workdir: ActionWorkdirConfig::default(),
             containers: ActionContainersConfig::default(),
             default_service_account: None,
-            ttl_seconds_after_finished: 7200,
+            ttl_seconds_after_finished: DEFAULT_TTL_SECONDS_AFTER_FINISHED,
+            active_deadline_seconds: DEFAULT_ACTIVE_DEADLINE_SECONDS,
         }
     }
 }
