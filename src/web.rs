@@ -32,7 +32,6 @@ struct WebState {
     client: Client,                    // we need it to call Trigger::create_trigger_task()
     scheduler: Arc<RwLock<Scheduler>>, // to post tasks, with Once schedule
     source_clone_folder: String,       // config to pass to Trigger::create_trigger_task()
-    identity: String,                  // config to pass to Trigger::create_trigger_task()
 }
 
 /// Struct to convert it to response using set of From trait implementations.
@@ -115,13 +114,11 @@ pub async fn build_hooks_web(
     scheduler: Arc<RwLock<Scheduler>>,
     port: u16,
     source_clone_folder: String,
-    identity: String,
 ) -> impl Future<Output = ()> {
     let state = WebState {
         scheduler: scheduler.clone(),
         client,
         source_clone_folder,
-        identity,
     };
 
     let listen_to = format!("0.0.0.0:{port}");
@@ -201,7 +198,6 @@ async fn handle_post_trigger_webhook(
             sacs::task::TaskSchedule::Once,
             TriggerTaskSources::All,
             state.source_clone_folder,
-            state.identity.clone(),
         );
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;
@@ -234,7 +230,6 @@ async fn handle_post_source_webhook(
             sacs::task::TaskSchedule::Once,
             TriggerTaskSources::Single(source.clone()), // by specifying single source we restrict scope of task
             state.source_clone_folder,
-            state.identity.clone(),
         );
         let scheduler = state.scheduler.write().await;
         let task_id = scheduler.add(task).await?;

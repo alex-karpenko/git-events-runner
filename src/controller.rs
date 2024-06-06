@@ -40,17 +40,14 @@ pub struct State {
     pub ready: Arc<RwLock<bool>>,
     /// Cli config
     pub cli_config: Arc<CliConfig>,
-    /// Current controller identity
-    pub identity: String,
 }
 
 impl State {
-    pub fn new(cli_config: Arc<CliConfig>, identity: String) -> Self {
+    pub fn new(cli_config: Arc<CliConfig>) -> Self {
         Self {
             diagnostics: Default::default(),
             ready: Default::default(),
             cli_config,
-            identity,
         }
     }
 }
@@ -89,8 +86,6 @@ pub struct Context {
     pub triggers: Arc<RwLock<TriggersState>>,
     /// Cli config
     pub cli_config: Arc<CliConfig>,
-    /// Current controller identity
-    pub identity: String,
 }
 
 /// State wrapper around the controller outputs for the web server
@@ -108,7 +103,6 @@ impl State {
             scheduler,
             triggers,
             cli_config: self.cli_config.clone(),
-            identity: self.identity.clone(),
         })
     }
 }

@@ -3,7 +3,8 @@ use git_events_runner::{
     cli::{Cli, CliConfig, CliConfigDumpOptions},
     config::RuntimeConfig,
     controller::{run_leader_controllers, State},
-    jobs, leader,
+    jobs::JobsQueue,
+    leader,
     resources::{
         action::{Action, ClusterAction},
         git_repo::{ClusterGitRepo, GitRepo},
@@ -40,9 +41,9 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         cli_config.config_map_name.clone(),
     ));
     tokio::spawn(ApiCacheStore::watch(client.clone())); // detached task for custom resources cache
-    tokio::spawn(jobs::watch(client.clone(), identity.clone())); // detached task to watch on all our k8s jobs
+    tokio::spawn(JobsQueue::init_and_watch(client.clone(), identity.clone())); // detached task to watch on all our k8s jobs
 
-    let state = State::new(Arc::new(cli_config.clone()), identity.clone());
+    let state = State::new(Arc::new(cli_config.clone()));
     SecretsCache::init_cache(Duration::from_secs(cli_config.secrets_cache_time), client.clone());
 
     // create leader lease to run ScheduleTrigger controller in single instance only
@@ -78,7 +79,6 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
             scheduler,
             cli_config.webhooks_port,
             cli_config.source_clone_folder.clone(),
-            identity.clone(),
         )
         .await
     };

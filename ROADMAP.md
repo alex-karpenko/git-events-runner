@@ -4,7 +4,11 @@
 
 - chart: update to specify container registry and use docker.io by default
 - action:
-    - config to restrict the maximum number of running acton jobs;
+    - config to restrict the maximum number of running acton jobs:
+      - runningJobsLimit: cluster hard limit - number of jobs running right now;
+      - enqueuedJobsLimit: cluster soft limit - number of jobs waiting for free running limit right now;
+      - actionRunningJobsLimit: per-action number of jobs running right now regardless of trigger which run it; jobs out of limit should be queued.
+- doc: make documentation site versioned.
 
 ## Next release
 
