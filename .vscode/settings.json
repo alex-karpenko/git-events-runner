@@ -12,6 +12,7 @@
         "codeowner",
         "crdgen",
         "crds",
+        "Deque",
         "Finalizer",
         "fullname",
         "gitrepo",

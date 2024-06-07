@@ -82,7 +82,6 @@ impl JobsQueue {
     pub async fn enqueue(job: Job, ns: &str) -> Result<Job> {
         if let Some(queue) = JOBS_QUEUE.get() {
             debug!(%ns, name = %job.name_any(), "create job");
-            let jobs_api: Api<Job> = Api::namespaced(queue.client.clone(), ns);
 
             // Add identity label to track job
             let mut labels = job.metadata.labels.unwrap_or_default();
@@ -97,6 +96,8 @@ impl JobsQueue {
                 },
                 ..job
             };
+
+            let jobs_api: Api<Job> = Api::namespaced(queue.client.clone(), ns);
             jobs_api
                 .create(&PostParams::default(), &job)
                 .await
