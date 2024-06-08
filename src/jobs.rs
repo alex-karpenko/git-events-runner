@@ -4,13 +4,14 @@ use futures::{future::ready, StreamExt};
 use k8s_openapi::api::batch::v1::JobStatus;
 use k8s_openapi::{api::batch::v1::Job, Metadata};
 use kube::api::{ObjectMeta, PostParams};
-use kube::runtime::reflector::{ObjectRef, Store};
+use kube::runtime::reflector::ObjectRef;
 use kube::ResourceExt;
 use kube::{
     runtime::{reflector, watcher, WatchStreamExt},
     Api, Client,
 };
 use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, SystemTime};
 use std::{
     fmt::Debug,
@@ -26,10 +27,10 @@ static JOBS_QUEUE: OnceLock<Arc<JobsQueue>> = OnceLock::new();
 pub struct JobsQueue {
     client: Client,
     identity: String,
-    store: Store<Job>,
     queue_event_tx: sync::watch::Sender<()>,
     queue_jobs_tx: sync::mpsc::UnboundedSender<(Job, SystemTime)>,
     queue_jobs_rx: RwLock<sync::mpsc::UnboundedReceiver<(Job, SystemTime)>>,
+    running_jobs: AtomicUsize,
 }
 
 impl Debug for JobsQueue {
@@ -55,10 +56,10 @@ impl JobsQueue {
             .set(Arc::new(Self {
                 client: client.clone(),
                 identity: identity.clone(),
-                store: store.clone(),
                 queue_event_tx: queue_event_tx.clone(),
                 queue_jobs_tx,
                 queue_jobs_rx: RwLock::new(queue_jobs_rx),
+                running_jobs: AtomicUsize::new(0),
             }))
             .unwrap();
 
@@ -73,6 +74,7 @@ impl JobsQueue {
                 if let Ok(job) = job {
                     let name = job.metadata().name.clone().unwrap();
                     let ns = job.metadata().namespace.clone().unwrap();
+                    let jobs_queue = JOBS_QUEUE.get().unwrap();
 
                     // Filter duplicates by watching on resource status changes.
                     let key = reflector::ObjectRef::new(&name).within(&ns);
@@ -85,14 +87,32 @@ impl JobsQueue {
                                 // but not for counters under them.
                                 if store_status.succeeded.is_some() {
                                     info!(%ns, %name, "job completed successfully");
+                                    jobs_queue
+                                        .running_jobs
+                                        .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                                 } else if store_status.failed.is_some() {
                                     warn!(%ns, %name, "job failed");
+                                    jobs_queue
+                                        .running_jobs
+                                        .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                                 }
                             }
                         }
-                        statuses.insert(key, store_status.clone());
+
+                        if statuses.insert(key, store_status.clone()).is_none() {
+                            jobs_queue
+                                .running_jobs
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        };
                     } else {
-                        statuses.remove(&key);
+                        if let Some(status) = statuses.remove(&key) {
+                            if status.succeeded.is_none() && status.failed.is_none() {
+                                warn!(%ns, %name, "unfinished job deleted");
+                                jobs_queue
+                                    .running_jobs
+                                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            }
+                        }
                     }
                 }
                 let _ = queue_event_tx.send(());
@@ -122,9 +142,14 @@ impl JobsQueue {
         let queue = JOBS_QUEUE.get().unwrap();
         let mut queue_jobs_rx = queue.queue_jobs_rx.write().await;
 
-        let running_jobs = queue.store.len();
-        let mut waiting_jobs = queue_jobs_rx.len();
+        let running_jobs = queue.running_jobs.load(std::sync::atomic::Ordering::SeqCst);
+        if running_jobs > RuntimeConfig::get().action.max_running_jobs {
+            warn!(%running_jobs, "jobs queue capacity is exceeded");
+            return;
+        }
+
         let mut free_capacity = RuntimeConfig::get().action.max_running_jobs - running_jobs;
+        let mut waiting_jobs = queue_jobs_rx.len();
         let now = SystemTime::now();
 
         debug!(%running_jobs, %waiting_jobs, %free_capacity, "jobs queue state");
