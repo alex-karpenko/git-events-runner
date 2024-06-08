@@ -218,7 +218,7 @@ impl Default for ActionContainersClonerConfig {
     fn default() -> Self {
         Self {
             name: String::from("action-cloner"),
-            image: format!("{DEFAULT_CONTAINER_REPO}/gitrepo-cloner:{}", env!("CARGO_PKG_VERSION")),
+            image: format!("{DEFAULT_CONTAINER_REPO}/gitrepo-cloner:v{}", env!("CARGO_PKG_VERSION")),
         }
     }
 }
@@ -235,7 +235,7 @@ impl Default for ActionContainersWorkerConfig {
     fn default() -> Self {
         Self {
             name: String::from("action-worker"),
-            image: format!("{DEFAULT_CONTAINER_REPO}/action-worker:{}", env!("CARGO_PKG_VERSION")),
+            image: format!("{DEFAULT_CONTAINER_REPO}/action-worker:v{}", env!("CARGO_PKG_VERSION")),
             variables_prefix: String::from("ACTION_JOB_"),
         }
     }
