@@ -26,8 +26,8 @@ pub struct JobsQueue {
     identity: String,
     store: Store<Job>,
     queue_event_tx: sync::watch::Sender<()>,
-    queue_jobs_tx: sync::mpsc::UnboundedSender<(SystemTime, Job)>,
-    queue_jobs_rx: RwLock<sync::mpsc::UnboundedReceiver<(SystemTime, Job)>>,
+    queue_jobs_tx: sync::mpsc::UnboundedSender<(Job, SystemTime)>,
+    queue_jobs_rx: RwLock<sync::mpsc::UnboundedReceiver<(Job, SystemTime)>>,
 }
 
 impl Debug for JobsQueue {
@@ -110,15 +110,14 @@ impl JobsQueue {
         let mut waiting_jobs = queue_jobs_rx.len();
         let mut free_capacity = RuntimeConfig::get().action.max_running_jobs - running_jobs;
         let now = SystemTime::now();
-        let job_waiting_timeout = Duration::from_secs(RuntimeConfig::get().action.job_waiting_timeout_seconds);
 
         debug!(%running_jobs, %waiting_jobs, %free_capacity, "jobs queue state");
 
         while waiting_jobs > 0 && free_capacity > 0 {
-            if let Some((created_at, job)) = queue_jobs_rx.recv().await {
+            if let Some((job, expiration_time)) = queue_jobs_rx.recv().await {
                 let ns = job.namespace().unwrap();
                 let name = job.name_any();
-                if now.duration_since(created_at).unwrap() < job_waiting_timeout {
+                if now < expiration_time {
                     debug!(%ns, %name , "creating job");
                     let jobs_api: Api<Job> = Api::namespaced(queue.client.clone(), &ns);
                     let result = jobs_api
@@ -147,7 +146,7 @@ impl JobsQueue {
     }
 
     /// Enqueue Jobs.
-    pub async fn enqueue(job: Job, ns: &str) -> Result<Job> {
+    pub async fn enqueue(job: Job, ns: &str, timeout: Option<Duration>) -> Result<Job> {
         if let Some(queue) = JOBS_QUEUE.get() {
             debug!(%ns, name = %job.name_any(), "enqueue job");
 
@@ -165,9 +164,14 @@ impl JobsQueue {
                 ..job
             };
 
+            let timeout = timeout.unwrap_or(Duration::from_secs(
+                RuntimeConfig::get().action.job_waiting_timeout_seconds,
+            ));
+            let expiration_time = SystemTime::now().checked_add(timeout).unwrap();
+
             let jobs_tx = queue.queue_jobs_tx.clone();
             jobs_tx
-                .send((SystemTime::now(), job.clone()))
+                .send((job.clone(), expiration_time))
                 .map_err(|e| Error::JobsQueueError(e.to_string()))?;
 
             let event_tx = queue.queue_event_tx.clone();

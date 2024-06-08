@@ -18,7 +18,10 @@ use k8s_openapi::{
 use kube::{api::ObjectMeta, CustomResource, Resource, ResourceExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, time::SystemTime};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, SystemTime},
+};
 use strum::{Display, EnumString};
 use tracing::info;
 
@@ -113,6 +116,8 @@ pub struct ActionJob {
     ttl_seconds_after_finished: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     active_deadline_seconds: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    job_waiting_timeout_seconds: Option<u64>,
     enable_cloner_debug: bool,
     preserve_git_folder: bool,
 }
@@ -145,7 +150,13 @@ pub(crate) trait ActionExecutor: ActionInternals {
     ) -> Result<Job> {
         let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns)?;
         info!(%ns, name = %job.name_any(), "enqueue job");
-        JobsQueue::enqueue(job, ns).await
+
+        let timeout = self
+            .action_job_spec()
+            .job_waiting_timeout_seconds
+            .map(Duration::from_secs);
+
+        JobsQueue::enqueue(job, ns, timeout).await
     }
 }
 
