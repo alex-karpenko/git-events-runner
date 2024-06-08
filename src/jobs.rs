@@ -1,17 +1,21 @@
+use crate::config::RuntimeConfig;
 use crate::{Error, Result};
 use futures::{future::ready, StreamExt};
 use k8s_openapi::{api::batch::v1::Job, Metadata};
 use kube::api::{ObjectMeta, PostParams};
+use kube::runtime::reflector::Store;
 use kube::ResourceExt;
 use kube::{
-    runtime::{predicates, reflector, watcher, WatchStreamExt},
+    runtime::{reflector, watcher, WatchStreamExt},
     Api, Client,
 };
+use std::time::{Duration, SystemTime};
 use std::{
     fmt::Debug,
     sync::{Arc, OnceLock},
 };
-use tracing::{debug, info, warn};
+use tokio::sync::{self, RwLock};
+use tracing::{debug, error, info, warn};
 
 const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identity";
 
@@ -20,6 +24,10 @@ static JOBS_QUEUE: OnceLock<Arc<JobsQueue>> = OnceLock::new();
 pub struct JobsQueue {
     client: Client,
     identity: String,
+    store: Store<Job>,
+    queue_event_tx: sync::watch::Sender<()>,
+    queue_jobs_tx: sync::mpsc::UnboundedSender<(SystemTime, Job)>,
+    queue_jobs_rx: RwLock<sync::mpsc::UnboundedReceiver<(SystemTime, Job)>>,
 }
 
 impl Debug for JobsQueue {
@@ -36,23 +44,27 @@ impl JobsQueue {
     /// This method is used to calculate number of the jobs running by this particular instance,
     /// and apply limits on that number.
     pub async fn init_and_watch(client: Client, identity: String) {
+        let (queue_event_tx, mut queue_event_rx) = sync::watch::channel(());
+        let (queue_jobs_tx, queue_jobs_rx) = sync::mpsc::unbounded_channel();
+        let (store, writer) = reflector::store();
+
         JOBS_QUEUE
             .set(Arc::new(Self {
                 client: client.clone(),
                 identity: identity.clone(),
+                store: store.clone(),
+                queue_event_tx: queue_event_tx.clone(),
+                queue_jobs_tx,
+                queue_jobs_rx: RwLock::new(queue_jobs_rx),
             }))
             .unwrap();
 
         let jobs_api: Api<Job> = Api::all(client);
         let watcher_config =
             watcher::Config::default().labels(format!("{ACTION_JOB_IDENTITY_LABEL}={}", identity).as_str());
-        let (store, writer) = reflector::store();
 
-        let jobs_stream = reflector::reflector(writer, watcher(jobs_api, watcher_config));
-
-        jobs_stream
-            .applied_objects()
-            .predicate_filter(predicates::generation)
+        let jobs_stream = reflector::reflector(writer, watcher(jobs_api, watcher_config))
+            .touched_objects()
             .for_each(|job| {
                 debug!(len = store.len(), "update jobs store");
                 if let Ok(job) = job {
@@ -70,18 +82,74 @@ impl JobsQueue {
                         warn!(%ns, %name, "job failed");
                     }
                 }
+                let _ = queue_event_tx.send(());
                 ready(())
-            })
-            .await
+            });
+
+        tokio::select! {
+            _ = jobs_stream => {
+                debug!("jobs stream completed");
+            },
+            _ = async move {
+                while queue_event_rx.changed().await.is_ok() {
+                    debug!("jobs queue updated");
+                    let _ = queue_event_rx.borrow_and_update();
+                    JobsQueue::run_queue().await;
+                }
+            } => {
+                debug!("jobs queue event loop completed");
+            }
+        }
     }
 
-    /// Create or enqueue Jobs.
-    /// If jobs queue has enough capacity - starts job immediately,
-    /// If there is no capacity right now - put job into the queue
-    /// and rely on the watcher to start it.
+    async fn run_queue() {
+        let queue = JOBS_QUEUE.get().unwrap();
+        let mut queue_jobs_rx = queue.queue_jobs_rx.write().await;
+
+        let running_jobs = queue.store.len();
+        let mut waiting_jobs = queue_jobs_rx.len();
+        let mut free_capacity = RuntimeConfig::get().action.max_running_jobs - running_jobs;
+        let now = SystemTime::now();
+        let job_waiting_timeout = Duration::from_secs(RuntimeConfig::get().action.job_waiting_timeout_seconds);
+
+        debug!(%running_jobs, %waiting_jobs, %free_capacity, "jobs queue state");
+
+        while waiting_jobs > 0 && free_capacity > 0 {
+            if let Some((created_at, job)) = queue_jobs_rx.recv().await {
+                let ns = job.namespace().unwrap();
+                let name = job.name_any();
+                if now.duration_since(created_at).unwrap() < job_waiting_timeout {
+                    debug!(%ns, %name , "creating job");
+                    let jobs_api: Api<Job> = Api::namespaced(queue.client.clone(), &ns);
+                    let result = jobs_api
+                        .create(&PostParams::default(), &job)
+                        .await
+                        .map_err(Error::KubeError);
+
+                    match result {
+                        Ok(_) => {
+                            waiting_jobs -= 1;
+                            free_capacity -= 1;
+                            debug!(%ns, %name , "job created");
+                        }
+                        Err(error) => {
+                            error!(%ns, %name, %error, "error creating job")
+                        }
+                    }
+                } else {
+                    warn!(%ns, %name, "job expired");
+                }
+            } else {
+                debug!("jobs queue is empty");
+                break;
+            }
+        }
+    }
+
+    /// Enqueue Jobs.
     pub async fn enqueue(job: Job, ns: &str) -> Result<Job> {
         if let Some(queue) = JOBS_QUEUE.get() {
-            debug!(%ns, name = %job.name_any(), "create job");
+            debug!(%ns, name = %job.name_any(), "enqueue job");
 
             // Add identity label to track job
             let mut labels = job.metadata.labels.unwrap_or_default();
@@ -97,11 +165,15 @@ impl JobsQueue {
                 ..job
             };
 
-            let jobs_api: Api<Job> = Api::namespaced(queue.client.clone(), ns);
-            jobs_api
-                .create(&PostParams::default(), &job)
-                .await
-                .map_err(Error::KubeError)
+            let jobs_tx = queue.queue_jobs_tx.clone();
+            jobs_tx
+                .send((SystemTime::now(), job.clone()))
+                .map_err(|e| Error::JobsQueueError(e.to_string()))?;
+
+            let event_tx = queue.queue_event_tx.clone();
+            event_tx.send(()).map_err(|e| Error::JobsQueueError(e.to_string()))?;
+
+            Ok(job)
         } else {
             Err(Error::JobsQueueError("jobs queue isn't initialized".into()))
         }

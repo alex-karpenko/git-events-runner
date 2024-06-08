@@ -3,17 +3,12 @@
 ## In work
 
 - chart: update to specify container registry and use docker.io by default
-- action:
-    - config to restrict the maximum number of running acton jobs:
-      - runningJobsLimit: cluster hard limit - number of jobs running right now;
-      - enqueuedJobsLimit: cluster soft limit - number of jobs waiting for free running limit right now;
-      - actionRunningJobsLimit: per-action number of jobs running right now regardless of trigger which run it; jobs out of limit should be queued.
+- refactor: improve logging, make it more formal and short, with just relevant info only
 - doc: make documentation site versioned.
 
 ## Next release
 
 - gitrepo: extend file sensor to use globs instead of single file
-- refactor: improve logging, make it more formal and short, with just relevant info only
 - controller: tracing
 - controller: metrics
 
@@ -40,3 +35,4 @@
     - config parameters to specify additional annotations and labels for action job;
     - config parameters to specify node affinity/selector, toleration;
     - config to restrict jobs' duration;
+    - config to restrict the maximum number of running acton jobs:

@@ -16,7 +16,7 @@ const DEFAULT_WEBHOOK_TRIGGER_AUTH_HEADER: &str = "x-trigger-auth";
 const DEFAULT_TTL_SECONDS_AFTER_FINISHED: i32 = 7200;
 const DEFAULT_ACTIVE_DEADLINE_SECONDS: i64 = 3600;
 const DEFAULT_MAX_RUNNING_ACTION_JOBS: usize = 16;
-const DEFAULT_MAX_WAITING_ACTION_JOBS: usize = 16;
+const DEFAULT_ACTION_JOB_WAITING_TIMEOUT_SECONDS: u64 = 300;
 
 static CONFIG_TX_CHANNEL: OnceLock<Sender<Arc<RuntimeConfig>>> = OnceLock::new();
 
@@ -166,7 +166,7 @@ pub struct ActionConfig {
     pub ttl_seconds_after_finished: i32,
     pub active_deadline_seconds: i64,
     pub max_running_jobs: usize,
-    pub max_waiting_jobs: usize,
+    pub job_waiting_timeout_seconds: u64,
     pub containers: ActionContainersConfig,
 }
 
@@ -179,7 +179,7 @@ impl Default for ActionConfig {
             ttl_seconds_after_finished: DEFAULT_TTL_SECONDS_AFTER_FINISHED,
             active_deadline_seconds: DEFAULT_ACTIVE_DEADLINE_SECONDS,
             max_running_jobs: DEFAULT_MAX_RUNNING_ACTION_JOBS,
-            max_waiting_jobs: DEFAULT_MAX_WAITING_ACTION_JOBS,
+            job_waiting_timeout_seconds: DEFAULT_ACTION_JOB_WAITING_TIMEOUT_SECONDS,
         }
     }
 }
