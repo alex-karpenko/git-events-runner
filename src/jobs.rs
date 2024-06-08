@@ -1,21 +1,23 @@
 use crate::config::RuntimeConfig;
 use crate::{Error, Result};
 use futures::{future::ready, StreamExt};
+use k8s_openapi::api::batch::v1::JobStatus;
 use k8s_openapi::{api::batch::v1::Job, Metadata};
 use kube::api::{ObjectMeta, PostParams};
-use kube::runtime::reflector::Store;
+use kube::runtime::reflector::{ObjectRef, Store};
 use kube::ResourceExt;
 use kube::{
     runtime::{reflector, watcher, WatchStreamExt},
     Api, Client,
 };
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use std::{
     fmt::Debug,
     sync::{Arc, OnceLock},
 };
 use tokio::sync::{self, RwLock};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identity";
 
@@ -47,6 +49,7 @@ impl JobsQueue {
         let (queue_event_tx, mut queue_event_rx) = sync::watch::channel(());
         let (queue_jobs_tx, queue_jobs_rx) = sync::mpsc::unbounded_channel();
         let (store, writer) = reflector::store();
+        let mut statuses: HashMap<ObjectRef<Job>, JobStatus> = HashMap::new();
 
         JOBS_QUEUE
             .set(Arc::new(Self {
@@ -70,16 +73,26 @@ impl JobsQueue {
                 if let Ok(job) = job {
                     let name = job.metadata().name.clone().unwrap();
                     let ns = job.metadata().namespace.clone().unwrap();
-                    let status = job.status.unwrap();
 
-                    debug!(?status, "job status changed");
-                    // Since we run jobs with parallelism=1 and w/o restarts,
-                    // we look for just `succeed` or `failed` in the status,
-                    // but not for counters under them
-                    if status.succeeded.is_some() {
-                        info!(%ns, %name, "job completed successfully");
-                    } else if status.failed.is_some() {
-                        warn!(%ns, %name, "job failed");
+                    // Filter duplicates by watching on resource status changes.
+                    let key = reflector::ObjectRef::new(&name).within(&ns);
+                    if let Some(store_status) = &store.get(&key).unwrap_or_default().status {
+                        if let Some(prev_status) = statuses.get(&key) {
+                            if store_status != prev_status {
+                                trace!(?store_status, "job status changed");
+                                // Since we run jobs with parallelism=1 and w/o restarts,
+                                // we look for just `succeed` or `failed` in the status,
+                                // but not for counters under them.
+                                if store_status.succeeded.is_some() {
+                                    info!(%ns, %name, "job completed successfully");
+                                } else if store_status.failed.is_some() {
+                                    warn!(%ns, %name, "job failed");
+                                }
+                            }
+                        }
+                        statuses.insert(key, store_status.clone());
+                    } else {
+                        statuses.remove(&key);
                     }
                 }
                 let _ = queue_event_tx.send(());
@@ -102,6 +115,9 @@ impl JobsQueue {
         }
     }
 
+    /// Checks if there are jobs in queue to run and if there is free capacity
+    /// (check store for number of running jobs is less of the limit)
+    /// then starts as many job as possible ot satisfy limits.
     async fn run_queue() {
         let queue = JOBS_QUEUE.get().unwrap();
         let mut queue_jobs_rx = queue.queue_jobs_rx.write().await;
@@ -146,6 +162,8 @@ impl JobsQueue {
     }
 
     /// Enqueue Jobs.
+    /// Add/update necessary metadata and
+    /// put job with queue timeout into the queue and trigger run_queue.
     pub async fn enqueue(job: Job, ns: &str, timeout: Option<Duration>) -> Result<Job> {
         if let Some(queue) = JOBS_QUEUE.get() {
             debug!(%ns, name = %job.name_any(), "enqueue job");
@@ -169,11 +187,13 @@ impl JobsQueue {
             ));
             let expiration_time = SystemTime::now().checked_add(timeout).unwrap();
 
+            // Put job into tje queue
             let jobs_tx = queue.queue_jobs_tx.clone();
             jobs_tx
                 .send((job.clone(), expiration_time))
                 .map_err(|e| Error::JobsQueueError(e.to_string()))?;
 
+            // Trigger run_queue method indirectly.
             let event_tx = queue.queue_event_tx.clone();
             event_tx.send(()).map_err(|e| Error::JobsQueueError(e.to_string()))?;
 
