@@ -104,14 +104,12 @@ impl JobsQueue {
                                 .running_jobs
                                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         };
-                    } else {
-                        if let Some(status) = statuses.remove(&key) {
-                            if status.succeeded.is_none() && status.failed.is_none() {
-                                warn!(%ns, %name, "unfinished job deleted");
-                                jobs_queue
-                                    .running_jobs
-                                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                            }
+                    } else if let Some(status) = statuses.remove(&key) {
+                        if status.succeeded.is_none() && status.failed.is_none() {
+                            warn!(%ns, %name, "unfinished job deleted");
+                            jobs_queue
+                                .running_jobs
+                                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                         }
                     }
                 }
