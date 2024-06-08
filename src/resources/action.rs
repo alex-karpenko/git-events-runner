@@ -3,7 +3,7 @@ use super::{
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
     CustomApiResource,
 };
-use crate::{config::RuntimeConfig, Error, Result};
+use crate::{config::RuntimeConfig, jobs::JobsQueue, Result};
 use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
@@ -15,17 +15,16 @@ use k8s_openapi::{
     },
     apimachinery::pkg::apis::meta::v1::OwnerReference,
 };
-use kube::{
-    api::{ObjectMeta, PostParams},
-    Api, Client, CustomResource, Resource, ResourceExt,
-};
+use kube::{api::ObjectMeta, CustomResource, Resource, ResourceExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, time::SystemTime};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, SystemTime},
+};
 use strum::{Display, EnumString};
 use tracing::info;
 
-pub const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identity";
 pub const ACTION_JOB_ACTION_KIND_LABEL: &str = "git-events-runner.rs/action-kind";
 pub const ACTION_JOB_ACTION_NAME_LABEL: &str = "git-events-runner.rs/action-name";
 pub const ACTION_JOB_SOURCE_KIND_LABEL: &str = "git-events-runner.rs/source-kind";
@@ -117,6 +116,8 @@ pub struct ActionJob {
     ttl_seconds_after_finished: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     active_deadline_seconds: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    job_waiting_timeout_seconds: Option<u64>,
     enable_cloner_debug: bool,
     preserve_git_folder: bool,
 }
@@ -139,25 +140,23 @@ impl ActionExecutor for ClusterAction {}
 #[allow(private_bounds)]
 pub(crate) trait ActionExecutor: ActionInternals {
     /// Creates K8s Job spec and run actual job from it
-    #[allow(clippy::too_many_arguments)]
     async fn execute(
         &self,
         source_kind: &TriggerSourceKind,
         source_name: &str,
         source_commit: &str,
         trigger_ref: &TriggerGitRepoReference,
-        client: Client,
         ns: &str,
-        identity: String,
     ) -> Result<Job> {
-        let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns, identity)?;
+        let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns)?;
+        info!(%ns, name = %job.name_any(), "enqueue job");
 
-        info!("Create job {}/{}", ns, job.name_any());
-        let jobs_api: Api<Job> = Api::namespaced(client.clone(), ns);
-        jobs_api
-            .create(&PostParams::default(), &job)
-            .await
-            .map_err(Error::KubeError)
+        let timeout = self
+            .action_job_spec()
+            .job_waiting_timeout_seconds
+            .map(Duration::from_secs);
+
+        JobsQueue::enqueue(job, ns, timeout).await
     }
 }
 
@@ -183,7 +182,6 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         source_commit: &str,
         trigger_ref: &TriggerGitRepoReference,
         ns: &str,
-        identity: String,
     ) -> Result<Job> {
         let config = RuntimeConfig::get();
         let action_job = self.action_job_spec();
@@ -204,7 +202,6 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
 
         // Fill out custom jobs' labels
         let mut labels: BTreeMap<String, String> = BTreeMap::new();
-        labels.insert(ACTION_JOB_IDENTITY_LABEL.into(), identity);
         labels.insert(ACTION_JOB_ACTION_KIND_LABEL.into(), self.kind().to_string());
         labels.insert(ACTION_JOB_ACTION_NAME_LABEL.into(), self.name_any());
         labels.insert(ACTION_JOB_SOURCE_KIND_LABEL.into(), source_kind.to_string());
@@ -241,7 +238,6 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         let job = Job {
             metadata: ObjectMeta {
                 name: Some(self.job_name()),
-                namespace: Some(ns.to_string()),
                 labels: Some(labels),
                 annotations: action_job.annotations,
                 owner_references: Some(vec![self.get_owner_reference()]),

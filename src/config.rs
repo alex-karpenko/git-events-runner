@@ -15,6 +15,8 @@ const DEFAULT_CONTAINER_REPO: &str = "ghcr.io/alex-karpenko/git-events-runner";
 const DEFAULT_WEBHOOK_TRIGGER_AUTH_HEADER: &str = "x-trigger-auth";
 const DEFAULT_TTL_SECONDS_AFTER_FINISHED: i32 = 7200;
 const DEFAULT_ACTIVE_DEADLINE_SECONDS: i64 = 3600;
+const DEFAULT_MAX_RUNNING_ACTION_JOBS: usize = 16;
+const DEFAULT_ACTION_JOB_WAITING_TIMEOUT_SECONDS: u64 = 300;
 
 static CONFIG_TX_CHANNEL: OnceLock<Sender<Arc<RuntimeConfig>>> = OnceLock::new();
 
@@ -158,11 +160,13 @@ pub struct RuntimeConfig {
 #[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionConfig {
-    pub workdir: ActionWorkdirConfig,
+    pub max_running_jobs: usize,
+    pub job_waiting_timeout_seconds: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_service_account: Option<String>,
-    pub ttl_seconds_after_finished: i32,
     pub active_deadline_seconds: i64,
+    pub ttl_seconds_after_finished: i32,
+    pub workdir: ActionWorkdirConfig,
     pub containers: ActionContainersConfig,
 }
 
@@ -174,6 +178,8 @@ impl Default for ActionConfig {
             default_service_account: None,
             ttl_seconds_after_finished: DEFAULT_TTL_SECONDS_AFTER_FINISHED,
             active_deadline_seconds: DEFAULT_ACTIVE_DEADLINE_SECONDS,
+            max_running_jobs: DEFAULT_MAX_RUNNING_ACTION_JOBS,
+            job_waiting_timeout_seconds: DEFAULT_ACTION_JOB_WAITING_TIMEOUT_SECONDS,
         }
     }
 }
@@ -212,7 +218,7 @@ impl Default for ActionContainersClonerConfig {
     fn default() -> Self {
         Self {
             name: String::from("action-cloner"),
-            image: format!("{DEFAULT_CONTAINER_REPO}/gitrepo-cloner:{}", env!("CARGO_PKG_VERSION")),
+            image: format!("{DEFAULT_CONTAINER_REPO}/gitrepo-cloner:v{}", env!("CARGO_PKG_VERSION")),
         }
     }
 }
@@ -229,7 +235,7 @@ impl Default for ActionContainersWorkerConfig {
     fn default() -> Self {
         Self {
             name: String::from("action-worker"),
-            image: format!("{DEFAULT_CONTAINER_REPO}/action-worker:{}", env!("CARGO_PKG_VERSION")),
+            image: format!("{DEFAULT_CONTAINER_REPO}/action-worker:v{}", env!("CARGO_PKG_VERSION")),
             variables_prefix: String::from("ACTION_JOB_"),
         }
     }

@@ -78,6 +78,9 @@ pub enum Error {
 
     #[error("Resource not found in cache: {0}")]
     ResourceNotFoundError(String),
+
+    #[error("JobsQueue error: {0}")]
+    JobsQueueError(String),
 }
 
 impl Error {
