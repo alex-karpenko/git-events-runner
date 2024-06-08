@@ -160,13 +160,13 @@ pub struct RuntimeConfig {
 #[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionConfig {
-    pub workdir: ActionWorkdirConfig,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_service_account: Option<String>,
-    pub ttl_seconds_after_finished: i32,
-    pub active_deadline_seconds: i64,
     pub max_running_jobs: usize,
     pub job_waiting_timeout_seconds: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_service_account: Option<String>,
+    pub active_deadline_seconds: i64,
+    pub ttl_seconds_after_finished: i32,
+    pub workdir: ActionWorkdirConfig,
     pub containers: ActionContainersConfig,
 }
 
