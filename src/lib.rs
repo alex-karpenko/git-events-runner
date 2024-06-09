@@ -62,6 +62,16 @@ pub enum Error {
         std::io::Error,
     ),
 
+    #[error("Trigger dir walk error: {0}")]
+    TriggerDirWalkError(String),
+
+    #[error("Trigger file pattern error: {0}")]
+    TriggerFilePatternError(
+        #[source]
+        #[from]
+        globwalk::GlobError,
+    ),
+
     #[error("Task scheduler error: {0}")]
     SchedulerError(
         #[source]
