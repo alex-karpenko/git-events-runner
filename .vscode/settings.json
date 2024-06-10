@@ -17,6 +17,7 @@
         "fullname",
         "gitrepo",
         "gitrepos",
+        "globwalk",
         "hasher",
         "humantime",
         "Initiatilize",

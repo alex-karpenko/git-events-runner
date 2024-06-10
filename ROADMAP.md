@@ -2,13 +2,13 @@
 
 ## In work
 
-- chart: update to specify container registry and use docker.io by default
+- fix/trigger: round last run time in status to avoid kube api overloading
 - refactor: improve logging, make it more formal and short, with just relevant info only
 - doc: make documentation site versioned.
+- chart: update to specify container registry and use docker.io by default
 
 ## Next release
 
-- gitrepo: extend file sensor to use globs instead of single file
 - controller: tracing
 - controller: metrics
 
@@ -36,3 +36,4 @@
     - config parameters to specify node affinity/selector, toleration;
     - config to restrict jobs' duration;
     - config to restrict the maximum number of running acton jobs:
+- gitrepo: extend file sensor to use globs instead of single file

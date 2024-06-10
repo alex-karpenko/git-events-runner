@@ -10,6 +10,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use git2::{Oid, Repository};
+use globwalk::{FileType, GlobWalkerBuilder};
 use k8s_openapi::{chrono::SecondsFormat, NamespaceResourceScope};
 use kube::{
     api::{Patch, PatchParams},
@@ -32,15 +33,16 @@ use std::{
     collections::{HashMap, HashSet},
     future::Future,
     io,
+    path::Path,
     sync::Arc,
     time::{Duration, SystemTime},
 };
 use strum_macros::{Display, EnumString};
 use tokio::{
-    fs::{create_dir_all, remove_dir_all, try_exists, File},
+    fs::{create_dir_all, remove_dir_all, File},
     io::AsyncReadExt,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
@@ -146,9 +148,8 @@ pub struct TriggerWatchOn {
     on_change_only: bool,
     #[serde(default)]
     reference: TriggerGitRepoReference,
-    #[serde(rename = "file")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    file_: Option<String>,
+    files: Option<Vec<String>>,
 }
 
 impl Default for TriggerWatchOn {
@@ -156,7 +157,7 @@ impl Default for TriggerWatchOn {
         Self {
             on_change_only: true,
             reference: Default::default(),
-            file_: None,
+            files: None,
         }
     }
 }
@@ -512,11 +513,11 @@ where
             let new_status = if let Some(status) = trigger.trigger_status() {
                 // Status is already present in the trigger
                 // Use new checked_sources map as addition to existing
-                let mut checked_sources = checked_sources.unwrap_or_default();
-                checked_sources.extend(status.checked_sources.clone());
+                let mut new_checked_sources = status.checked_sources.clone();
+                new_checked_sources.extend(checked_sources.unwrap_or_default());
 
                 // Filter checked_sources to exclude non-existing sources
-                let checked_sources: HashMap<String, CheckedSourceState> = checked_sources
+                let new_checked_sources: HashMap<String, CheckedSourceState> = new_checked_sources
                     .into_iter()
                     .filter(|(k, _v)| trigger.sources().names.contains(k))
                     .collect();
@@ -528,7 +529,7 @@ where
                     } else {
                         status.last_run.clone()
                     },
-                    checked_sources,
+                    checked_sources: new_checked_sources,
                 }
             } else {
                 // No status so far, create new
@@ -683,19 +684,14 @@ where
                                     new_source_state.commit_hash = Some(latest_commit.to_string());
 
                                     // - Get file hash if it's required and present
-                                    if let Some(path) = &trigger.sources().watch_on.file_ {
-                                        let full_path = format!("{repo_path}/{path}");
-                                        let is_exists = try_exists(&full_path).await;
-                                        if is_exists.is_ok() && is_exists.unwrap() {
-                                            let file_hash = get_file_hash(&full_path).await;
-                                            if let Ok(file_hash) = file_hash {
-                                                debug!("File hash: {file_hash}");
-                                                new_source_state.file_hash = Some(file_hash);
-                                            } else {
-                                                error!("Unable to calc file `{path}` hash: {:?}", file_hash.err());
-                                            }
+                                    if let Some(files) = &trigger.sources().watch_on.files {
+                                        let file_hash = get_file_glob_hash(&repo_path, files).await;
+                                        if let Ok(file_hash) = file_hash {
+                                            let hex_hash = hex::encode(file_hash);
+                                            debug!("File hash: {hex_hash}");
+                                            new_source_state.file_hash = Some(hex_hash);
                                         } else {
-                                            warn!("File `{path}` doesn't exits");
+                                            error!("Unable to calc files hash: {:?}", file_hash.err());
                                         }
                                     }
                                 } else {
@@ -714,7 +710,7 @@ where
                             // - If it differs from latest commit or onChangesOnly==false - run action
                             let current_source_state = checked_sources.get(&source);
                             if !new_source_state
-                                .is_equal(current_source_state, trigger.sources().watch_on.file_.is_some())
+                                .is_equal(current_source_state, trigger.sources().watch_on.files.is_some())
                                 || !trigger.sources().watch_on.on_change_only
                             {
                                 // TODO: refactor this part to get "impl executable action" which implements execute(), instead of this match by action's kind
@@ -782,6 +778,18 @@ where
                                         err
                                     ),
                                 }
+                            } else {
+                                if let Some(current_source_state) = checked_sources.get(&source) {
+                                    new_source_state.changed.clone_from(&current_source_state.changed);
+                                }
+                                let new_source_state: HashMap<String, CheckedSourceState> =
+                                    HashMap::from([(source, new_source_state)]);
+                                if let Err(err) = trigger
+                                    .update_trigger_status(None, Some(new_source_state), None, &triggers_api)
+                                    .await
+                                {
+                                    error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                                }
                             }
                             // - Remove temp dir content
                             if let Err(err) = remove_dir_all(&repo_path).await {
@@ -829,7 +837,7 @@ pub fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference)
 }
 
 /// Calculates SHA256 hash of the file
-async fn get_file_hash(path: &String) -> Result<String> {
+async fn get_file_hash(path: &Path) -> Result<Vec<u8>> {
     let mut hasher = Sha256::new();
     let mut buf: Vec<u8> = Vec::new();
 
@@ -842,7 +850,27 @@ async fn get_file_hash(path: &String) -> Result<String> {
 
     let mut buf = buf.as_slice();
     io::copy(&mut buf, &mut hasher).map_err(Error::TriggerFileAccessError)?;
-    let hash = hasher.finalize();
+    let hash = hasher.finalize().to_vec();
 
-    Ok(format!("{hash:x}"))
+    Ok(hash)
+}
+
+/// Calculates SHA256 hash of files selected by glob
+async fn get_file_glob_hash(folder: &String, glob: &[String]) -> Result<Vec<u8>> {
+    let mut hasher = Sha256::new();
+    let glob = GlobWalkerBuilder::from_patterns(folder, glob)
+        .file_type(FileType::FILE)
+        .sort_by(|p1, p2| p1.path().cmp(p2.path()))
+        .build()?;
+
+    for file_name in glob {
+        let file_name = file_name.map_err(|e| Error::TriggerDirWalkError(e.to_string()))?;
+        let file_path = file_name.path();
+
+        let hash = get_file_hash(file_path).await?;
+        hasher.update(hash);
+    }
+
+    let hash = hasher.finalize().to_vec();
+    Ok(hash)
 }

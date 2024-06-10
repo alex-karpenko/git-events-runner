@@ -9,9 +9,11 @@ Both types of the triggers are almost identical except one principal section:
 Every time ScheduleTrigger runs, it checks all sources one by one and creates Job for each source that has been changed
 from the previous check.
 
-It's possible to specify additional constrain on the source check: name of the file, which should be changed to make
-trigger fired.
-Adding or removing file, as well as changing its hash if file is present, means that source has been changed.
+It's possible to specify additional constrain on the source check: list of the file glob patterns, that should be
+changed to get the trigger fired.
+Adding or removing files, as well as changing of any file content (hash), means that source has been changed.
+Pattern format is a well-known `.gitignore` format, described in details in
+the [git documentation](https://git-scm.com/docs/gitignore#_pattern_format).
 
 WebhookTrigger can be called by specifying path to the trigger in one of the two forms:
 
