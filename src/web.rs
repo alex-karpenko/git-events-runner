@@ -106,8 +106,9 @@ pub async fn build_utils_web(
 }
 
 /// Returns webhooks server Future with two base endpoints:
-/// - all sources trigger: /namespace/trigger
-/// - single source trigger: /namespace/trigger/source
+///   - all sources trigger: /namespace/trigger;
+///   - single source trigger: /namespace/trigger/source.
+///
 /// It exits by receiving anything from `shutdown` channel.
 pub async fn build_hooks_web(
     client: Client,

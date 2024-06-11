@@ -1,9 +1,20 @@
 site_name: Git Events Runner
 site_author: Oleksii Karpenko
 repo_name: git-events-runner
-repo_url: https://github.com/alex-karpenko/git-events-runner
-copyright: Copyright &copy; 2024 Oleksii Karpenko
 remote_branch: gh-pages
+copyright: Copyright &copy; 2024 Oleksii Karpenko
+site_url: https://alex-karpenko.github.io/git-events-runner/
+repo_url: https://github.com/alex-karpenko/git-events-runner
+
+plugins:
+  - mike:
+
+extra:
+  version:
+    provider: mike
+    alias: true
+    default:
+      - latest
 
 theme:
   name: material
@@ -42,6 +53,7 @@ markdown_extensions:
       title: On this page
   - pymdownx.highlight
   - pymdownx.superfences
+
 nav:
   - Introduction:
       - Introduction: index.md
@@ -61,4 +73,3 @@ nav:
       - Changelog: changelog.md
       - Roadmap: roadmap.md
       - Bugs: bugs.md
-
