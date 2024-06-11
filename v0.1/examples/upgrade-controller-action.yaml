@@ -1,0 +1,12 @@
+apiVersion: git-events-runner.rs/v1alpha1
+kind: Action
+metadata:
+  name: upgrade-controller
+  namespace: git-events-runner
+spec:
+  actionJob:
+    # default SA if isn't customized by Helm release config
+    serviceAccount: git-events-runner-action-job
+    args:
+      - /bin/bash
+      - docs/examples/upgrade-helm-release.sh
