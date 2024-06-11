@@ -1,7 +1,0 @@
-apiVersion: git-events-runner.rs/v1alpha1
-kind: GitRepo
-metadata:
-  name: git-events-runner-repo
-  namespace: git-events-runner
-spec:
-  repoUri: https://github.com/alex-karpenko/git-events-runner.git
