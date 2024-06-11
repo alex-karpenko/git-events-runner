@@ -60,3 +60,4 @@ jobs:
         run: |
           version=`echo ${{ github.ref_name }} | cut -d . -f 1,2`
           mike deploy ${version} latest --update-aliases --push
+          mike set-default ${version} --push
