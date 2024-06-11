@@ -85,7 +85,7 @@ impl Cli {
         let cli: Cli = Parser::parse();
         cli.setup_logger();
 
-        debug!("CLI config: {:#?}", cli);
+        debug!(config = ?cli, "creating cli config");
 
         cli
     }

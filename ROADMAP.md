@@ -2,12 +2,13 @@
 
 ## In work
 
+- jobs: graceful shutdown with waiting for jobs completion.
 - refactor: improve logging, make it more formal and short, with just relevant info only
+- controller: tracing
 - chart: update to specify container registry and use docker.io by default
 
 ## Next release
 
-- controller: tracing
 - controller: metrics
 
 ## Wishes

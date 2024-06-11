@@ -162,7 +162,7 @@ pub async fn run_leader_controllers(
         debug!("controllers main loop finished");
     }
 
-    info!("Shutting down ScheduleTriggers task scheduler");
+    info!("shutting down ScheduleTriggers task scheduler");
     // we have to extract scheduler from shared ref (Arc) because shutdown method consumes it
     let scheduler = Arc::into_inner(scheduler)
         .expect("more than one copies of scheduler is present, looks like a BUG!")
@@ -180,11 +180,8 @@ where
     K: Clone + DeserializeOwned + Debug,
 {
     if let Err(e) = api.list(&ListParams::default().limit(1)).await {
-        error!(
-            "CRD `{}` is not queryable; {e:?}. Is the CRD installed/updated?",
-            api_name
-        );
-        info!("Installation: {} crds | kubectl apply -f -", env!("CARGO_PKG_NAME"));
+        error!(api = %api_name, error = %e, "CRD is not queryable, looks like CRD isn't installed/updated?");
+        info!("to install run: {} crds | kubectl apply -f -", env!("CARGO_PKG_NAME"));
         std::process::exit(1);
     }
 }
@@ -194,7 +191,7 @@ fn error_policy<K, S>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context>) -> R
 where
     K: Reconcilable<S>,
 {
-    warn!("Reconcile failed: {:?}", error);
+    warn!(%error, "reconcile failed");
     ReconcileAction::await_change()
 }
 
@@ -209,7 +206,7 @@ where
     let ns = resource.namespace().unwrap();
     let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
 
-    info!("Reconciling {} `{}/{}`", resource.kind(), resource.name_any(), ns); // TODO: change something here to avoid ASCII control chars in output
+    info!(kind = %resource.kind(), namespace = %ns, resource = %resource.name_any(), "reconciling");
     if let Some(finalizer_name) = resource.finalizer_name() {
         finalizer(&resource_api, finalizer_name, resource, |event| async {
             match event {

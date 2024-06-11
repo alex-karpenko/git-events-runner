@@ -63,10 +63,7 @@ async fn main() -> anyhow::Result<()> {
         TriggerSourceKind::GitRepo => format!("{}/{}", ns, cli.source_name),
         TriggerSourceKind::ClusterGitRepo => cli.source_name.clone(),
     };
-    debug!(
-        "Cloning source: kind={}, name={}, reference={:?}, destination={}",
-        cli.source_kind, repo_name, reference, cli.destination
-    );
+    debug!(kind = %cli.source_kind, name = %repo_name, %reference, destination= %cli.destination, "cloning source");
 
     let repo = match cli.source_kind {
         TriggerSourceKind::GitRepo => {

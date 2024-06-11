@@ -91,7 +91,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         let (changed_tx, changed_rx) = watch::channel(false);
         let is_leader = leader_lease_channel.borrow_and_update().is_current_for(&identity);
         let controllers = if is_leader {
-            info!("Leader lock has been acquired, identity={identity}");
+            info!(%identity, "leader lock has been acquired");
             Some(tokio::spawn(run_leader_controllers(
                 client.clone(),
                 state.clone(),
@@ -114,14 +114,14 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         tokio::select! {
             _ = signal_handler.wait_for_signal() => {
                     if let Err(err) = shutdown_tx.send(true) {
-                        error!("Error while sending shutdown event: {err}");
+                        error!(error = %err, "sending shutdown event");
                     }
                     shutdown = true;
                 },
             _ = async {
                     while leader_lease_channel.borrow_and_update().is_current_for(&identity) == is_leader {
                         if let Err(err) = leader_lease_channel.changed().await {
-                            error!("Error while process leader lock changes: {err}");
+                            error!(error = %err, "processing leader lock change");
                             shutdown = true;
                         }
                     }
@@ -131,11 +131,11 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         // if we have any controller running now - sent shutdown message to it
         if let Some(controllers) = controllers {
             if let Err(err) = changed_tx.send(true) {
-                error!("Unable to send change event: {err}");
+                error!(error = %err, "sending change event");
             }
             // and wait for finish of controller
             let _ = tokio::join!(controllers);
-            info!("Leader lock has been released");
+            info!("leader lock has been released");
         }
     }
 

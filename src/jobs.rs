@@ -81,17 +81,17 @@ impl JobsQueue {
                     if let Some(store_status) = &store.get(&key).unwrap_or_default().status {
                         if let Some(prev_status) = statuses.get(&key) {
                             if store_status != prev_status {
-                                trace!(?store_status, "job status changed");
+                                trace!(status = ?store_status, "job status changed");
                                 // Since we run jobs with parallelism=1 and w/o restarts,
                                 // we look for just `succeed` or `failed` in the status,
                                 // but not for counters under them.
                                 if store_status.succeeded.is_some() {
-                                    info!(%ns, %name, "job completed successfully");
+                                    info!(namespace = %ns, job = %name, "job completed successfully");
                                     jobs_queue
                                         .running_jobs
                                         .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                                 } else if store_status.failed.is_some() {
-                                    warn!(%ns, %name, "job failed");
+                                    warn!(namespace = %ns, job = %name, "job failed");
                                     jobs_queue
                                         .running_jobs
                                         .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
@@ -106,7 +106,7 @@ impl JobsQueue {
                         };
                     } else if let Some(status) = statuses.remove(&key) {
                         if status.succeeded.is_none() && status.failed.is_none() {
-                            warn!(%ns, %name, "unfinished job deleted");
+                            warn!(namespace = %ns, job = %name, "unfinished job deleted");
                             jobs_queue
                                 .running_jobs
                                 .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
@@ -157,7 +157,7 @@ impl JobsQueue {
                 let ns = job.namespace().unwrap();
                 let name = job.name_any();
                 if now < expiration_time {
-                    debug!(%ns, %name , "creating job");
+                    debug!(namespace = %ns, job = %name , "creating job");
                     let jobs_api: Api<Job> = Api::namespaced(queue.client.clone(), &ns);
                     let result = jobs_api
                         .create(&PostParams::default(), &job)
@@ -168,14 +168,14 @@ impl JobsQueue {
                         Ok(_) => {
                             waiting_jobs -= 1;
                             free_capacity -= 1;
-                            debug!(%ns, %name , "job created");
+                            debug!(namespace = %ns, job = %name , "job created");
                         }
                         Err(error) => {
-                            error!(%ns, %name, %error, "error creating job")
+                            error!(namespace = %ns, job = %name, %error, "error creating job")
                         }
                     }
                 } else {
-                    warn!(%ns, %name, "job expired");
+                    warn!(namespace = %ns, job = %name, "job expired");
                 }
             } else {
                 debug!("jobs queue is empty");
@@ -189,7 +189,7 @@ impl JobsQueue {
     /// put job with queue timeout into the queue and trigger run_queue.
     pub async fn enqueue(job: Job, ns: &str, timeout: Option<Duration>) -> Result<Job> {
         if let Some(queue) = JOBS_QUEUE.get() {
-            debug!(%ns, name = %job.name_any(), "enqueue job");
+            debug!(namespace = %ns, job = %job.name_any(), "enqueue job");
 
             // Add identity label to track job
             let mut labels = job.metadata.labels.unwrap_or_default();

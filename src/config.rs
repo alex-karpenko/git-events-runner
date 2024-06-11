@@ -8,10 +8,19 @@ use kube::{
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::watch::{self, Sender};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, trace, warn};
 
 const CONFIG_MAP_DATA_NAME: &str = "runtimeConfig";
 const DEFAULT_CONTAINER_REPO: &str = "ghcr.io/alex-karpenko/git-events-runner";
+const DEFAULT_SERVICE_ACCOUNT_NAME_TEMPLATE: &str =
+    r#"{{ include "git-events-runner.actionJobServiceAccountName" . }}"#;
+const DEFAULT_CLONER_IMAGE_NAME: &str = "gitrepo-cloner";
+const DEFAULT_CLONER_CONTAINER_NAME: &str = "gitrepo-cloner";
+const DEFAULT_WORKER_IMAGE_NAME: &str = "action-worker";
+const DEFAULT_WORKER_CONTAINER_NAME: &str = "action-worker";
+const DEFAULT_WORKER_ENV_VARIABLES_PREFIX: &str = "ACTION_JOB_";
+const DEFAULT_ACTION_WORKDIR_MOUNT_PATH: &str = "/action_workdir";
+const DEFAULT_ACTION_WORKDIR_VOLUME_NAME: &str = "action_workdir";
 const DEFAULT_WEBHOOK_TRIGGER_AUTH_HEADER: &str = "x-trigger-auth";
 const DEFAULT_TTL_SECONDS_AFTER_FINISHED: i32 = 7200;
 const DEFAULT_ACTIVE_DEADLINE_SECONDS: i64 = 3600;
@@ -48,12 +57,12 @@ impl RuntimeConfig {
                 if let Ok(config) = RuntimeConfig::try_from(cm) {
                     config
                 } else {
-                    warn!("Unable to load initial runtime config, use default instead.");
+                    warn!("unable to load initial runtime config, use default instead");
                     RuntimeConfig::default()
                 }
             }
             Err(_err) => {
-                warn!("Unable to load initial runtime config, use default instead.");
+                warn!("unable to load initial runtime config, use default instead");
                 RuntimeConfig::default()
             }
         };
@@ -74,12 +83,12 @@ impl RuntimeConfig {
                     );
                     match RuntimeConfig::try_from(cm) {
                         Ok(config) => {
-                            debug!("{config:#?}");
+                            trace!(?config, "reloading runtime config");
                             CONFIG_TX_CHANNEL.get().unwrap().send_replace(Arc::new(config));
-                            info!("Loading runtime config from {cm_key}");
+                            info!(config_map = %cm_key, "loading runtime config");
                         }
                         Err(err) => {
-                            warn!("Ignore runtime config update due to error: {err}")
+                            warn!(config_map = %cm_key, error = %err, "skip runtime config update due to errors")
                         }
                     }
                 }
@@ -97,13 +106,15 @@ impl RuntimeConfig {
                 let mut config = Self::default();
 
                 // Change some options to templates
-                config.action.default_service_account = Some(String::from(
-                    r#"{{ include "git-events-runner.actionJobServiceAccountName" . }}"#,
-                ));
-                config.action.containers.cloner.image =
-                    format!("{DEFAULT_CONTAINER_REPO}/gitrepo-cloner:{}", "{{ .Chart.AppVersion }}");
-                config.action.containers.worker.image =
-                    format!("{DEFAULT_CONTAINER_REPO}/action-worker:{}", "{{ .Chart.AppVersion }}");
+                config.action.default_service_account = Some(String::from(DEFAULT_SERVICE_ACCOUNT_NAME_TEMPLATE));
+                config.action.containers.cloner.image = format!(
+                    "{DEFAULT_CONTAINER_REPO}/{DEFAULT_CLONER_IMAGE_NAME}:{}",
+                    "{{ .Chart.AppVersion }}"
+                );
+                config.action.containers.worker.image = format!(
+                    "{DEFAULT_CONTAINER_REPO}/{DEFAULT_WORKER_IMAGE_NAME}:{}",
+                    "{{ .Chart.AppVersion }}"
+                );
 
                 config
             }
@@ -131,12 +142,12 @@ impl TryFrom<ConfigMap> for RuntimeConfig {
             match serde_yaml::from_str::<RuntimeConfig>(config_data) {
                 Ok(config) => Ok(config),
                 Err(err) => {
-                    error!("Unable to deserialize runtime config: {err}");
+                    error!(error = %err, "unable to deserialize runtime config");
                     Err(err.into())
                 }
             }
         } else {
-            error!("Unable to deserialize runtime config");
+            error!("unable to deserialize runtime config");
             Err(crate::Error::RuntimeConfigFormatError)
         }
     }
@@ -194,8 +205,8 @@ pub struct ActionWorkdirConfig {
 impl Default for ActionWorkdirConfig {
     fn default() -> Self {
         Self {
-            mount_path: String::from("/action_workdir"),
-            volume_name: String::from("action-workdir"),
+            mount_path: String::from(DEFAULT_ACTION_WORKDIR_MOUNT_PATH),
+            volume_name: String::from(DEFAULT_ACTION_WORKDIR_VOLUME_NAME),
         }
     }
 }
@@ -217,8 +228,11 @@ pub struct ActionContainersClonerConfig {
 impl Default for ActionContainersClonerConfig {
     fn default() -> Self {
         Self {
-            name: String::from("action-cloner"),
-            image: format!("{DEFAULT_CONTAINER_REPO}/gitrepo-cloner:v{}", env!("CARGO_PKG_VERSION")),
+            name: String::from(DEFAULT_CLONER_CONTAINER_NAME),
+            image: format!(
+                "{DEFAULT_CONTAINER_REPO}/{DEFAULT_CLONER_IMAGE_NAME}:v{}",
+                env!("CARGO_PKG_VERSION")
+            ),
         }
     }
 }
@@ -234,9 +248,12 @@ pub struct ActionContainersWorkerConfig {
 impl Default for ActionContainersWorkerConfig {
     fn default() -> Self {
         Self {
-            name: String::from("action-worker"),
-            image: format!("{DEFAULT_CONTAINER_REPO}/action-worker:v{}", env!("CARGO_PKG_VERSION")),
-            variables_prefix: String::from("ACTION_JOB_"),
+            name: String::from(DEFAULT_WORKER_CONTAINER_NAME),
+            image: format!(
+                "{DEFAULT_CONTAINER_REPO}/{DEFAULT_WORKER_IMAGE_NAME}:v{}",
+                env!("CARGO_PKG_VERSION")
+            ),
+            variables_prefix: String::from(DEFAULT_WORKER_ENV_VARIABLES_PREFIX),
         }
     }
 }

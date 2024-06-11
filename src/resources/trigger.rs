@@ -187,6 +187,13 @@ impl Default for TriggerGitRepoReference {
     }
 }
 
+impl std::fmt::Display for TriggerGitRepoReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (ref_type, ref_name) = self.to_refname(None);
+        write!(f, "{ref_type}/{ref_name}")
+    }
+}
+
 impl TriggerGitRepoReference {
     pub fn to_refname(&self, prefix: Option<&str>) -> (String, &String) {
         let prefix = prefix.unwrap_or("");
@@ -321,7 +328,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         // Reconcile if schedule has been changed
         if Some(&self.spec.schedule) != ctx.triggers.read().await.schedules.get(&trigger_hash_key) {
             let mut triggers = ctx.triggers.write().await;
-            debug!("Update ScheduleTrigger `{trigger_hash_key}`");
+            debug!(trigger = %trigger_hash_key, "updating ScheduleTrigger");
 
             // Cancel existing task if it's present
             if triggers.tasks.contains_key(&trigger_hash_key) {
@@ -329,7 +336,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 let scheduler = ctx.scheduler.write().await;
                 let res = scheduler.cancel(task_id, CancelOpts::Ignore).await;
                 if res.is_err() {
-                    error!("Can't cancel task: {res:?}");
+                    error!(error = ?res.err(), "canceling task");
                 }
             }
 
@@ -383,11 +390,10 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
 
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
-            "Cleanup {} `{}` in {}",
-            self.kind(),
-            self.name_any(),
-            self.namespace()
-                .expect("unable to get resource namespace, looks like a BUG!")
+            kind = %self.kind(),
+            namespace = %self.namespace().expect("unable to get resource namespace, looks like a BUG!"),
+            trigger = %self.name_any(),
+            "cleaning up"
         );
         let trigger_hash_key = self.trigger_hash_key();
         // Remove from schedules map
@@ -402,7 +408,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
             let scheduler = ctx.scheduler.write().await;
             let res = scheduler.cancel(task_id, CancelOpts::Kill).await;
             if res.is_err() {
-                error!("Can't cancel task: {res:?}");
+                error!(error = ?res.err(), "canceling task");
             }
         }
 
@@ -578,7 +584,7 @@ where
 
             // Actual trigger job
             Box::pin(async move {
-                debug!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                debug!(namespace = %trigger_ns, trigger = %trigger_name, job_id = %id, "starting trigger job");
                 let triggers_api: Api<Self> = Api::namespaced(client.clone(), &trigger_ns);
                 // Get current trigger from cache
                 let trigger = Self::get(&trigger_name, Some(&trigger_ns));
@@ -606,7 +612,7 @@ where
                         .update_trigger_status(Some(TriggerState::Running), None, None, &triggers_api)
                         .await
                     {
-                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                        error!(trigger = % trigger_name, error = %err, "updating trigger state");
                     }
 
                     // Create set of sources to check
@@ -622,16 +628,13 @@ where
                             file_hash: None,
                             changed: None,
                         };
-                        debug!(
-                            "Processing {} source {trigger_ns}/{trigger_name}/{source}",
-                            trigger.sources().kind
-                        );
+                        debug!(namespace = %trigger_ns, trigger = %trigger_name, kind = %trigger.sources().kind, source = %source, "processing source");
 
                         // - Create temp dest folder
                         let repo_path = format!("{base_temp_dir}/{source}");
                         let _ = remove_dir_all(&repo_path).await; // to prevent error if some leftovers exist
                         if let Err(err) = create_dir_all(&repo_path).await {
-                            error!("Unable to create temporary folder `{repo_path}`: {err:?}");
+                            error!(path = %repo_path, error = %err, "creating temporary folder");
                         } else {
                             // TODO: refactor this part to obtain "impl trait" object which implements fetch_repo_ref() instead of kind
                             // and just use it to clone repo
@@ -650,7 +653,7 @@ where
                                             )
                                             .await
                                     } else {
-                                        error!("Unable to get GitRepo {trigger_ns}/{source}: {:?}", gitrepo.err());
+                                        error!(namespace = %trigger_ns, source = %source, error = ?gitrepo.err(), "unable to get GitRepo");
                                         continue;
                                     }
                                 }
@@ -667,10 +670,7 @@ where
                                             )
                                             .await
                                     } else {
-                                        error!(
-                                            "Unable to get ClusterGitRepo {trigger_ns}/{source}: {:?}",
-                                            gitrepo.err()
-                                        );
+                                        error!(namespace = %trigger_ns, source = %source, error = ?gitrepo.err(), "unable to get ClusterGitRepo");
                                         continue;
                                     }
                                 }
@@ -680,7 +680,7 @@ where
                             if let Ok(repo) = repo {
                                 let latest_commit = get_latest_commit(&repo, &trigger.sources().watch_on.reference);
                                 if let Ok(latest_commit) = latest_commit {
-                                    debug!("Latest commit: {:?}", latest_commit);
+                                    debug!(hash = %latest_commit, "latest commit");
                                     new_source_state.commit_hash = Some(latest_commit.to_string());
 
                                     // - Get file hash if it's required and present
@@ -688,21 +688,18 @@ where
                                         let file_hash = get_file_glob_hash(&repo_path, files).await;
                                         if let Ok(file_hash) = file_hash {
                                             let hex_hash = hex::encode(file_hash);
-                                            debug!("File hash: {hex_hash}");
+                                            debug!(hash = hex_hash, "checking files content");
                                             new_source_state.file_hash = Some(hex_hash);
                                         } else {
-                                            error!("Unable to calc files hash: {:?}", file_hash.err());
+                                            error!(error = ?file_hash.err(), "calculating files hash");
                                         }
                                     }
                                 } else {
-                                    error!(
-                                        "Unable to get latest commit from GitRepo `{source}`: {:?} ",
-                                        latest_commit.err()
-                                    );
+                                    error!(source = %source, error = ?latest_commit.err(), "getting latest commit from GitRepo");
                                     continue;
                                 }
                             } else {
-                                error!("Unable to fetch GitRepo `{}` from remote: {:?}", source, repo.err());
+                                error!(source = %source, error = ?repo.err(), "fetching GitRepo from remote");
                                 continue;
                             }
 
@@ -767,16 +764,11 @@ where
                                             )
                                             .await
                                         {
-                                            error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                                            error!(trigger = %trigger_name, error = %err, "updating trigger state");
                                         }
                                     }
                                     Err(err) => error!(
-                                        "Unable to run {} {}/{}: {}",
-                                        trigger.action().kind,
-                                        trigger_ns,
-                                        trigger.action().name,
-                                        err
-                                    ),
+                                        kind = %trigger.action().kind, namespace = %trigger_ns, action = %trigger.action().name, error = %err, "running action"),
                                 }
                             } else {
                                 if let Some(current_source_state) = checked_sources.get(&source) {
@@ -788,12 +780,12 @@ where
                                     .update_trigger_status(None, Some(new_source_state), None, &triggers_api)
                                     .await
                                 {
-                                    error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                                    error!(trigger = %trigger_name, error = %err, "updating trigger state");
                                 }
                             }
                             // - Remove temp dir content
                             if let Err(err) = remove_dir_all(&repo_path).await {
-                                error!("Unable to remove temporary folder `{repo_path}`: {err:?}");
+                                error!(path = %repo_path, error = %err, "removing temporary folder");
                             }
                         }
                     }
@@ -802,13 +794,13 @@ where
                         .update_trigger_status(Some(TriggerState::Idle), None, Some(Utc::now()), &triggers_api)
                         .await
                     {
-                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                        error!(trigger = %trigger_name, error = %err, "updating trigger state");
                     }
                 } else {
-                    error!("Unable to get Trigger {trigger_ns}/{trigger_name}: {:?}", trigger.err());
+                    error!(namespace = %trigger_ns, trigger = %trigger_name, error = ?trigger.err(), "getting Trigger");
                 }
 
-                debug!("Finish trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                debug!(namespace = %trigger_ns, trigger = %trigger_name, job_id = %id, "finishing trigger job");
             })
         })
     }
