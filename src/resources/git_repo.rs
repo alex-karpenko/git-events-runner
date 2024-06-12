@@ -301,8 +301,7 @@ pub trait GitRepoGetter: GitRepoInternals {
                     })?;
 
                     // verify server's c ert against just create trust store
-                    let result =
-                        cert_verifier.verify_server_cert(&end_entity, &[], &hostname, &[], UnixTime::now());
+                    let result = cert_verifier.verify_server_cert(&end_entity, &[], &hostname, &[], UnixTime::now());
                     match result {
                         // if everything verified - return ok
                         Ok(_) => Ok(CertificateCheckStatus::CertificateOk),

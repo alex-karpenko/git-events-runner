@@ -224,7 +224,7 @@ impl SecretsCache {
     /// Does actual work with secrets and hides implementation
     async fn get_key_value(&self, namespace: &str, secret_name: &str, key: &str) -> Result<String, Error> {
         let hash_key = format!("{namespace}/{secret_name}");
-        debug!(%hash_key, %key, "getting secret from cache");
+        debug!(secret = %hash_key, %key, "getting secret from cache");
 
         // Let's try to find in cache
         {
@@ -239,19 +239,19 @@ impl SecretsCache {
                             "error converting string `{key}` from UTF8 in the secret `{secret_name}`"
                         ))
                     })?;
-                    trace!(%hash_key, %key, "object found");
+                    trace!(secret = %hash_key, %key, "object found");
                     return Ok(value);
                 } else {
-                    trace!(%hash_key, %key, "object expired or key doesn't exist");
+                    trace!(secret = %hash_key, %key, "object expired or key doesn't exist");
                 }
             } else {
-                trace!(%hash_key, %key, "object is not in the cache");
+                trace!(secret = %hash_key, %key, "object is not in the cache");
             }
         }
 
         // If it's not cached yet or already expired - retrieve secret from API and store to cache
         let mut cache = self.cache.write().await;
-        trace!(%hash_key, %key, "try to retrieve and save to the cache");
+        trace!(secret = %hash_key, %key, "try to retrieve and save to the cache");
         let secrets_api: Api<Secret> = Api::namespaced(self.client.clone(), namespace);
         let secret = secrets_api.get(secret_name).await?;
 
@@ -275,7 +275,7 @@ impl SecretsCache {
                 .checked_add(self.expiration_timeout)
                 .expect("looks like a BUG!"),
         };
-        trace!(%hash_key, %key, "save object to the cache");
+        trace!(secret = %hash_key, %key, "save object to the cache");
         cache.insert(hash_key, cache_data);
 
         Ok(secret_value)
