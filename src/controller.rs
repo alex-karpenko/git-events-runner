@@ -124,7 +124,7 @@ pub async fn run_leader_controllers(
     shutdown_channel: watch::Receiver<bool>,
     schedule_parallelism: usize,
 ) {
-    info!("Starting Leader controllers");
+    info!("starting Leader controllers");
     let scheduler = SchedulerBuilder::new()
         .garbage_collector(GarbageCollector::Immediate)
         .worker_type(WorkerType::MultiThread(RuntimeThreads::CpuCores))
