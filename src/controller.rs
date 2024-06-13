@@ -124,7 +124,7 @@ pub async fn run_leader_controllers(
     shutdown_channel: watch::Receiver<bool>,
     schedule_parallelism: usize,
 ) {
-    info!("starting Leader controllers");
+    info!("starting leader controllers");
     let scheduler = SchedulerBuilder::new()
         .garbage_collector(GarbageCollector::Immediate)
         .worker_type(WorkerType::MultiThread(RuntimeThreads::CpuCores))
@@ -206,7 +206,7 @@ where
     let ns = resource.namespace().unwrap();
     let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
 
-    info!(kind = %resource.kind(), namespace = %ns, resource = %resource.name_any(), "reconciling");
+    debug!(kind = %resource.kind(), namespace = %ns, resource = %resource.name_any(), "reconciling");
     if let Some(finalizer_name) = resource.finalizer_name() {
         finalizer(&resource_api, finalizer_name, resource, |event| async {
             match event {

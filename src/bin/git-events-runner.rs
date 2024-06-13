@@ -14,15 +14,20 @@ use git_events_runner::{
     web,
 };
 use kube::{Client, CustomResourceExt};
+use opentelemetry_otlp::WithExportConfig;
 use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{watch, RwLock};
 use tracing::{error, info};
+use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
 use uuid::Uuid;
+
+const OPENTELEMETRY_ENDPOINT_URL_ENV_NAME: &str = "OPENTELEMETRY_ENDPOINT_URL";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::new();
+    setup_tracing();
 
     match cli {
         Cli::Crds => generate_crds(),
@@ -178,4 +183,42 @@ fn generate_config_yaml(options: CliConfigDumpOptions) -> anyhow::Result<()> {
     print!("{yaml_str}");
 
     Ok(())
+}
+
+/// Creates global logger, tracer and set requested log level and format
+fn setup_tracing() {
+    let console_logger = tracing_subscriber::fmt::layer().compact();
+    let env_filter = EnvFilter::try_from_default_env()
+        .or(EnvFilter::try_new("info"))
+        .unwrap();
+    let collector = Registry::default().with(console_logger).with(env_filter);
+
+    if let Some(tracer) = get_tracer() {
+        let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+        let collector = collector.with(telemetry);
+        tracing::subscriber::set_global_default(collector).unwrap();
+    } else {
+        tracing::subscriber::set_global_default(collector).unwrap();
+    }
+}
+
+/// Get OTLP tracer if endpoint env var is defined.
+fn get_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
+    if let Ok(otlp_endpoint) = std::env::var(OPENTELEMETRY_ENDPOINT_URL_ENV_NAME) {
+        let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_endpoint(otlp_endpoint);
+        let trace_config = opentelemetry_sdk::trace::config().with_resource(opentelemetry_sdk::Resource::new(vec![
+            opentelemetry::KeyValue::new("service.name", env!("CARGO_PKG_NAME")),
+        ]));
+
+        let tracer = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_exporter(otlp_exporter)
+            .with_trace_config(trace_config)
+            .install_batch(opentelemetry_sdk::runtime::Tokio)
+            .unwrap();
+
+        Some(tracer)
+    } else {
+        None
+    }
 }

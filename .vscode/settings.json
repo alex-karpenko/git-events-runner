@@ -26,6 +26,8 @@
         "noreply",
         "oleksiikarpenko",
         "openapi",
+        "opentelemetry",
+        "otlp",
         "pemfile",
         "printcolumn",
         "rustls",

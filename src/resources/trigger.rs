@@ -42,7 +42,7 @@ use tokio::{
     fs::{create_dir_all, remove_dir_all, File},
     io::AsyncReadExt,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, debug_span, error, info, instrument};
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
@@ -322,6 +322,13 @@ impl Trigger<WebhookTriggerSpec> for WebhookTrigger {
 }
 
 impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
+    #[instrument(skip_all,
+        fields(
+            kind=self.kind(),
+            namespace=self.namespace().unwrap(),
+            trigger=self.name_any()
+        )
+    )]
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let trigger_hash_key = self.trigger_hash_key();
 
@@ -388,6 +395,13 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         Ok(ReconcileAction::await_change())
     }
 
+    #[instrument(skip_all,
+        fields(
+            kind=self.kind(),
+            namespace=self.namespace().unwrap(),
+            trigger=self.name_any()
+        )
+    )]
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
             kind = %self.kind(),
@@ -584,6 +598,9 @@ where
 
             // Actual trigger job
             Box::pin(async move {
+                let span = debug_span!("trigger task", id = id.to_string());
+                let _span = span.enter();
+
                 debug!(namespace = %trigger_ns, trigger = %trigger_name, job_id = %id, "starting trigger job");
                 let triggers_api: Api<Self> = Api::namespaced(client.clone(), &trigger_ns);
                 // Get current trigger from cache
