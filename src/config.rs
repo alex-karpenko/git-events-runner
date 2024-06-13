@@ -15,12 +15,12 @@ const DEFAULT_CONTAINER_REPO: &str = "ghcr.io/alex-karpenko/git-events-runner";
 const DEFAULT_SERVICE_ACCOUNT_NAME_TEMPLATE: &str =
     r#"{{ include "git-events-runner.actionJobServiceAccountName" . }}"#;
 const DEFAULT_CLONER_IMAGE_NAME: &str = "gitrepo-cloner";
-const DEFAULT_CLONER_CONTAINER_NAME: &str = "gitrepo-cloner";
+const DEFAULT_CLONER_CONTAINER_NAME: &str = "action-cloner";
 const DEFAULT_WORKER_IMAGE_NAME: &str = "action-worker";
 const DEFAULT_WORKER_CONTAINER_NAME: &str = "action-worker";
 const DEFAULT_WORKER_ENV_VARIABLES_PREFIX: &str = "ACTION_JOB_";
 const DEFAULT_ACTION_WORKDIR_MOUNT_PATH: &str = "/action_workdir";
-const DEFAULT_ACTION_WORKDIR_VOLUME_NAME: &str = "action_workdir";
+const DEFAULT_ACTION_WORKDIR_VOLUME_NAME: &str = "action-workdir";
 const DEFAULT_WEBHOOK_TRIGGER_AUTH_HEADER: &str = "x-trigger-auth";
 const DEFAULT_TTL_SECONDS_AFTER_FINISHED: i32 = 7200;
 const DEFAULT_ACTIVE_DEADLINE_SECONDS: i64 = 3600;
