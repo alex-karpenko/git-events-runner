@@ -806,6 +806,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Breaking changes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added" class="md-nav__link">
     <span class="md-ellipsis">
       Added
@@ -1072,6 +1081,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Breaking changes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added" class="md-nav__link">
     <span class="md-ellipsis">
       Added
@@ -1253,13 +1271,16 @@
 <p>All notable changes to this project will be documented in this file.</p>
 <h2 id="unreleased"><a href="https://github.com/alex-karpenko/git-events-runner/compare/v0.1.1..HEAD">Unreleased</a><a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="details">Details<a class="headerlink" href="#details" title="Permanent link">&para;</a></h3>
+<h4 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Implement glob file pattern matching instead of the single file name specification in the triggers</li>
+</ul>
 <h4 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h4>
 <ul>
 <li>Implement actionJob config with additional labels and annotations</li>
 <li>Implement actinJob config with affinity, nodeSelector and tolerations rules</li>
 <li>Implement job execution time limit (active_deadline_seconds)</li>
 <li>Implement limitation of the running jobs number</li>
-<li>[<strong>breaking</strong>]: Implement glob file pattern matching instead of the single file name specification in the triggers</li>
 <li>Add jobs requeueing when config changed</li>
 </ul>
 <h4 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h4>
