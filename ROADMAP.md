@@ -2,9 +2,9 @@
 
 ## In work
 
-- controller: tracing
-- jobs: graceful shutdown with waiting for jobs completion.
-- chart: update to specify container registry and use docker.io by default
+- triggers: graceful shutdown with waiting for task completion.
+- jobs: reschedule jobs if config was changed (config changes broadcasting?)
+- chart: update to specify container registry and use docker.io by default.
 
 ## Next release
 
@@ -37,3 +37,4 @@
 - gitrepo: extend file sensor to use globs instead of single file
 - doc: make documentation site versioned.
 - refactor: improve logging, make it more formal and short, with just relevant info only
+- controller: tracing
