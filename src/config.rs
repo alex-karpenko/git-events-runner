@@ -45,6 +45,11 @@ impl RuntimeConfig {
         config.clone()
     }
 
+    /// Returns watch receivers
+    pub fn channel() -> watch::Receiver<Arc<RuntimeConfig>> {
+        CONFIG_TX_CHANNEL.get().unwrap().subscribe()
+    }
+
     /// Init whole config infrastructure, retrieve initial config and returns Future for watching changes
     pub async fn init_and_watch(client: Client, cm_name: String) {
         let (tx, _) = watch::channel(Arc::new(RuntimeConfig::default()));

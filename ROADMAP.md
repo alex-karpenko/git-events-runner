@@ -2,8 +2,6 @@
 
 ## In work
 
-- triggers: graceful shutdown with waiting for task completion.
-- jobs: reschedule jobs if config was changed (config changes broadcasting?)
 - chart: update to specify container registry and use docker.io by default.
 
 ## Next release
@@ -38,3 +36,5 @@
 - doc: make documentation site versioned.
 - refactor: improve logging, make it more formal and short, with just relevant info only
 - controller: tracing
+- jobs: reschedule jobs if config was changed
+- jobs: stop scheduling after shutdown signal
