@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - Implement actinJob config with affinity, nodeSelector and tolerations rules
 - Implement job execution time limit (active_deadline_seconds)
 - Implement limitation of the running jobs number
-- [**breaking**]\: Implement glob file pattern matching instead of the single file name specification in the triggers
+- [**breaking**]: Implement glob file pattern matching instead of the single file name specification in the triggers
 - Add jobs requeueing when config changed
 
 #### Changed
