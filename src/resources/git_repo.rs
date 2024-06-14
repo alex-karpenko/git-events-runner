@@ -172,7 +172,7 @@ impl GitRepoGetter for ClusterGitRepo {}
 /// Getter trait to implement shared behavior: it's able to get content (clone) of repo's particular reference
 #[allow(private_bounds, async_fn_in_trait)]
 pub trait GitRepoGetter: GitRepoInternals {
-    #[instrument("fetch repo ref", skip_all, fields(reference=ref_name,path))]
+    #[instrument("fetch repo reference", skip_all, fields(reference=ref_name,path))]
     async fn fetch_repo_ref(
         &self,
         client: Client,

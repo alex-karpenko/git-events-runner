@@ -26,10 +26,7 @@ const OPENTELEMETRY_ENDPOINT_URL_ENV_NAME: &str = "OPENTELEMETRY_ENDPOINT_URL";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let cli = Cli::new();
-    setup_tracing();
-
-    match cli {
+    match Cli::new() {
         Cli::Crds => generate_crds(),
         Cli::Config(options) => generate_config_yaml(options),
         Cli::Run(cli_config) => run(cli_config).await,
@@ -37,6 +34,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
+    setup_tracing();
+
     let client = Client::try_default().await?;
     let identity = Uuid::new_v4().to_string();
 
@@ -187,11 +186,12 @@ fn generate_config_yaml(options: CliConfigDumpOptions) -> anyhow::Result<()> {
 
 /// Creates global logger, tracer and set requested log level and format
 fn setup_tracing() {
-    let console_logger = tracing_subscriber::fmt::layer().compact();
     let env_filter = EnvFilter::try_from_default_env()
         .or(EnvFilter::try_new("info"))
         .unwrap();
-    let collector = Registry::default().with(console_logger).with(env_filter);
+
+    let logger = tracing_subscriber::fmt::layer().compact().with_target(false);
+    let collector = Registry::default().with(env_filter).with(logger);
 
     if let Some(tracer) = get_tracer() {
         let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);

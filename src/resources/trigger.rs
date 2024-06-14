@@ -322,7 +322,7 @@ impl Trigger<WebhookTriggerSpec> for WebhookTrigger {
 }
 
 impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
-    #[instrument(skip_all,
+    #[instrument(level = "debug", skip_all,
         fields(
             kind=self.kind(),
             namespace=self.namespace().unwrap(),
@@ -395,7 +395,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         Ok(ReconcileAction::await_change())
     }
 
-    #[instrument(skip_all,
+    #[instrument(level = "debug", skip_all,
         fields(
             kind=self.kind(),
             namespace=self.namespace().unwrap(),
