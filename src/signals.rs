@@ -31,13 +31,13 @@ impl SignalHandler {
 
     /// Wait for ANY signal
     pub async fn wait_for_signal(&mut self) {
-        debug!("Signal handler has been installed");
+        debug!("installing signal handler");
         let signal = select! {
             _ = self.terminate.recv() => "TERM",
             _ = self.interrupt.recv() => "INT",
             _ = self.quit.recv() => "QUIT",
             _ = self.hangup.recv() => "HANGUP",
         };
-        info!("{signal} signal has been received");
+        info!(%signal, "signal has been received");
     }
 }

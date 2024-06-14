@@ -24,7 +24,7 @@ use tokio::{
     net::TcpListener,
     sync::{watch, RwLock},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 /// State is attached to each web request
 #[derive(Clone)]
@@ -96,11 +96,11 @@ pub async fn build_utils_web(
     let web = axum::serve(listener, app).with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
 
     async move {
-        info!("Starting Utility web server on {listen_to}");
+        info!(address = %listen_to, "starting Utility web server");
         if let Err(err) = web.await {
-            error!("Error while Utility web server running: {err}");
+            error!(error = %err, "running Utility web server");
         }
-        info!("Shutting down Utility web server");
+        info!("shutting down Utility web server");
     }
 }
 
@@ -133,9 +133,9 @@ pub async fn build_hooks_web(
     let web = axum::serve(listener, app).with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
 
     async move {
-        info!("Starting Hooks web server on {listen_to}");
+        info!(address = %listen_to, "starting Hooks web server");
         if let Err(err) = web.await {
-            error!("Error while Webhooks server running: {err}");
+            error!(error = %err, "running Webhooks server");
         }
 
         // To shutdown task scheduler we have to extract it from shared reference (Arc), but
@@ -143,7 +143,7 @@ pub async fn build_hooks_web(
         // just wait few async-state-machine cycles to finish
         for _ in 0..10 {
             if Arc::strong_count(&scheduler) <= 1 {
-                info!("Shutting down WebhookTriggers task scheduler");
+                info!("shutting down WebhookTriggers task scheduler");
                 let scheduler = Arc::into_inner(scheduler)
                     .expect("more than one copies of scheduler is present, looks like a BUG!")
                     .into_inner();
@@ -153,38 +153,41 @@ pub async fn build_hooks_web(
                     .unwrap_or(());
                 break;
             } else {
-                debug!("Webhooks task scheduler is in use, waiting...");
+                debug!("webhooks task scheduler is in use, waiting...");
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
 
-        info!("Shutting down Webhooks server");
+        info!("shutting down Webhooks server");
     }
 }
 
+#[instrument("ready", level = "trace", skip_all)]
 async fn handle_ready(State(state): State<AppState>) -> (StatusCode, &'static str) {
     // depends on global readiness state
-    if *state.ready.read().await {
-        debug!("utility web: ready");
+    let ready = *state.ready.read().await;
+    trace!(%ready, "readiness requested");
+    if ready {
         (StatusCode::OK, "Ready")
     } else {
-        debug!("utility web: not ready");
         (StatusCode::INTERNAL_SERVER_ERROR, "Not ready")
     }
 }
 
+#[instrument("metrics", level = "trace", skip_all)]
 async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) {
-    warn!("utility web: metrics endpoint isn't implemented");
+    warn!("metrics endpoint isn't implemented");
     (StatusCode::NOT_IMPLEMENTED, "Not implemented".into())
 }
 
 /// Trigger jobs for all sources of the trigger
+#[instrument("trigger webhook", skip_all, fields(namespace, trigger))]
 async fn handle_post_trigger_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<WebResponseJson, WebError> {
-    debug!("webhook: POST, namespace={namespace}, trigger={trigger}");
+    trace!(%namespace, %trigger, "POST request");
 
     let trigger = WebhookTrigger::get(&trigger, Some(&namespace))?;
     let trigger_hash_key = trigger.trigger_hash_key();
@@ -193,7 +196,7 @@ async fn handle_post_trigger_webhook(
         .check_hook_authorization(&headers, &trigger.spec, &namespace)
         .await?;
     if trigger.spec.webhook.multi_source {
-        info!("Run all sources task for trigger {trigger_hash_key}");
+        info!(trigger = %trigger_hash_key, "running all-sources check");
         let task = trigger.create_trigger_task(
             state.client.clone(),
             sacs::task::TaskSchedule::Once,
@@ -205,18 +208,19 @@ async fn handle_post_trigger_webhook(
 
         Ok(task_id.into()) // include task_id into successful response
     } else {
-        warn!("Try to run forbidden multi-source hook on trigger {trigger_hash_key}");
+        warn!(trigger = %trigger_hash_key, "multi-source hook is forbidden");
         Err(WebError::ForbiddenMultiSource)
     }
 }
 
 /// Single source trigger run
+#[instrument("source webhook", skip_all, fields(namespace, trigger, source))]
 async fn handle_post_source_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
     headers: HeaderMap,
 ) -> Result<WebResponseJson, WebError> {
-    debug!("webhook: POST, namespace={namespace}, trigger={trigger}, source={source}");
+    trace!(%namespace, %trigger, %source, "POST request");
 
     let trigger = WebhookTrigger::get(&trigger, Some(&namespace))?;
     let trigger_hash_key = trigger.trigger_hash_key();
@@ -225,7 +229,7 @@ async fn handle_post_source_webhook(
         .check_hook_authorization(&headers, &trigger.spec, &namespace)
         .await?;
     if trigger.spec.sources.names.contains(&source) {
-        info!("Run source task {trigger_hash_key}/{source}");
+        info!(trigger = %trigger_hash_key, %source, "running single-source check");
         let task = trigger.create_trigger_task(
             state.client.clone(),
             sacs::task::TaskSchedule::Once,
@@ -237,7 +241,7 @@ async fn handle_post_source_webhook(
 
         Ok(task_id.into())
     } else {
-        warn!("source `{source}` doesn't exist in trigger {trigger_hash_key}");
+        warn!(trigger = %trigger_hash_key, %source, "source doesn't exist in the trigger");
         Err(WebError::SourceNotFound)
     }
 }

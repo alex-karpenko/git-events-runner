@@ -2,14 +2,12 @@
 
 ## In work
 
-- fix/trigger: round last run time in status to avoid kube api overloading
-- refactor: improve logging, make it more formal and short, with just relevant info only
-- doc: make documentation site versioned.
-- chart: update to specify container registry and use docker.io by default
+- triggers: graceful shutdown with waiting for task completion.
+- jobs: reschedule jobs if config was changed (config changes broadcasting?)
+- chart: update to specify container registry and use docker.io by default.
 
 ## Next release
 
-- controller: tracing
 - controller: metrics
 
 ## Wishes
@@ -37,3 +35,6 @@
     - config to restrict jobs' duration;
     - config to restrict the maximum number of running acton jobs:
 - gitrepo: extend file sensor to use globs instead of single file
+- doc: make documentation site versioned.
+- refactor: improve logging, make it more formal and short, with just relevant info only
+- controller: tracing

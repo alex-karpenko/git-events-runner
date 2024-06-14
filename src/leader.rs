@@ -47,10 +47,10 @@ pub async fn leader_lease_handler(
                 panic!("unable to create leader lock {namespace}/{name}: {err:?}");
             }
         } else {
-            debug!("Leader lock Lease {namespace}/{name} already exists");
+            debug!(%namespace, lease = %name, "leader lock lease already exists");
         }
     } else {
-        info!("Leader lock Lease {namespace}/{name} has been created");
+        info!(%namespace, lease = %name, "creating leader lock lease");
     }
 
     let manager = LeaseManager::init(api, name.clone()).await?;

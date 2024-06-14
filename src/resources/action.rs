@@ -23,7 +23,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 use strum::{Display, EnumString};
-use tracing::info;
+use tracing::{info, instrument};
 
 pub const ACTION_JOB_ACTION_KIND_LABEL: &str = "git-events-runner.rs/action-kind";
 pub const ACTION_JOB_ACTION_NAME_LABEL: &str = "git-events-runner.rs/action-name";
@@ -140,6 +140,13 @@ impl ActionExecutor for ClusterAction {}
 #[allow(private_bounds)]
 pub(crate) trait ActionExecutor: ActionInternals {
     /// Creates K8s Job spec and run actual job from it
+    #[instrument(skip_all,
+        fields(
+            source_kind = %source_kind,
+            source_name = %source_name,
+            source_commit = %source_commit,
+            reference = %trigger_ref
+        ))]
     async fn execute(
         &self,
         source_kind: &TriggerSourceKind,
@@ -149,7 +156,7 @@ pub(crate) trait ActionExecutor: ActionInternals {
         ns: &str,
     ) -> Result<Job> {
         let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns)?;
-        info!(%ns, name = %job.name_any(), "enqueue job");
+        info!(namespace = %ns, job = %job.name_any(), "enqueue job");
 
         let timeout = self
             .action_job_spec()
