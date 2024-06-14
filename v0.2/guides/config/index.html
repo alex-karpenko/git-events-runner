@@ -610,6 +610,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#otlp" class="md-nav__link">
+    <span class="md-ellipsis">
+      otlp
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#leaderlease" class="md-nav__link">
     <span class="md-ellipsis">
       leaderLease
@@ -1002,6 +1011,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#otlp" class="md-nav__link">
+    <span class="md-ellipsis">
+      otlp
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#leaderlease" class="md-nav__link">
     <span class="md-ellipsis">
       leaderLease
@@ -1128,6 +1146,9 @@ the <a href="https://github.com/alex-karpenko/helm-charts/blob/main/charts/git-e
 If nothing is specified (this is equivalent to omit both <code>--debug</code> and <code>--verbose</code> command line options) the default
 level is warning.
 Using this parameter, you can change log level.</p>
+<h3 id="otlp">otlp<a class="headerlink" href="#otlp" title="Permanent link">&para;</a></h3>
+<p>This section describes OpenTelemetry configuration.
+If <code>otlp.enabled</code> is <code>true</code> then <code>otlp.endpoint</code> should point to the OpenTelemetry collector endpoint.</p>
 <h3 id="leaderlease">leaderLease<a class="headerlink" href="#leaderlease" title="Permanent link">&para;</a></h3>
 <p>This section declares the parameters of using Lease resource to manage leader elections. There are two parameters:</p>
 <ul>
@@ -1295,10 +1316,6 @@ Options:
 <span class="w">          </span>Leader<span class="w"> </span>lease<span class="w"> </span>duration,<span class="w"> </span>seconds<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">30</span><span class="o">]</span>
 <span class="w">      </span>--leader-lease-grace<span class="w"> </span>&lt;LEADER_LEASE_GRACE&gt;
 <span class="w">          </span>Leader<span class="w"> </span>lease<span class="w"> </span>grace<span class="w"> </span>interval,<span class="w"> </span>seconds<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">20</span><span class="o">]</span>
-<span class="w">  </span>-d,<span class="w"> </span>--debug
-<span class="w">          </span>Enable<span class="w"> </span>extreme<span class="w"> </span>logging<span class="w"> </span><span class="o">(</span>debug<span class="o">)</span>
-<span class="w">  </span>-v,<span class="w"> </span>--verbose
-<span class="w">          </span>Enable<span class="w"> </span>additional<span class="w"> </span>logging<span class="w"> </span><span class="o">(</span>info<span class="o">)</span>
 <span class="w">  </span>-h,<span class="w"> </span>--help
 <span class="w">          </span>Print<span class="w"> </span><span class="nb">help</span>
 </code></pre></div>
