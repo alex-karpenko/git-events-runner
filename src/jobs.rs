@@ -17,7 +17,7 @@ use std::{
     fmt::Debug,
     sync::{Arc, OnceLock},
 };
-use tokio::sync::{self, RwLock};
+use tokio::sync::{self, watch, RwLock};
 use tracing::{debug, error, info, trace, warn};
 
 const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identity";
@@ -46,7 +46,7 @@ impl JobsQueue {
     ///
     /// This method is used to calculate number of the jobs running by this particular instance,
     /// and apply limits on that number.
-    pub async fn init_and_watch(client: Client, identity: String) {
+    pub async fn init_and_watch(client: Client, identity: String, mut shutdown: watch::Receiver<bool>) {
         let (queue_event_tx, mut queue_event_rx) = sync::watch::channel(());
         let (queue_jobs_tx, queue_jobs_rx) = sync::mpsc::unbounded_channel();
         let (store, writer) = reflector::store();
@@ -118,9 +118,19 @@ impl JobsQueue {
             });
 
         tokio::select! {
-            _ = jobs_stream => {
-                debug!("jobs stream completed");
-            },
+            biased;
+            // Listen on shutdown events
+            _ = async move {
+                while shutdown.changed().await.is_ok() {
+                    if *shutdown.borrow_and_update() {
+                        debug!("shutdown requested");
+                        break;
+                    }
+                }
+            } => {
+                debug!("shutdown event loop completed");
+            }
+            // Listen on jobs queue events
             _ = async move {
                 while queue_event_rx.changed().await.is_ok() {
                     debug!("jobs queue updated");
@@ -129,6 +139,21 @@ impl JobsQueue {
                 }
             } => {
                 debug!("jobs queue event loop completed");
+            }
+            // k8s jobs stream events
+            _ = jobs_stream => {
+                debug!("jobs stream completed");
+            },
+            // Listen on config change events
+            _ = async move {
+                let mut config_rx = RuntimeConfig::channel();
+                while config_rx.changed().await.is_ok() {
+                    debug!("runtime config updated");
+                    let _ = config_rx.borrow_and_update();
+                    JobsQueue::run_queue().await;
+                }
+            } => {
+                debug!("config changes event loop completed");
             }
         }
     }

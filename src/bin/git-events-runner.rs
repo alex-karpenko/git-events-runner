@@ -18,7 +18,7 @@ use opentelemetry_otlp::WithExportConfig;
 use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{watch, RwLock};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
 use uuid::Uuid;
 
@@ -26,6 +26,8 @@ const OPENTELEMETRY_ENDPOINT_URL_ENV_NAME: &str = "OPENTELEMETRY_ENDPOINT_URL";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    setup_tracing();
+
     match Cli::new() {
         Cli::Crds => generate_crds(),
         Cli::Config(options) => generate_config_yaml(options),
@@ -33,9 +35,8 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+#[instrument("controller", skip_all)]
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
-    setup_tracing();
-
     let client = Client::try_default().await?;
     let identity = Uuid::new_v4().to_string();
 
@@ -45,7 +46,6 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         cli_config.config_map_name.clone(),
     ));
     tokio::spawn(ApiCacheStore::watch(client.clone())); // detached task for custom resources cache
-    tokio::spawn(JobsQueue::init_and_watch(client.clone(), identity.clone())); // detached task to watch on all our k8s jobs
 
     let state = State::new(Arc::new(cli_config.clone()));
     SecretsCache::init_cache(Duration::from_secs(cli_config.secrets_cache_time), client.clone());
@@ -63,6 +63,13 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let mut signal_handler = SignalHandler::new().expect("unable to create signal handler");
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut shutdown = false;
+
+    // create detached task to watch on all our k8s jobs
+    let jobs_queue = tokio::spawn(JobsQueue::init_and_watch(
+        client.clone(),
+        identity.clone(),
+        shutdown_rx.clone(),
+    ));
 
     // create and run (as detached task) web server for readiness/liveness probes and metrics
     let utils_web = web::build_utils_web(state.clone(), shutdown_rx.clone(), cli_config.utility_port).await;
@@ -147,7 +154,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     // free leader lease
     drop(leader_lease_channel);
     // and wait for finish of all tasks
-    let _ = tokio::join!(leader_lease_task, utils_web, hooks_web);
+    let _ = tokio::join!(leader_lease_task, utils_web, hooks_web, jobs_queue);
 
     Ok(())
 }
@@ -190,7 +197,7 @@ fn setup_tracing() {
         .or(EnvFilter::try_new("info"))
         .unwrap();
 
-    let logger = tracing_subscriber::fmt::layer().compact().with_target(false);
+    let logger = tracing_subscriber::fmt::layer().compact().with_target(true);
     let collector = Registry::default().with(env_filter).with(logger);
 
     if let Some(tracer) = get_tracer() {
