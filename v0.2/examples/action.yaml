@@ -37,14 +37,14 @@ spec:
     # details about repo from the worker.
     # This option allows access to the .git folder in worker container.
     preserveGitFolder: false
-    # Time limit to complete action Job.
-    # Incomplete Job wil be terminated after this time.
+    # Time limit to wait to complete action Job.
+    # Incomplete Job will be terminated after this time.
     activeDeadlineSeconds: 3600
     # Optional limit of waiting time before Job will be run in the cluster,
-    # if limit of maximum running jobs is exceeded.
+    # if the limit of maximum running jobs is exceeded.
     jobWaitingTimeoutSeconds: 300
     # Time limit to preserve finished action Job in a cluster.
-    # Finished Job wil be deleted after this time.
+    # Finished Job will be deleted after this time.
     ttlSecondsAfterFinished: 7200
     # Optional additional labels to attach to the Job and Pod template.
     # Action attaches some labels to track Jobs' state and activity,
