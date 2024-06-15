@@ -1172,7 +1172,7 @@ Let's examine pods and jobs in the controllers' namespace:</p>
 git-events-runner-86d475584d-nfcwm            1/1     Running   0          2m36s
 upgrade-controller-20240518-171917-ae-h4jf4   0/1     Error     0          109s
 </code></pre></div>
-<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>jobss<span class="w"> </span>-n<span class="w"> </span>git-events-runner
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span><span class="nb">jobs</span><span class="w"> </span>-n<span class="w"> </span>git-events-runner
 </code></pre></div>
 <div class="highlight"><pre><span></span><code>NAME                                    COMPLETIONS   DURATION   AGE
 upgrade-controller-20240518-171917-ae   0/1           6m18s      115s
@@ -1276,13 +1276,13 @@ service account, like below:</p>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git-events-runner-action-job</span>
 <span class="w">    </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git-events-runner</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>power-job-role.yaml<span class="w"> </span>
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>power-job-role.yaml
 </code></pre></div>
 <p>And instead of waiting an hour for the next ScheduleTrigger run, let's trigger it via webhook.
 In real life, you'll open access to webhook service via Ingress, but right now we can use <code>port-forward</code> feature
 of <code>kubectl</code> to jump directly into the cluster.
 Let's create port forwarding:</p>
-<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>port-forward<span class="w"> </span>service/git-events-runner<span class="w"> </span><span class="m">8080</span><span class="w"> </span>-n<span class="w"> </span>git-events-runner<span class="w"> </span>--address<span class="o">=</span>localhost<span class="w"> </span>
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>port-forward<span class="w"> </span>service/git-events-runner<span class="w"> </span><span class="m">8080</span><span class="w"> </span>-n<span class="w"> </span>git-events-runner<span class="w"> </span>--address<span class="o">=</span>localhost
 </code></pre></div>
 <p>and call our WebhookTrigger in another terminal window by path like <code>/namespace/trigger-name/source-name</code>:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s1">&#39;x-trigger-auth: some-super-secret-token&#39;</span><span class="w"> </span>http://localhost:8080/git-events-runner/git-events-runner-trigger/git-events-runner-repo

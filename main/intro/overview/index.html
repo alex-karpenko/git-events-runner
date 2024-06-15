@@ -429,7 +429,7 @@
           <li class="md-nav__item">
   <a href="#namespaced-vs-cluster-resources" class="md-nav__link">
     <span class="md-ellipsis">
-      Namespaced vs cluster resources
+      Namespaced vs. cluster resources
     </span>
   </a>
   
@@ -944,7 +944,7 @@
           <li class="md-nav__item">
   <a href="#namespaced-vs-cluster-resources" class="md-nav__link">
     <span class="md-ellipsis">
-      Namespaced vs cluster resources
+      Namespaced vs. cluster resources
     </span>
   </a>
   
@@ -1003,22 +1003,22 @@
 <li>Central resources of the <code>Git Events Runner</code> are <a href="../../resources/triggers/"><strong>triggers</strong></a>, there are
   two - <a href="../../resources/triggers/#scheduletrigger"><code>ScheduleTrigger</code></a>
   and <a href="../../resources/triggers/#webhooktrigger"><code>WebhookTrigger</code></a>.</li>
-<li>Obviously triggers interact with some <a href="../../resources/sources/"><strong>sources</strong></a> to watch on changes, there are two kinds
+<li>Obviously, triggers interact with some <a href="../../resources/sources/"><strong>sources</strong></a> to watch on changes, there are two kinds
   of sources: <a href="../../resources/sources/#gitrepo"><code>GitRepo</code></a>
   and <a href="../../resources/sources/#clustergitrepo"><code>ClusterGitRepo</code></a>.</li>
-<li>Finally, if some trigger fires (something changes in the branch or just time arrived or webhook received) it pushes
-  third type of resource - <a href="../../resources/actions/"><strong>actions</strong></a> - to perform its dedication and run the <code>Job</code> (yes,
-  it's just a classic <a href="https://kubernetes.io/docs/concepts/workloads/controllers/job/">Kubernetes Job</a>) which is
-  described by <a href="../../resources/actions/#action"><code>Action</code></a> and <a href="../../resources/actions/#clusteraction"><code>ClusterAction</code></a>
-  resources.</li>
+<li>Finally, if some trigger fires (something was changed in the branch or just time arrived, or webhook received) it
+  pushes third type of resource - <a href="../../resources/actions/"><strong>actions</strong></a> -
+  to perform its dedication and run the <code>Job</code> (yes, it's just a
+  classic <a href="https://kubernetes.io/docs/concepts/workloads/controllers/job/">Kubernetes Job</a>) which is described
+  by <a href="../../resources/actions/#action"><code>Action</code></a> and <a href="../../resources/actions/#clusteraction"><code>ClusterAction</code></a> resources.</li>
 </ul>
 <p>Detailed explanations of all custom resources with examples can be found in the <a href="../../guides/concepts/"><strong>Guides</strong></a>
 section.</p>
 <h3 id="typical-flow">Typical flow<a class="headerlink" href="#typical-flow" title="Permanent link">&para;</a></h3>
 <p>Imagine we need to run script <code>deploy.sh</code> from the root of Git repo <code>https://git.example.com/the-best-team/cool-project</code>
 when anything was changed in the <code>main</code> branch (we have fine-grained branch protection and no one can merge to
-the <code>main</code> without approvement). That script, for example, upgrades Helm release in our K8s cluster in the namespace of
-the trigger:</p>
+the <code>main</code> without approve).
+That script, for example, upgrades Helm release in our K8s cluster in the namespace of the trigger:</p>
 <div class="highlight"><pre><span></span><code><span class="ch">#!/bin/bash</span>
 
 <span class="c1"># 1st argument is path to the folder with Helm chart</span>
@@ -1028,7 +1028,7 @@ helm<span class="w"> </span>upgrade<span class="w"> </span><span class="si">${</
 <span class="w">    </span><span class="o">(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Something went wrong&quot;</span><span class="p">;</span><span class="w"> </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span><span class="o">)</span>
 </code></pre></div>
 <p>and we need to check for branch changes <code>every 5 minutes</code>.</p>
-<p>To implement this requirements (except putting script to the repo) we create three simple resources:</p>
+<p>To implement these requirements (except putting the script to the repo), we create three simple resources:</p>
 <ul>
 <li>GitRepo:</li>
 </ul>
@@ -1082,26 +1082,26 @@ helm<span class="w"> </span>upgrade<span class="w"> </span><span class="si">${</
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./chart/</span>
 <span class="w">    </span><span class="nt">serviceAccount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git-events-runner-jobs</span>
 </code></pre></div>
-<p>Using these resources <code>Git Events Runner</code> does following for each repo mentioned in the list of sources of the trigger:</p>
+<p>Using these resources <code>Git Events Runner</code> does following for each repo mentioned in the source list of the trigger:</p>
 <ol>
 <li>Clone specified branch (main is here) of the repo using URI and credentials (if needed) defined in GitRepo resource.</li>
-<li>Compare the latest commit hash with previously stored value (from previous run, if it was).</li>
-<li>If hash differs it uses Action resource to create Job with two containers:<ul>
-<li>init (cloner) container runs special image which clones repo to volume shared with second (worker) container.</li>
+<li>Compare the latest commit hash with previously stored value (from previous run if it was).</li>
+<li>If hash differs, it uses Action resource to create Job with two containers:<ul>
+<li>init (cloner) container runs a special image which clones repo to volume shared with second (worker) container.</li>
 <li>worker container set current directory to folder with cloned repo and "runs" worker image with arguments specified
   in Action resource.</li>
 </ul>
 </li>
 <li>Stores last commit hash for the next run.</li>
-<li>Repeats the same for each source in the trigger.</li>
-<li>Sleep for specified interval and repeats everything.</li>
+<li>Repeat the same for each source in the trigger.</li>
+<li>Sleep for the specified interval and repeat everything.</li>
 </ol>
 <blockquote>
 <p>Notes:</p>
 <ul>
 <li><code>GitRepo</code> and <code>Action</code> instances can be used by several different triggers, as well as <code>ScheduleTrigger</code> can refer
     to several sources of some kind.</li>
-<li>If a source refers to some secret(s) with credentials (if needed) that secret(s) should be created separately.</li>
+<li>If a source refers to some secret(s) with credentials (if needed), that secret(s) should be created separately.</li>
 </ul>
 </blockquote>
 <p>One more chance to run the same Job is to define WebhookTrigger like this one:</p>
@@ -1131,11 +1131,11 @@ helm<span class="w"> </span>upgrade<span class="w"> </span><span class="si">${</
 </code></pre></div>
 <p>Notice that we:</p>
 <ul>
-<li>Reused existing GitRepo and Action for another trigger, even of other type.</li>
+<li>Reused existing GitRepo and Action for another trigger, even of another type.</li>
 <li>Set <code>onChangeOnly</code> to <code>false</code> to force running Action every time trigger fires (webhook request received) even if
   there were no changes in the main repo branch.</li>
 </ul>
-<h3 id="namespaced-vs-cluster-resources">Namespaced vs cluster resources<a class="headerlink" href="#namespaced-vs-cluster-resources" title="Permanent link">&para;</a></h3>
+<h3 id="namespaced-vs-cluster-resources">Namespaced vs. cluster resources<a class="headerlink" href="#namespaced-vs-cluster-resources" title="Permanent link">&para;</a></h3>
 <p>Both types of triggers are namespaced resources.
 However, Acton and GitRepo have their cluster-level counterparts.
 This means:</p>
@@ -1153,33 +1153,36 @@ This means:</p>
 <li>just to avoid repetitions of configuration.</li>
 </ul>
 <h2 id="security-aspects">Security aspects<a class="headerlink" href="#security-aspects" title="Permanent link">&para;</a></h2>
-<p>This is pretty risky to bring some code (shell or Python scripts, Ansible playbooks, etc.) to Kubernetes cluster and run
-it as a Job. So the first security concern is to <strong>ensure we use only code we trust to</strong>:</p>
+<p>This is pretty risky to bring some code (shell or Python scripts, Ansible playbooks, etc.) to a Kubernetes cluster and
+run it as a Job.
+So the first security concern is to <strong>ensure we use only code we trust to</strong>:</p>
 <ul>
-<li>At the Git side this can be guarantied by applying strict code review requirements, restrict permissions to merge code
-  to protected branches or to use protected tags.</li>
-<li>At the Git Events Runner side you should configure trigger to use only some specific (secured, restricted) branches
+<li>On the Git side, this can be guarantied by applying strict code review requirements, restrict permissions to merge
+  code to protected branches or to use protected tags.</li>
+<li>On the Git Events Runner side, you should configure trigger to use only some specific (secured, restricted) branches
   and tags.</li>
 </ul>
-<p>Second important aspect is <strong>permissions within Kubernetes cluster</strong> which operator uses by itself and to run Jobs. And
-there whole huge set of instruments provided by Kubernetes can (and should) be used:</p>
+<p>The second important aspect is <strong>permissions within Kubernetes cluster</strong>, which the operator uses by itself and to run
+Jobs.
+And a whole huge set of the instruments, provided by Kubernetes, can (and should) be used:</p>
 <ul>
-<li>Role Based Access Control (RBAC) in conjunction with ServiceAccounts (SA).</li>
+<li>Role-Based Access Control (RBAC) in conjunction with ServiceAccounts (SA).</li>
 <li>Running operator with its own SA but Jobs with their separate SAs.</li>
 <li>Restrictions inside Job containers.</li>
 <li>Using approved Job images only (ClusterAction as shared restricted resource).</li>
 </ul>
 <h2 id="differences-from-gitops">Differences from GitOps<a class="headerlink" href="#differences-from-gitops" title="Permanent link">&para;</a></h2>
-<p>At the first glance, Git Events Runner has some similarities with GitOps, however actually it implements completely
-different approach.</p>
+<p>At first glance, Git Events Runner has some similarities with GitOps.
+However, actually it implements a completely different approach.</p>
 <p>First of all, GitOps is about <strong>desired configuration</strong> of application (or infrastructure), and it's about <strong>actual
 state</strong> of application: main task of GitOps operator (let's call it so) is to <em>make actual state the same as desired</em>,
 and doesn't matter where were changes: at application side (actual state) or in the git repo with config (desired
 state). So GitOps operator reacts on changes at both sides: desired (git) and actual (application or infrastructure).</p>
 <p>Git Events Runner is also intended to react on changes at Git side but not at application/infrastructure (actual) side.
-This is a huge difference: we just use Git to store code, configs, etc. which we need to execute within Kubernetes
-cluster. So we even don't have such entity as "actual state": <strong>Git Events Runner is about "changes as events"</strong>.</p>
-<p>Yes, theoretically it's possible to implement GitOps approach using Git Events Runner but lots of brilliant GitOps
+This is a huge difference: we just use Git to store code, configs, etc. which we need to execute within a Kubernetes
+cluster.
+So we even don't have such an entity as "actual state": <strong>Git Events Runner is about "changes as events"</strong>.</p>
+<p>Yes, theoretically it's possible to implement GitOps approach using Git Events Runner, but lots of brilliant GitOps
 solutions are already implemented.</p>
 
 

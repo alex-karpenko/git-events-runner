@@ -594,7 +594,7 @@
           <li class="md-nav__item">
   <a href="#namespaced-vs-cluster-wide-resources" class="md-nav__link">
     <span class="md-ellipsis">
-      Namespaced vs cluster-wide resources
+      Namespaced vs. cluster-wide resources
     </span>
   </a>
   
@@ -1016,7 +1016,7 @@
           <li class="md-nav__item">
   <a href="#namespaced-vs-cluster-wide-resources" class="md-nav__link">
     <span class="md-ellipsis">
-      Namespaced vs cluster-wide resources
+      Namespaced vs. cluster-wide resources
     </span>
   </a>
   
@@ -1125,7 +1125,7 @@ But few aspects should be mentioned:</p>
 for checking sources.</p>
 <p>All other resources are either a passive WebhookTrigger (it waits for external http requests to do any activity) or
 supplementary for triggers (sources and actions - triggers use them to interact with repos or run jobs).</p>
-<h3 id="namespaced-vs-cluster-wide-resources">Namespaced vs cluster-wide resources<a class="headerlink" href="#namespaced-vs-cluster-wide-resources" title="Permanent link">&para;</a></h3>
+<h3 id="namespaced-vs-cluster-wide-resources">Namespaced vs. cluster-wide resources<a class="headerlink" href="#namespaced-vs-cluster-wide-resources" title="Permanent link">&para;</a></h3>
 <p>Besides <a href="../../intro/overview/#namespaced-vs-cluster-resources">introduction</a>, we have to know the following:</p>
 <ul>
 <li>ClusterGitRepo can refer secrets in any namespace, but allowing access to secrets outside of controller's namespace is
@@ -1162,7 +1162,7 @@ there: <a href="https://github.com/alex-karpenko/git-events-runner/tree/main/doc
 <p>When a trigger discovers that repo was changed, it creates a
 classic <a href="https://kubernetes.io/docs/concepts/workloads/controllers/job/">Kubernetes Job</a> to run Action because action is
 a single-shot piece of work.</p>
-<p><a href="../../resources/actions/">Action resources</a> provide way to slightly customize jobs, but in general configuration is:</p>
+<p><a href="../../resources/actions/">Action resources</a> provide a way to slightly customize jobs, but in general configuration is:</p>
 <ul>
 <li>Single <code>initContainer</code> runs <code>gitrepo-cloner</code> image to clone needed repo/commit to predefined volume.</li>
 <li>Single <code>container</code> runs <code>action-worker</code> image to do actual work.</li>

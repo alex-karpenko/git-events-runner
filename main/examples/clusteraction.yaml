@@ -38,6 +38,35 @@ spec:
     # details about repo from the worker.
     # This option allows access to the .git folder in worker container.
     preserveGitFolder: false
+    # Time limit to wait to complete action Job.
+    # Incomplete Job will be terminated after this time.
+    activeDeadlineSeconds: 3600
+    # Optional limit of waiting time before Job will be run in the cluster,
+    # if the limit of maximum running jobs is exceeded.
+    jobWaitingTimeoutSeconds: 300
+    # Time limit to preserve finished action Job in a cluster.
+    # Finished Job will be deleted after this time.
+    ttlSecondsAfterFinished: 7200
+    # Optional additional labels to attach to the Job and Pod template.
+    # Action attaches some labels to track Jobs' state and activity,
+    # these labels will be added to the existing.
+    labels: {}
+    # Optional annotations to add to the Job and Pod template.
+    annotations: {}
+    # Optional affinity definition to add to the Pod template.
+    # For details about format, please refet to the official Kubernetes documentation:
+    # https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+    affinity: {}
+    # Optional node selector definition to add to the Pod template.
+    # For details about format, please refet to the official Kubernetes documentation:
+    # https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
+    nodeSelector: {}
+    # Optional tolerations definition to add to the Pod template.
+    # For details about format, please refet to the official Kubernetes documentation:
+    # https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+    tolerations: []
+    # Optional entrypoint of the worker container,
+    # Default is ENTRYPOINT of the worker image
 
   # By using this optional feature, we can substitute repo/commit which triggers this action,
   # by some other predefined repo/commit. This is useful to do when we need to run something

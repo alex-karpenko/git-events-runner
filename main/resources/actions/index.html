@@ -954,8 +954,6 @@ defaults mentioned below are actually defaults of the controller but may be over
 <span class="nt">spec</span><span class="p">:</span>
 <span class="w">  </span><span class="c1"># Optional definition of the Job to run to complete this action</span>
 <span class="w">  </span><span class="nt">actionJob</span><span class="p">:</span>
-<span class="w">    </span><span class="c1"># Optional entrypoint of the worker container,</span>
-<span class="w">    </span><span class="c1"># Default is ENTRYPOINT of the worker image</span>
 <span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">entrypoint.sh</span>
 <span class="w">    </span><span class="c1"># Optional list of the worker container arguments</span>
 <span class="w">    </span><span class="c1"># Default is CMD of the worker image</span>
@@ -987,6 +985,35 @@ defaults mentioned below are actually defaults of the controller but may be over
 <span class="w">    </span><span class="c1"># details about repo from the worker.</span>
 <span class="w">    </span><span class="c1"># This option allows access to the .git folder in worker container.</span>
 <span class="w">    </span><span class="nt">preserveGitFolder</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="c1"># Time limit to wait to complete action Job.</span>
+<span class="w">    </span><span class="c1"># Incomplete Job will be terminated after this time.</span>
+<span class="w">    </span><span class="nt">activeDeadlineSeconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+<span class="w">    </span><span class="c1"># Optional limit of waiting time before Job will be run in the cluster,</span>
+<span class="w">    </span><span class="c1"># if the limit of maximum running jobs is exceeded.</span>
+<span class="w">    </span><span class="nt">jobWaitingTimeoutSeconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
+<span class="w">    </span><span class="c1"># Time limit to preserve finished action Job in a cluster.</span>
+<span class="w">    </span><span class="c1"># Finished Job will be deleted after this time.</span>
+<span class="w">    </span><span class="nt">ttlSecondsAfterFinished</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7200</span>
+<span class="w">    </span><span class="c1"># Optional additional labels to attach to the Job and Pod template.</span>
+<span class="w">    </span><span class="c1"># Action attaches some labels to track Jobs&#39; state and activity,</span>
+<span class="w">    </span><span class="c1"># these labels will be added to the existing.</span>
+<span class="w">    </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">    </span><span class="c1"># Optional annotations to add to the Job and Pod template.</span>
+<span class="w">    </span><span class="nt">annotations</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">    </span><span class="c1"># Optional affinity definition to add to the Pod template.</span>
+<span class="w">    </span><span class="c1"># For details about format, please refet to the official Kubernetes documentation:</span>
+<span class="w">    </span><span class="c1"># https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/</span>
+<span class="w">    </span><span class="nt">affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">    </span><span class="c1"># Optional node selector definition to add to the Pod template.</span>
+<span class="w">    </span><span class="c1"># For details about format, please refet to the official Kubernetes documentation:</span>
+<span class="w">    </span><span class="c1"># https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector</span>
+<span class="w">    </span><span class="nt">nodeSelector</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">    </span><span class="c1"># Optional tolerations definition to add to the Pod template.</span>
+<span class="w">    </span><span class="c1"># For details about format, please refet to the official Kubernetes documentation:</span>
+<span class="w">    </span><span class="c1"># https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/</span>
+<span class="w">    </span><span class="nt">tolerations</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">    </span><span class="c1"># Optional entrypoint of the worker container,</span>
+<span class="w">    </span><span class="c1"># Default is ENTRYPOINT of the worker image</span>
 
 <span class="w">  </span><span class="c1"># By using this optional feature, we can substitute repo/commit which triggers this action,</span>
 <span class="w">  </span><span class="c1"># by some other predefined repo/commit. This is useful to do when we need to run something</span>
@@ -1050,6 +1077,35 @@ defaults mentioned below are actually defaults of the controller but may be over
 <span class="w">    </span><span class="c1"># details about repo from the worker.</span>
 <span class="w">    </span><span class="c1"># This option allows access to the .git folder in worker container.</span>
 <span class="w">    </span><span class="nt">preserveGitFolder</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="c1"># Time limit to wait to complete action Job.</span>
+<span class="w">    </span><span class="c1"># Incomplete Job will be terminated after this time.</span>
+<span class="w">    </span><span class="nt">activeDeadlineSeconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+<span class="w">    </span><span class="c1"># Optional limit of waiting time before Job will be run in the cluster,</span>
+<span class="w">    </span><span class="c1"># if the limit of maximum running jobs is exceeded.</span>
+<span class="w">    </span><span class="nt">jobWaitingTimeoutSeconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
+<span class="w">    </span><span class="c1"># Time limit to preserve finished action Job in a cluster.</span>
+<span class="w">    </span><span class="c1"># Finished Job will be deleted after this time.</span>
+<span class="w">    </span><span class="nt">ttlSecondsAfterFinished</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7200</span>
+<span class="w">    </span><span class="c1"># Optional additional labels to attach to the Job and Pod template.</span>
+<span class="w">    </span><span class="c1"># Action attaches some labels to track Jobs&#39; state and activity,</span>
+<span class="w">    </span><span class="c1"># these labels will be added to the existing.</span>
+<span class="w">    </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">    </span><span class="c1"># Optional annotations to add to the Job and Pod template.</span>
+<span class="w">    </span><span class="nt">annotations</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">    </span><span class="c1"># Optional affinity definition to add to the Pod template.</span>
+<span class="w">    </span><span class="c1"># For details about format, please refet to the official Kubernetes documentation:</span>
+<span class="w">    </span><span class="c1"># https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/</span>
+<span class="w">    </span><span class="nt">affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">    </span><span class="c1"># Optional node selector definition to add to the Pod template.</span>
+<span class="w">    </span><span class="c1"># For details about format, please refet to the official Kubernetes documentation:</span>
+<span class="w">    </span><span class="c1"># https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector</span>
+<span class="w">    </span><span class="nt">nodeSelector</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">    </span><span class="c1"># Optional tolerations definition to add to the Pod template.</span>
+<span class="w">    </span><span class="c1"># For details about format, please refet to the official Kubernetes documentation:</span>
+<span class="w">    </span><span class="c1"># https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/</span>
+<span class="w">    </span><span class="nt">tolerations</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">    </span><span class="c1"># Optional entrypoint of the worker container,</span>
+<span class="w">    </span><span class="c1"># Default is ENTRYPOINT of the worker image</span>
 
 <span class="w">  </span><span class="c1"># By using this optional feature, we can substitute repo/commit which triggers this action,</span>
 <span class="w">  </span><span class="c1"># by some other predefined repo/commit. This is useful to do when we need to run something</span>
