@@ -261,7 +261,7 @@ pub enum TriggerActionKind {
 }
 
 /// To use in create_trigger_task - it reflects which sources in the trigger should be processed:
-/// all of the defined ones or single one only.
+/// all the defined ones or single one only.
 /// It's used by WebhookTrigger mostly.
 #[derive(Clone)]
 pub enum TriggerTaskSources {
@@ -337,7 +337,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
             let mut triggers = ctx.triggers.write().await;
             debug!(trigger = %trigger_hash_key, "updating ScheduleTrigger");
 
-            // Cancel existing task if it's present
+            // Cancel the existing task if it's present.
             if triggers.tasks.contains_key(&trigger_hash_key) {
                 let task_id = triggers.tasks.remove(&trigger_hash_key).unwrap();
                 let scheduler = ctx.scheduler.write().await;
@@ -347,7 +347,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 }
             }
 
-            // Get time of last trigger's run, if it was run
+            // Get a time of last triggers' run if it was run ever.
             let last_run: Option<SystemTime> = if let Some(status) = self.status() {
                 status.last_run.as_ref().map(|last_run| {
                     DateTime::parse_from_rfc3339(last_run)
@@ -358,10 +358,10 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 None
             };
 
-            // Get new schedule for new task
+            // Get a new schedule for the new task.
             match self.get_task_schedule(last_run) {
                 Ok(schedule) => {
-                    // Add new task to scheduler instead of the cancelled one
+                    // Add a new task to the scheduler instead of the canceled one.
                     let scheduler = ctx.scheduler.write().await;
                     let task = self.create_trigger_task(
                         ctx.client.clone(),
@@ -410,7 +410,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
             "cleaning up"
         );
         let trigger_hash_key = self.trigger_hash_key();
-        // Remove from schedules map
+        // Remove from the schedule map.
         if ctx.triggers.read().await.schedules.contains_key(&trigger_hash_key) {
             let mut triggers = ctx.triggers.write().await;
             triggers.schedules.remove(&trigger_hash_key);
@@ -496,7 +496,7 @@ where
     Self: std::fmt::Debug + Clone + DeserializeOwned + Serialize,
     <Self as Resource>::DynamicType: Default,
     Self: Resource<Scope = NamespaceResourceScope>,
-    <Self as kube::Resource>::DynamicType: std::hash::Hash + std::cmp::Eq + Clone,
+    <Self as Resource>::DynamicType: std::hash::Hash + Eq + Clone,
     S: Send + Sync + 'static,
 {
     fn sources(&self) -> &TriggerSources;
@@ -517,7 +517,7 @@ where
     /// If state, checked_sources or last_run isn't None - update it by parameter value
     /// In any of them is None - get existing value from the cache and use it
     ///
-    /// If checked_sources is provided in parameters - merge it with existing map
+    /// If checked_sources is provided in parameters, then merge it with the existing map.
     ///
     fn update_trigger_status(
         &self,
@@ -531,8 +531,8 @@ where
             let trigger = Self::get(&name, Some(&self.namespace().unwrap()))?;
 
             let new_status = if let Some(status) = trigger.trigger_status() {
-                // Status is already present in the trigger
-                // Use new checked_sources map as addition to existing
+                // Status is already present in the trigger.
+                // Use the provided checked_sources map as an addition to the existing ones.
                 let mut new_checked_sources = status.checked_sources.clone();
                 new_checked_sources.extend(checked_sources.unwrap_or_default());
 
@@ -569,7 +569,7 @@ where
                     "checkedSources": new_status.checked_sources,
                 }
             }));
-            let pp = PatchParams::apply("cntrlr").force();
+            let pp = PatchParams::apply("controller").force();
             let _o = api.patch_status(&name, &pp, &status).await?;
 
             Ok(())
@@ -589,7 +589,7 @@ where
             .expect("unable to get resource namespace, looks like a BUG!");
 
         Task::new(schedule, move |id| {
-            // All these values should be moved ot the task
+            // All these values should be moved to the task.
             let trigger_name = trigger_name.clone();
             let trigger_ns = trigger_ns.clone();
             let client = client.clone();
@@ -607,14 +607,14 @@ where
                 let trigger = Self::get(&trigger_name, Some(&trigger_ns));
 
                 if let Ok(trigger) = trigger {
-                    // base folder to clone sources
-                    // add random suffix because some webhook trigger may have the same name
+                    // This is a base folder to clone sources to.
+                    // Add a random suffix because some webhook trigger may have the same name
                     let base_temp_dir =
                         format!("{source_clone_folder}/{trigger_ns}/{trigger_name}/{}", random_string(8));
 
-                    // Filter checked_sources to exclude non-existing sources
-                    // this is possible between last trigger update via API and following task run
-                    // so just exclude non-existing sources from the current status
+                    // Filter checked_sources to exclude non-existing sources,
+                    // this is possible state in between of the last trigger update via API,
+                    // and the following task run so just exclude non-existing sources from the current status.
                     let checked_sources: HashMap<String, CheckedSourceState> = trigger
                         .trigger_status()
                         .clone()
@@ -632,7 +632,7 @@ where
                         error!(trigger = % trigger_name, error = %err, "updating trigger state");
                     }
 
-                    // Create set of sources to check
+                    // Create a set of the sources to check.
                     let sources_to_check = match task_sources {
                         TriggerTaskSources::All => trigger.sources().names.iter().cloned().collect::<HashSet<String>>(),
                         TriggerTaskSources::Single(source) => HashSet::from([source]),
@@ -659,7 +659,9 @@ where
                                 // - Get GitRepo object
                                 TriggerSourceKind::GitRepo => {
                                     let gitrepo = GitRepo::get(&source, Some(&trigger_ns));
-                                    // - Call repo.fetch_repo_ref(...) to get repository content using particular reference
+                                    // - Call repo.fetch_repo_ref(...)
+                                    // to get repository content
+                                    // using a particular reference
                                     if let Ok(gitrepo) = gitrepo {
                                         gitrepo
                                             .fetch_repo_ref(
@@ -676,7 +678,9 @@ where
                                 }
                                 TriggerSourceKind::ClusterGitRepo => {
                                     let gitrepo = ClusterGitRepo::get(&source, None);
-                                    // - Call repo.fetch_repo_ref(...) to get repository content using particular reference
+                                    // Call repo.fetch_repo_ref(...)
+                                    // to get repository content
+                                    // using a particular reference
                                     if let Ok(gitrepo) = gitrepo {
                                         gitrepo
                                             .fetch_repo_ref(
@@ -720,8 +724,8 @@ where
                                 continue;
                             }
 
-                            // - Get self.status... latest processed hash for current source
-                            // - If it differs from latest commit or onChangesOnly==false - run action
+                            // Get self.status... latest processed hash for the current source.
+                            // If it differs from the latest commit or onChangesOnly==false - run action.
                             let current_source_state = checked_sources.get(&source);
                             if !new_source_state
                                 .is_equal(current_source_state, trigger.sources().watch_on.files.is_some())
@@ -765,7 +769,7 @@ where
                                     }
                                 };
 
-                                // - Update self.spec.... by latest processed commit
+                                // - Update self.spec... by the latest processed commit
                                 match action_exec_result {
                                     Ok(_) => {
                                         new_source_state.changed =
@@ -823,7 +827,7 @@ where
     }
 }
 
-/// Returns latest commit of specified reference, depending on reference type
+/// Returns the latest commit of a specified reference, depending on the reference type.
 pub fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference) -> Result<Oid> {
     let oid = match reference {
         TriggerGitRepoReference::Branch(r) => repo

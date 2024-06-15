@@ -47,7 +47,7 @@ for checking sources.
 All other resources are either a passive WebhookTrigger (it waits for external http requests to do any activity) or
 supplementary for triggers (sources and actions - triggers use them to interact with repos or run jobs).
 
-### Namespaced vs cluster-wide resources
+### Namespaced vs. cluster-wide resources
 
 Besides [introduction](../intro/overview.md#namespaced-vs-cluster-resources), we have to know the following:
 
@@ -97,7 +97,7 @@ When a trigger discovers that repo was changed, it creates a
 classic [Kubernetes Job](https://kubernetes.io/docs/concepts/workloads/controllers/job/) to run Action because action is
 a single-shot piece of work.
 
-[Action resources](../resources/actions.md) provide way to slightly customize jobs, but in general configuration is:
+[Action resources](../resources/actions.md) provide a way to slightly customize jobs, but in general configuration is:
 
 * Single `initContainer` runs `gitrepo-cloner` image to clone needed repo/commit to predefined volume.
 * Single `container` runs `action-worker` image to do actual work.

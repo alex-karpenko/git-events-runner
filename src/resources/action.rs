@@ -139,7 +139,7 @@ impl ActionExecutor for ClusterAction {}
 
 #[allow(private_bounds)]
 pub(crate) trait ActionExecutor: ActionInternals {
-    /// Creates K8s Job spec and run actual job from it
+    /// Creates K8s Job spec and run an actual job from it
     #[instrument(skip_all,
         fields(
             source_kind = %source_kind,
@@ -181,7 +181,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         format!("{}-{}-{}", self.name_any(), timestamp, random_string(2)).to_lowercase()
     }
 
-    /// just create K8s Job specification
+    /// Create K8s Job specification
     fn create_job_spec(
         &self,
         source_kind: &TriggerSourceKind,
@@ -326,7 +326,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         Ok(job)
     }
 
-    /// Prepare list of special environment variables to pass to worker container
+    /// Prepare a list of special environment variables to pass to worker container,
     /// use `format_action_job_env_var` helper to unify approach
     fn get_action_job_envs(
         &self,
@@ -419,7 +419,7 @@ impl ActionInternals for ClusterAction {
     }
 
     fn source_override_spec(&self) -> Option<ActionSourceOverride> {
-        // Since ClusterAction restricts repo type to ClusterGitRepo only,
+        // Since ClusterAction restricts a repo type to the ClusterGitRepo only,
         // we create ActionSourceOverride from ClusterActionSourceOverride
         self.spec.source_override.as_ref().map(|value| ActionSourceOverride {
             kind: TriggerSourceKind::ClusterGitRepo,
@@ -428,7 +428,7 @@ impl ActionInternals for ClusterAction {
         })
     }
 
-    /// returns reference to action to set as owner to Job
+    /// returns reference to action to set as an owner of the Job
     fn get_owner_reference(&self) -> OwnerReference {
         self.controller_owner_ref(&())
             .expect("unable to get owner reference, looks like a BUG!")

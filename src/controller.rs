@@ -73,14 +73,14 @@ impl Diagnostics {
     }
 }
 
-// Context for our reconcilers
+// Context for our reconcilers.
 #[derive(Clone)]
 pub struct Context {
     /// Kubernetes client
     pub client: Client,
     /// Diagnostics read by the web server
     pub diagnostics: Arc<RwLock<Diagnostics>>,
-    /// Scheduler to run periodic tasks of ScheduleTrigger (WebhookTrigger has it's own scheduler)
+    /// Scheduler to run periodic tasks of ScheduleTrigger (WebhookTrigger has its own scheduler)
     pub scheduler: Arc<RwLock<Scheduler>>,
     /// Actual state of all Triggers
     pub triggers: Arc<RwLock<TriggersState>>,
@@ -153,7 +153,7 @@ pub async fn run_leader_controllers(
                     error_policy::<ScheduleTrigger, ScheduleTriggerSpec>,
                     context.clone(),
                 )
-                .filter_map(|x| async move { std::result::Result::ok(x) })
+                .filter_map(|x| async move { x.ok() })
                 .for_each(|_| futures::future::ready(())),
         ));
 
@@ -173,8 +173,8 @@ pub async fn run_leader_controllers(
         .unwrap_or(())
 }
 
-/// Call `List` on custom resource to verify if required custom Api is present.
-/// ATTENTION: It exits from whole application if CRD isn't present.
+/// Call `List` on custom resource to verify if the required custom Api is present.
+/// ATTENTION: It exits application if CRD isn't present.
 async fn check_api_by_list<K>(api: &Api<K>, api_name: &str)
 where
     K: Clone + DeserializeOwned + Debug,
