@@ -3,26 +3,28 @@ use super::{
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
     CustomApiResource,
 };
-use crate::{config::RuntimeConfig, Error, Result};
+use crate::{config::RuntimeConfig, jobs::JobsQueue, Result};
 use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
-        core::v1::{Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Volume, VolumeMount},
+        core::v1::{
+            Affinity, Container, EmptyDirVolumeSource, EnvVar, PodSpec, PodTemplateSpec, Toleration, Volume,
+            VolumeMount,
+        },
     },
     apimachinery::pkg::apis::meta::v1::OwnerReference,
 };
-use kube::{
-    api::{ObjectMeta, PostParams},
-    Api, Client, CustomResource, Resource, ResourceExt,
-};
+use kube::{api::ObjectMeta, CustomResource, Resource, ResourceExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, time::SystemTime};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, SystemTime},
+};
 use strum::{Display, EnumString};
-use tracing::info;
+use tracing::{info, instrument};
 
-pub const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identity";
 pub const ACTION_JOB_ACTION_KIND_LABEL: &str = "git-events-runner.rs/action-kind";
 pub const ACTION_JOB_ACTION_NAME_LABEL: &str = "git-events-runner.rs/action-name";
 pub const ACTION_JOB_SOURCE_KIND_LABEL: &str = "git-events-runner.rs/source-kind";
@@ -100,6 +102,22 @@ pub struct ActionJob {
     command: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     service_account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annotations: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    labels: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tolerations: Option<Vec<Toleration>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    affinity: Option<Affinity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    node_selector: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ttl_seconds_after_finished: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_deadline_seconds: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    job_waiting_timeout_seconds: Option<u64>,
     enable_cloner_debug: bool,
     preserve_git_folder: bool,
 }
@@ -121,26 +139,31 @@ impl ActionExecutor for ClusterAction {}
 
 #[allow(private_bounds)]
 pub(crate) trait ActionExecutor: ActionInternals {
-    /// Creates K8s Job spec and run actual job from it
-    #[allow(clippy::too_many_arguments)]
+    /// Creates K8s Job spec and run an actual job from it
+    #[instrument(skip_all,
+        fields(
+            source_kind = %source_kind,
+            source_name = %source_name,
+            source_commit = %source_commit,
+            reference = %trigger_ref
+        ))]
     async fn execute(
         &self,
         source_kind: &TriggerSourceKind,
         source_name: &str,
         source_commit: &str,
         trigger_ref: &TriggerGitRepoReference,
-        client: Client,
         ns: &str,
-        identity: String,
     ) -> Result<Job> {
-        let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns, identity)?;
+        let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns)?;
+        info!(namespace = %ns, job = %job.name_any(), "enqueue job");
 
-        info!("Create job {}/{}", ns, job.name_any());
-        let jobs_api: Api<Job> = Api::namespaced(client.clone(), ns);
-        jobs_api
-            .create(&PostParams::default(), &job)
-            .await
-            .map_err(Error::KubeError)
+        let timeout = self
+            .action_job_spec()
+            .job_waiting_timeout_seconds
+            .map(Duration::from_secs);
+
+        JobsQueue::enqueue(job, ns, timeout).await
     }
 }
 
@@ -158,7 +181,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         format!("{}-{}-{}", self.name_any(), timestamp, random_string(2)).to_lowercase()
     }
 
-    /// just create K8s Job specification
+    /// Create K8s Job specification
     fn create_job_spec(
         &self,
         source_kind: &TriggerSourceKind,
@@ -166,18 +189,35 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         source_commit: &str,
         trigger_ref: &TriggerGitRepoReference,
         ns: &str,
-        identity: String,
     ) -> Result<Job> {
         let config = RuntimeConfig::get();
         let action_job = self.action_job_spec();
         let source_override = self.source_override_spec();
 
+        // Create pod metadata if additional labels/annotations is defined
+        let pod_template_metadata = if action_job.labels.is_some() || action_job.annotations.is_some() {
+            let metadata = ObjectMeta {
+                labels: action_job.labels.clone(),
+                annotations: action_job.annotations.clone(),
+                ..Default::default()
+            };
+
+            Some(metadata)
+        } else {
+            None
+        };
+
+        // Fill out custom jobs' labels
         let mut labels: BTreeMap<String, String> = BTreeMap::new();
-        labels.insert(ACTION_JOB_IDENTITY_LABEL.into(), identity);
         labels.insert(ACTION_JOB_ACTION_KIND_LABEL.into(), self.kind().to_string());
         labels.insert(ACTION_JOB_ACTION_NAME_LABEL.into(), self.name_any());
         labels.insert(ACTION_JOB_SOURCE_KIND_LABEL.into(), source_kind.to_string());
         labels.insert(ACTION_JOB_SOURCE_NAME_LABEL.into(), source_name.into());
+
+        // And add additional labels if defined
+        if let Some(additional_labels) = action_job.labels {
+            labels.extend(additional_labels);
+        }
 
         let args = if let Some(source_override) = source_override {
             self.get_gitrepo_cloner_args(&source_override.kind, &source_override.name, &source_override.reference)
@@ -195,22 +235,33 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
             RuntimeConfig::get().action.default_service_account.clone()
         };
 
+        let ttl_seconds_after_finished = action_job
+            .ttl_seconds_after_finished
+            .unwrap_or(RuntimeConfig::get().action.ttl_seconds_after_finished);
+        let active_deadline_seconds = action_job
+            .active_deadline_seconds
+            .unwrap_or(RuntimeConfig::get().action.active_deadline_seconds);
+
         let job = Job {
             metadata: ObjectMeta {
                 name: Some(self.job_name()),
-                namespace: Some(ns.to_string()),
                 labels: Some(labels),
+                annotations: action_job.annotations,
                 owner_references: Some(vec![self.get_owner_reference()]),
                 ..Default::default()
             },
             spec: Some(JobSpec {
                 backoff_limit: Some(0),
                 parallelism: Some(1),
-                ttl_seconds_after_finished: Some(RuntimeConfig::get().action.ttl_seconds_after_finished),
+                ttl_seconds_after_finished: Some(ttl_seconds_after_finished),
+                active_deadline_seconds: Some(active_deadline_seconds),
                 template: PodTemplateSpec {
-                    metadata: Default::default(),
+                    metadata: pod_template_metadata,
                     spec: Some(PodSpec {
                         service_account_name: service_account,
+                        node_selector: action_job.node_selector,
+                        affinity: action_job.affinity,
+                        tolerations: action_job.tolerations,
                         init_containers: Some(vec![Container {
                             name: config.action.containers.cloner.name.clone(),
                             image: Some(
@@ -275,7 +326,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         Ok(job)
     }
 
-    /// Prepare list of special environment variables to pass to worker container
+    /// Prepare a list of special environment variables to pass to worker container,
     /// use `format_action_job_env_var` helper to unify approach
     fn get_action_job_envs(
         &self,
@@ -368,7 +419,7 @@ impl ActionInternals for ClusterAction {
     }
 
     fn source_override_spec(&self) -> Option<ActionSourceOverride> {
-        // Since ClusterAction restricts repo type to ClusterGitRepo only,
+        // Since ClusterAction restricts a repo type to the ClusterGitRepo only,
         // we create ActionSourceOverride from ClusterActionSourceOverride
         self.spec.source_override.as_ref().map(|value| ActionSourceOverride {
             kind: TriggerSourceKind::ClusterGitRepo,
@@ -377,7 +428,7 @@ impl ActionInternals for ClusterAction {
         })
     }
 
-    /// returns reference to action to set as owner to Job
+    /// returns reference to action to set as an owner of the Job
     fn get_owner_reference(&self) -> OwnerReference {
         self.controller_owner_ref(&())
             .expect("unable to get owner reference, looks like a BUG!")

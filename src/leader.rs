@@ -1,7 +1,7 @@
-// Since `kubert` still uses outdated `kube` and `k8s_openapi` crates
-// we have to depend to two different versions of those crates
+// Since `kubert` still uses outdated `kube` and `k8s_openapi` crates,
+// we have to depend on two different versions of those crates
 // by importing old version with different names with prefix `kubert_`.
-// This module is only place where it's used.
+// This module is the only place where it's used.
 use crate::Result;
 use kubert::{
     lease::{Claim, ClaimParams, Error},
@@ -47,10 +47,10 @@ pub async fn leader_lease_handler(
                 panic!("unable to create leader lock {namespace}/{name}: {err:?}");
             }
         } else {
-            debug!("Leader lock Lease {namespace}/{name} already exists");
+            debug!(%namespace, lease = %name, "leader lock lease already exists");
         }
     } else {
-        info!("Leader lock Lease {namespace}/{name} has been created");
+        info!(%namespace, lease = %name, "creating leader lock lease");
     }
 
     let manager = LeaseManager::init(api, name.clone()).await?;

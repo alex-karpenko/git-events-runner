@@ -40,17 +40,14 @@ pub struct State {
     pub ready: Arc<RwLock<bool>>,
     /// Cli config
     pub cli_config: Arc<CliConfig>,
-    /// Current controller identity
-    pub identity: String,
 }
 
 impl State {
-    pub fn new(cli_config: Arc<CliConfig>, identity: String) -> Self {
+    pub fn new(cli_config: Arc<CliConfig>) -> Self {
         Self {
             diagnostics: Default::default(),
             ready: Default::default(),
             cli_config,
-            identity,
         }
     }
 }
@@ -76,21 +73,19 @@ impl Diagnostics {
     }
 }
 
-// Context for our reconcilers
+// Context for our reconcilers.
 #[derive(Clone)]
 pub struct Context {
     /// Kubernetes client
     pub client: Client,
     /// Diagnostics read by the web server
     pub diagnostics: Arc<RwLock<Diagnostics>>,
-    /// Scheduler to run periodic tasks of ScheduleTrigger (WebhookTrigger has it's own scheduler)
+    /// Scheduler to run periodic tasks of ScheduleTrigger (WebhookTrigger has its own scheduler)
     pub scheduler: Arc<RwLock<Scheduler>>,
     /// Actual state of all Triggers
     pub triggers: Arc<RwLock<TriggersState>>,
     /// Cli config
     pub cli_config: Arc<CliConfig>,
-    /// Current controller identity
-    pub identity: String,
 }
 
 /// State wrapper around the controller outputs for the web server
@@ -108,7 +103,6 @@ impl State {
             scheduler,
             triggers,
             cli_config: self.cli_config.clone(),
-            identity: self.identity.clone(),
         })
     }
 }
@@ -130,7 +124,7 @@ pub async fn run_leader_controllers(
     shutdown_channel: watch::Receiver<bool>,
     schedule_parallelism: usize,
 ) {
-    info!("Starting Leader controllers");
+    info!("starting leader controllers");
     let scheduler = SchedulerBuilder::new()
         .garbage_collector(GarbageCollector::Immediate)
         .worker_type(WorkerType::MultiThread(RuntimeThreads::CpuCores))
@@ -159,7 +153,7 @@ pub async fn run_leader_controllers(
                     error_policy::<ScheduleTrigger, ScheduleTriggerSpec>,
                     context.clone(),
                 )
-                .filter_map(|x| async move { std::result::Result::ok(x) })
+                .filter_map(|x| async move { x.ok() })
                 .for_each(|_| futures::future::ready(())),
         ));
 
@@ -168,7 +162,7 @@ pub async fn run_leader_controllers(
         debug!("controllers main loop finished");
     }
 
-    info!("Shutting down ScheduleTriggers task scheduler");
+    info!("shutting down ScheduleTriggers task scheduler");
     // we have to extract scheduler from shared ref (Arc) because shutdown method consumes it
     let scheduler = Arc::into_inner(scheduler)
         .expect("more than one copies of scheduler is present, looks like a BUG!")
@@ -179,18 +173,15 @@ pub async fn run_leader_controllers(
         .unwrap_or(())
 }
 
-/// Call `List` on custom resource to verify if required custom Api is present.
-/// ATTENTION: It exits from whole application if CRD isn't present.
+/// Call `List` on custom resource to verify if the required custom Api is present.
+/// ATTENTION: It exits application if CRD isn't present.
 async fn check_api_by_list<K>(api: &Api<K>, api_name: &str)
 where
     K: Clone + DeserializeOwned + Debug,
 {
     if let Err(e) = api.list(&ListParams::default().limit(1)).await {
-        error!(
-            "CRD `{}` is not queryable; {e:?}. Is the CRD installed/updated?",
-            api_name
-        );
-        info!("Installation: {} crds | kubectl apply -f -", env!("CARGO_PKG_NAME"));
+        error!(api = %api_name, error = %e, "CRD is not queryable, looks like CRD isn't installed/updated?");
+        info!("to install run: {} crds | kubectl apply -f -", env!("CARGO_PKG_NAME"));
         std::process::exit(1);
     }
 }
@@ -200,7 +191,7 @@ fn error_policy<K, S>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context>) -> R
 where
     K: Reconcilable<S>,
 {
-    warn!("Reconcile failed: {:?}", error);
+    warn!(%error, "reconcile failed");
     ReconcileAction::await_change()
 }
 
@@ -215,7 +206,7 @@ where
     let ns = resource.namespace().unwrap();
     let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
 
-    info!("Reconciling {} `{}/{}`", resource.kind(), resource.name_any(), ns); // TODO: change something here to avoid ASCII control chars in output
+    debug!(kind = %resource.kind(), namespace = %ns, resource = %resource.name_any(), "reconciling");
     if let Some(finalizer_name) = resource.finalizer_name() {
         finalizer(&resource_api, finalizer_name, resource, |event| async {
             match event {

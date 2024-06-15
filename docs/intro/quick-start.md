@@ -181,7 +181,7 @@ upgrade-controller-20240518-171917-ae-h4jf4   0/1     Error     0          109s
 ```
 
 ```shell
-kubectl get jobss -n git-events-runner
+kubectl get jobs -n git-events-runner
 ```
 
 ```text
@@ -219,7 +219,7 @@ service account, like below:
 ```
 
 ```shell
-kubectl apply -f power-job-role.yaml 
+kubectl apply -f power-job-role.yaml
 ```
 
 And instead of waiting an hour for the next ScheduleTrigger run, let's trigger it via webhook.
@@ -228,7 +228,7 @@ of `kubectl` to jump directly into the cluster.
 Let's create port forwarding:
 
 ```shell
-kubectl port-forward service/git-events-runner 8080 -n git-events-runner --address=localhost 
+kubectl port-forward service/git-events-runner 8080 -n git-events-runner --address=localhost
 ```
 
 and call our WebhookTrigger in another terminal window by path like `/namespace/trigger-name/source-name`:

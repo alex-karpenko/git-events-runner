@@ -10,6 +10,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use git2::{Oid, Repository};
+use globwalk::{FileType, GlobWalkerBuilder};
 use k8s_openapi::{chrono::SecondsFormat, NamespaceResourceScope};
 use kube::{
     api::{Patch, PatchParams},
@@ -32,15 +33,16 @@ use std::{
     collections::{HashMap, HashSet},
     future::Future,
     io,
+    path::Path,
     sync::Arc,
     time::{Duration, SystemTime},
 };
 use strum_macros::{Display, EnumString};
 use tokio::{
-    fs::{create_dir_all, remove_dir_all, try_exists, File},
+    fs::{create_dir_all, remove_dir_all, File},
     io::AsyncReadExt,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, debug_span, error, info, instrument};
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
@@ -146,9 +148,8 @@ pub struct TriggerWatchOn {
     on_change_only: bool,
     #[serde(default)]
     reference: TriggerGitRepoReference,
-    #[serde(rename = "file")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    file_: Option<String>,
+    files: Option<Vec<String>>,
 }
 
 impl Default for TriggerWatchOn {
@@ -156,7 +157,7 @@ impl Default for TriggerWatchOn {
         Self {
             on_change_only: true,
             reference: Default::default(),
-            file_: None,
+            files: None,
         }
     }
 }
@@ -183,6 +184,13 @@ pub enum TriggerGitRepoReference {
 impl Default for TriggerGitRepoReference {
     fn default() -> Self {
         Self::Branch(String::from("main"))
+    }
+}
+
+impl std::fmt::Display for TriggerGitRepoReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (ref_type, ref_name) = self.to_refname(None);
+        write!(f, "{ref_type}/{ref_name}")
     }
 }
 
@@ -253,7 +261,7 @@ pub enum TriggerActionKind {
 }
 
 /// To use in create_trigger_task - it reflects which sources in the trigger should be processed:
-/// all of the defined ones or single one only.
+/// all the defined ones or single one only.
 /// It's used by WebhookTrigger mostly.
 #[derive(Clone)]
 pub enum TriggerTaskSources {
@@ -314,25 +322,32 @@ impl Trigger<WebhookTriggerSpec> for WebhookTrigger {
 }
 
 impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
+    #[instrument(level = "debug", skip_all,
+        fields(
+            kind=self.kind(),
+            namespace=self.namespace().unwrap(),
+            trigger=self.name_any()
+        )
+    )]
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         let trigger_hash_key = self.trigger_hash_key();
 
         // Reconcile if schedule has been changed
         if Some(&self.spec.schedule) != ctx.triggers.read().await.schedules.get(&trigger_hash_key) {
             let mut triggers = ctx.triggers.write().await;
-            debug!("Update ScheduleTrigger `{trigger_hash_key}`");
+            debug!(trigger = %trigger_hash_key, "updating ScheduleTrigger");
 
-            // Cancel existing task if it's present
+            // Cancel the existing task if it's present.
             if triggers.tasks.contains_key(&trigger_hash_key) {
                 let task_id = triggers.tasks.remove(&trigger_hash_key).unwrap();
                 let scheduler = ctx.scheduler.write().await;
                 let res = scheduler.cancel(task_id, CancelOpts::Ignore).await;
                 if res.is_err() {
-                    error!("Can't cancel task: {res:?}");
+                    error!(error = ?res.err(), "canceling task");
                 }
             }
 
-            // Get time of last trigger's run, if it was run
+            // Get a time of last triggers' run if it was run ever.
             let last_run: Option<SystemTime> = if let Some(status) = self.status() {
                 status.last_run.as_ref().map(|last_run| {
                     DateTime::parse_from_rfc3339(last_run)
@@ -343,17 +358,16 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 None
             };
 
-            // Get new schedule for new task
+            // Get a new schedule for the new task.
             match self.get_task_schedule(last_run) {
                 Ok(schedule) => {
-                    // Add new task to scheduler instead of the cancelled one
+                    // Add a new task to the scheduler instead of the canceled one.
                     let scheduler = ctx.scheduler.write().await;
                     let task = self.create_trigger_task(
                         ctx.client.clone(),
                         schedule,
                         TriggerTaskSources::All,
                         ctx.cli_config.source_clone_folder.clone(),
-                        ctx.identity.clone(),
                     );
                     let task_id = scheduler.add(task).await?;
                     let tasks = &mut triggers.tasks;
@@ -381,16 +395,22 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         Ok(ReconcileAction::await_change())
     }
 
+    #[instrument(level = "debug", skip_all,
+        fields(
+            kind=self.kind(),
+            namespace=self.namespace().unwrap(),
+            trigger=self.name_any()
+        )
+    )]
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
-            "Cleanup {} `{}` in {}",
-            self.kind(),
-            self.name_any(),
-            self.namespace()
-                .expect("unable to get resource namespace, looks like a BUG!")
+            kind = %self.kind(),
+            namespace = %self.namespace().expect("unable to get resource namespace, looks like a BUG!"),
+            trigger = %self.name_any(),
+            "cleaning up"
         );
         let trigger_hash_key = self.trigger_hash_key();
-        // Remove from schedules map
+        // Remove from the schedule map.
         if ctx.triggers.read().await.schedules.contains_key(&trigger_hash_key) {
             let mut triggers = ctx.triggers.write().await;
             triggers.schedules.remove(&trigger_hash_key);
@@ -402,7 +422,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
             let scheduler = ctx.scheduler.write().await;
             let res = scheduler.cancel(task_id, CancelOpts::Kill).await;
             if res.is_err() {
-                error!("Can't cancel task: {res:?}");
+                error!(error = ?res.err(), "canceling task");
             }
         }
 
@@ -476,7 +496,7 @@ where
     Self: std::fmt::Debug + Clone + DeserializeOwned + Serialize,
     <Self as Resource>::DynamicType: Default,
     Self: Resource<Scope = NamespaceResourceScope>,
-    <Self as kube::Resource>::DynamicType: std::hash::Hash + std::cmp::Eq + Clone,
+    <Self as Resource>::DynamicType: std::hash::Hash + Eq + Clone,
     S: Send + Sync + 'static,
 {
     fn sources(&self) -> &TriggerSources;
@@ -497,7 +517,7 @@ where
     /// If state, checked_sources or last_run isn't None - update it by parameter value
     /// In any of them is None - get existing value from the cache and use it
     ///
-    /// If checked_sources is provided in parameters - merge it with existing map
+    /// If checked_sources is provided in parameters, then merge it with the existing map.
     ///
     fn update_trigger_status(
         &self,
@@ -511,13 +531,13 @@ where
             let trigger = Self::get(&name, Some(&self.namespace().unwrap()))?;
 
             let new_status = if let Some(status) = trigger.trigger_status() {
-                // Status is already present in the trigger
-                // Use new checked_sources map as addition to existing
-                let mut checked_sources = checked_sources.unwrap_or_default();
-                checked_sources.extend(status.checked_sources.clone());
+                // Status is already present in the trigger.
+                // Use the provided checked_sources map as an addition to the existing ones.
+                let mut new_checked_sources = status.checked_sources.clone();
+                new_checked_sources.extend(checked_sources.unwrap_or_default());
 
                 // Filter checked_sources to exclude non-existing sources
-                let checked_sources: HashMap<String, CheckedSourceState> = checked_sources
+                let new_checked_sources: HashMap<String, CheckedSourceState> = new_checked_sources
                     .into_iter()
                     .filter(|(k, _v)| trigger.sources().names.contains(k))
                     .collect();
@@ -529,7 +549,7 @@ where
                     } else {
                         status.last_run.clone()
                     },
-                    checked_sources,
+                    checked_sources: new_checked_sources,
                 }
             } else {
                 // No status so far, create new
@@ -549,7 +569,7 @@ where
                     "checkedSources": new_status.checked_sources,
                 }
             }));
-            let pp = PatchParams::apply("cntrlr").force();
+            let pp = PatchParams::apply("controller").force();
             let _o = api.patch_status(&name, &pp, &status).await?;
 
             Ok(())
@@ -562,7 +582,6 @@ where
         schedule: TaskSchedule,
         task_sources: TriggerTaskSources,
         source_clone_folder: String,
-        identity: String,
     ) -> Task {
         let trigger_name = self.name_any();
         let trigger_ns = self
@@ -570,30 +589,32 @@ where
             .expect("unable to get resource namespace, looks like a BUG!");
 
         Task::new(schedule, move |id| {
-            // All these values should be moved ot the task
+            // All these values should be moved to the task.
             let trigger_name = trigger_name.clone();
             let trigger_ns = trigger_ns.clone();
             let client = client.clone();
             let task_sources = task_sources.clone();
             let source_clone_folder = source_clone_folder.clone();
-            let identity = identity.clone();
 
             // Actual trigger job
             Box::pin(async move {
-                debug!("Start trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                let span = debug_span!("trigger task", id = id.to_string());
+                let _span = span.enter();
+
+                debug!(namespace = %trigger_ns, trigger = %trigger_name, job_id = %id, "starting trigger job");
                 let triggers_api: Api<Self> = Api::namespaced(client.clone(), &trigger_ns);
                 // Get current trigger from cache
                 let trigger = Self::get(&trigger_name, Some(&trigger_ns));
 
                 if let Ok(trigger) = trigger {
-                    // base folder to clone sources
-                    // add random suffix because some webhook trigger may have the same name
+                    // This is a base folder to clone sources to.
+                    // Add a random suffix because some webhook trigger may have the same name
                     let base_temp_dir =
                         format!("{source_clone_folder}/{trigger_ns}/{trigger_name}/{}", random_string(8));
 
-                    // Filter checked_sources to exclude non-existing sources
-                    // this is possible between last trigger update via API and following task run
-                    // so just exclude non-existing sources from the current status
+                    // Filter checked_sources to exclude non-existing sources,
+                    // this is possible state in between of the last trigger update via API,
+                    // and the following task run so just exclude non-existing sources from the current status.
                     let checked_sources: HashMap<String, CheckedSourceState> = trigger
                         .trigger_status()
                         .clone()
@@ -608,10 +629,10 @@ where
                         .update_trigger_status(Some(TriggerState::Running), None, None, &triggers_api)
                         .await
                     {
-                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                        error!(trigger = % trigger_name, error = %err, "updating trigger state");
                     }
 
-                    // Create set of sources to check
+                    // Create a set of the sources to check.
                     let sources_to_check = match task_sources {
                         TriggerTaskSources::All => trigger.sources().names.iter().cloned().collect::<HashSet<String>>(),
                         TriggerTaskSources::Single(source) => HashSet::from([source]),
@@ -624,16 +645,13 @@ where
                             file_hash: None,
                             changed: None,
                         };
-                        debug!(
-                            "Processing {} source {trigger_ns}/{trigger_name}/{source}",
-                            trigger.sources().kind
-                        );
+                        debug!(namespace = %trigger_ns, trigger = %trigger_name, kind = %trigger.sources().kind, source = %source, "processing source");
 
                         // - Create temp dest folder
                         let repo_path = format!("{base_temp_dir}/{source}");
                         let _ = remove_dir_all(&repo_path).await; // to prevent error if some leftovers exist
                         if let Err(err) = create_dir_all(&repo_path).await {
-                            error!("Unable to create temporary folder `{repo_path}`: {err:?}");
+                            error!(path = %repo_path, error = %err, "creating temporary folder");
                         } else {
                             // TODO: refactor this part to obtain "impl trait" object which implements fetch_repo_ref() instead of kind
                             // and just use it to clone repo
@@ -641,7 +659,9 @@ where
                                 // - Get GitRepo object
                                 TriggerSourceKind::GitRepo => {
                                     let gitrepo = GitRepo::get(&source, Some(&trigger_ns));
-                                    // - Call repo.fetch_repo_ref(...) to get repository content using particular reference
+                                    // - Call repo.fetch_repo_ref(...)
+                                    // to get repository content
+                                    // using a particular reference
                                     if let Ok(gitrepo) = gitrepo {
                                         gitrepo
                                             .fetch_repo_ref(
@@ -652,13 +672,15 @@ where
                                             )
                                             .await
                                     } else {
-                                        error!("Unable to get GitRepo {trigger_ns}/{source}: {:?}", gitrepo.err());
+                                        error!(namespace = %trigger_ns, source = %source, error = ?gitrepo.err(), "unable to get GitRepo");
                                         continue;
                                     }
                                 }
                                 TriggerSourceKind::ClusterGitRepo => {
                                     let gitrepo = ClusterGitRepo::get(&source, None);
-                                    // - Call repo.fetch_repo_ref(...) to get repository content using particular reference
+                                    // Call repo.fetch_repo_ref(...)
+                                    // to get repository content
+                                    // using a particular reference
                                     if let Ok(gitrepo) = gitrepo {
                                         gitrepo
                                             .fetch_repo_ref(
@@ -669,10 +691,7 @@ where
                                             )
                                             .await
                                     } else {
-                                        error!(
-                                            "Unable to get ClusterGitRepo {trigger_ns}/{source}: {:?}",
-                                            gitrepo.err()
-                                        );
+                                        error!(namespace = %trigger_ns, source = %source, error = ?gitrepo.err(), "unable to get ClusterGitRepo");
                                         continue;
                                     }
                                 }
@@ -682,42 +701,34 @@ where
                             if let Ok(repo) = repo {
                                 let latest_commit = get_latest_commit(&repo, &trigger.sources().watch_on.reference);
                                 if let Ok(latest_commit) = latest_commit {
-                                    debug!("Latest commit: {:?}", latest_commit);
+                                    debug!(hash = %latest_commit, "latest commit");
                                     new_source_state.commit_hash = Some(latest_commit.to_string());
 
                                     // - Get file hash if it's required and present
-                                    if let Some(path) = &trigger.sources().watch_on.file_ {
-                                        let full_path = format!("{repo_path}/{path}");
-                                        let is_exists = try_exists(&full_path).await;
-                                        if is_exists.is_ok() && is_exists.unwrap() {
-                                            let file_hash = get_file_hash(&full_path).await;
-                                            if let Ok(file_hash) = file_hash {
-                                                debug!("File hash: {file_hash}");
-                                                new_source_state.file_hash = Some(file_hash);
-                                            } else {
-                                                error!("Unable to calc file `{path}` hash: {:?}", file_hash.err());
-                                            }
+                                    if let Some(files) = &trigger.sources().watch_on.files {
+                                        let file_hash = get_file_glob_hash(&repo_path, files).await;
+                                        if let Ok(file_hash) = file_hash {
+                                            let hex_hash = hex::encode(file_hash);
+                                            debug!(hash = hex_hash, "checking files content");
+                                            new_source_state.file_hash = Some(hex_hash);
                                         } else {
-                                            warn!("File `{path}` doesn't exits");
+                                            error!(error = ?file_hash.err(), "calculating files hash");
                                         }
                                     }
                                 } else {
-                                    error!(
-                                        "Unable to get latest commit from GitRepo `{source}`: {:?} ",
-                                        latest_commit.err()
-                                    );
+                                    error!(source = %source, error = ?latest_commit.err(), "getting latest commit from GitRepo");
                                     continue;
                                 }
                             } else {
-                                error!("Unable to fetch GitRepo `{}` from remote: {:?}", source, repo.err());
+                                error!(source = %source, error = ?repo.err(), "fetching GitRepo from remote");
                                 continue;
                             }
 
-                            // - Get self.status... latest processed hash for current source
-                            // - If it differs from latest commit or onChangesOnly==false - run action
+                            // Get self.status... latest processed hash for the current source.
+                            // If it differs from the latest commit or onChangesOnly==false - run action.
                             let current_source_state = checked_sources.get(&source);
                             if !new_source_state
-                                .is_equal(current_source_state, trigger.sources().watch_on.file_.is_some())
+                                .is_equal(current_source_state, trigger.sources().watch_on.files.is_some())
                                 || !trigger.sources().watch_on.on_change_only
                             {
                                 // TODO: refactor this part to get "impl executable action" which implements execute(), instead of this match by action's kind
@@ -732,9 +743,7 @@ where
                                                         &source,
                                                         &new_source_state.commit_hash.clone().unwrap(),
                                                         &trigger.sources().watch_on.reference,
-                                                        client.clone(),
                                                         &trigger_ns,
-                                                        identity.clone(),
                                                     )
                                                     .await
                                             }
@@ -751,9 +760,7 @@ where
                                                         &source,
                                                         &new_source_state.commit_hash.clone().unwrap(),
                                                         &trigger.sources().watch_on.reference,
-                                                        client.clone(),
                                                         &trigger_ns,
-                                                        identity.clone(),
                                                     )
                                                     .await
                                             }
@@ -762,7 +769,7 @@ where
                                     }
                                 };
 
-                                // - Update self.spec.... by latest processed commit
+                                // - Update self.spec... by the latest processed commit
                                 match action_exec_result {
                                     Ok(_) => {
                                         new_source_state.changed =
@@ -778,21 +785,28 @@ where
                                             )
                                             .await
                                         {
-                                            error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                                            error!(trigger = %trigger_name, error = %err, "updating trigger state");
                                         }
                                     }
                                     Err(err) => error!(
-                                        "Unable to run {} {}/{}: {}",
-                                        trigger.action().kind,
-                                        trigger_ns,
-                                        trigger.action().name,
-                                        err
-                                    ),
+                                        kind = %trigger.action().kind, namespace = %trigger_ns, action = %trigger.action().name, error = %err, "running action"),
+                                }
+                            } else {
+                                if let Some(current_source_state) = checked_sources.get(&source) {
+                                    new_source_state.changed.clone_from(&current_source_state.changed);
+                                }
+                                let new_source_state: HashMap<String, CheckedSourceState> =
+                                    HashMap::from([(source, new_source_state)]);
+                                if let Err(err) = trigger
+                                    .update_trigger_status(None, Some(new_source_state), None, &triggers_api)
+                                    .await
+                                {
+                                    error!(trigger = %trigger_name, error = %err, "updating trigger state");
                                 }
                             }
                             // - Remove temp dir content
                             if let Err(err) = remove_dir_all(&repo_path).await {
-                                error!("Unable to remove temporary folder `{repo_path}`: {err:?}");
+                                error!(path = %repo_path, error = %err, "removing temporary folder");
                             }
                         }
                     }
@@ -801,19 +815,19 @@ where
                         .update_trigger_status(Some(TriggerState::Idle), None, Some(Utc::now()), &triggers_api)
                         .await
                     {
-                        error!("Unable to update trigger `{}` state: {err:?}", trigger_name);
+                        error!(trigger = %trigger_name, error = %err, "updating trigger state");
                     }
                 } else {
-                    error!("Unable to get Trigger {trigger_ns}/{trigger_name}: {:?}", trigger.err());
+                    error!(namespace = %trigger_ns, trigger = %trigger_name, error = ?trigger.err(), "getting Trigger");
                 }
 
-                debug!("Finish trigger job: trigger={trigger_ns}/{trigger_name}, job id={id}");
+                debug!(namespace = %trigger_ns, trigger = %trigger_name, job_id = %id, "finishing trigger job");
             })
         })
     }
 }
 
-/// Returns latest commit of specified reference, depending on reference type
+/// Returns the latest commit of a specified reference, depending on the reference type.
 pub fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference) -> Result<Oid> {
     let oid = match reference {
         TriggerGitRepoReference::Branch(r) => repo
@@ -836,7 +850,7 @@ pub fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference)
 }
 
 /// Calculates SHA256 hash of the file
-async fn get_file_hash(path: &String) -> Result<String> {
+async fn get_file_hash(path: &Path) -> Result<Vec<u8>> {
     let mut hasher = Sha256::new();
     let mut buf: Vec<u8> = Vec::new();
 
@@ -849,7 +863,27 @@ async fn get_file_hash(path: &String) -> Result<String> {
 
     let mut buf = buf.as_slice();
     io::copy(&mut buf, &mut hasher).map_err(Error::TriggerFileAccessError)?;
-    let hash = hasher.finalize();
+    let hash = hasher.finalize().to_vec();
 
-    Ok(format!("{hash:x}"))
+    Ok(hash)
+}
+
+/// Calculates SHA256 hash of files selected by glob
+async fn get_file_glob_hash(folder: &String, glob: &[String]) -> Result<Vec<u8>> {
+    let mut hasher = Sha256::new();
+    let glob = GlobWalkerBuilder::from_patterns(folder, glob)
+        .file_type(FileType::FILE)
+        .sort_by(|p1, p2| p1.path().cmp(p2.path()))
+        .build()?;
+
+    for file_name in glob {
+        let file_name = file_name.map_err(|e| Error::TriggerDirWalkError(e.to_string()))?;
+        let file_path = file_name.path();
+
+        let hash = get_file_hash(file_path).await?;
+        hasher.update(hash);
+    }
+
+    let hash = hasher.finalize().to_vec();
+    Ok(hash)
 }

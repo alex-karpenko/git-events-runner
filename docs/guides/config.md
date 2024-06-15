@@ -21,6 +21,11 @@ If nothing is specified (this is equivalent to omit both `--debug` and `--verbos
 level is warning.
 Using this parameter, you can change log level.
 
+### otlp
+
+This section describes OpenTelemetry configuration.
+If `otlp.enabled` is `true` then `otlp.endpoint` should point to the OpenTelemetry collector endpoint.
+
 ### leaderLease
 
 This section declares the parameters of using Lease resource to manage leader elections. There are two parameters:
@@ -78,7 +83,10 @@ This section defines lots of defaults of action jobs.
 | Parameter name                    | Default value                                                                  | Description                                                                                                                                |
 |-----------------------------------|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
 | ttlSecondsAfterFinished           | 7200                                                                           | Default time to leave of Job after finishing. After this time Jobs will be removed from the cluster with its Pod. Useful fo debug purpose. |
-| defaultServiceAccount             | `{{ fullname }}-action-job`                                                    | Default service account name for action jobs. Actual default depends on release name and `fullnameOverride` global parameter.              | 
+| activeDeadlineSeconds             | 3600                                                                           | Default time limit to run Job. After this time incomplete Job will be terminated.                                                          |
+| maxRunningJobs                    | 16                                                                             | Maximum number of simultaneously running Jobs, per controller replica. Jobs that can't be running will be queued and waiting.              |
+| jobWaitingTimeoutSeconds          | 300                                                                            | Maximum time (in seconds) Jobs can wait in queue before start because `maxRunningJobs` is exceeded.                                        |
+| defaultServiceAccount             | `{{ fullname }}-action-job`                                                    | Default service account name for action jobs. Actual default depends on release name and `fullnameOverride` global parameter.              |
 | workdir.mountPath                 | /action_workdir                                                                | Default folder to clone source content to. It's used for both cloner and worker container.                                                 |
 | workdir.volumeName                | action-workdir                                                                 | Volume name of workdir `emptyDir` volume.                                                                                                  |
 | containers.cloner.name            | action-cloner                                                                  | Name of the source cloner initContainer in the action Job.                                                                                 |
@@ -147,10 +155,6 @@ Options:
           Leader lease duration, seconds [default: 30]
       --leader-lease-grace <LEADER_LEASE_GRACE>
           Leader lease grace interval, seconds [default: 20]
-  -d, --debug
-          Enable extreme logging (debug)
-  -v, --verbose
-          Enable additional logging (info)
   -h, --help
           Print help
 ```

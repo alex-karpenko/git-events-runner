@@ -27,14 +27,28 @@ body = """
 
 ### Details\
 
+{% if commits|filter(attribute="breaking", value=true)|length > 0 %}
+#### Breaking changes
+{% endif -%}
+
+{% for commit in commits|filter(attribute="breaking", value=true) -%}
+- {{ commit.message | upper_first | trim }}\
+    {% if commit.github.username %} by @{{ commit.github.username }}{%- endif -%}
+    {% if commit.github.pr_number %} in \
+      [#{{ commit.github.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.github.pr_number }}) \
+    {%- endif %}
+{% endfor -%}\
+
 {% for group, commits in commits | group_by(attribute="group") %}
     #### {{ group | upper_first }}
-    {%- for commit in commits %}
+    {%- for commit in commits %}\
+        {% if not commit.breaking %}
         - {{ commit.message | upper_first | trim }}\
             {% if commit.github.username %} by @{{ commit.github.username }}{%- endif -%}
             {% if commit.github.pr_number %} in \
               [#{{ commit.github.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.github.pr_number }}) \
             {%- endif -%}
+        {%- endif -%}
     {% endfor %}
 {% endfor %}
 
@@ -47,7 +61,8 @@ body = """
     {%- if contributor.pr_number %} in \
       [#{{ contributor.pr_number }}]({{ self::remote_url() }}/pull/{{ contributor.pr_number }}) \
     {%- endif %}
-{%- endfor %}\n
+{% endfor %}
+
 """
 # template for the changelog footer
 footer = """
@@ -85,6 +100,7 @@ commit_preprocessors = [
 # regex for parsing and grouping commits
 commit_parsers = [
   { message = "^.*: [Aa]dd", group = "Added" },
+  { message = "^.*: [Ii]mplement", group = "Added" },
   { message = "^.*: support", group = "Added" },
   { message = "^.*: [Rr]emove", group = "Removed" },
   { message = "^.*: [Dd]elete", group = "Removed" },
@@ -92,6 +108,7 @@ commit_parsers = [
   { message = "^fix", group = "Fixed" },
   { message = "^.*: [Ff]ix", group = "Fixed" },
   { message = "^.*", group = "Changed" },
+  { sha = "3bc425327b8212669ccb45779db1fc8b1c792dfb", skip = true },
 ]
 # protect breaking changes from being skipped due to matching a skipping commit_parser
 protect_breaking_commits = true
