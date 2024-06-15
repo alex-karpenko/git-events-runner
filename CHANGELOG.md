@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 #### Fixed
 - Update documentation to reflect changes in Helm chart by @alex-karpenko in [#9](https://github.com/alex-karpenko/git-events-runner/pull/9)
 - Documentation deployment workflow by @alex-karpenko
+- Fix grammar, syntax and lint warnings
 
 ## [0.1.1] - 2024-06-01
 ### Details
