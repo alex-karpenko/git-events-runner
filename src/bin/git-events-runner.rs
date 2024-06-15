@@ -64,14 +64,14 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut shutdown = false;
 
-    // create detached task to watch on all our k8s jobs
+    // create a detached task to watch on all our k8s jobs
     let jobs_queue = tokio::spawn(JobsQueue::init_and_watch(
         client.clone(),
         identity.clone(),
         shutdown_rx.clone(),
     ));
 
-    // create and run (as detached task) web server for readiness/liveness probes and metrics
+    // create and run (as a detached task) web server for readiness/liveness probes and metrics
     let utils_web = web::build_utils_web(state.clone(), shutdown_rx.clone(), cli_config.utility_port).await;
     let utils_web = tokio::spawn(utils_web);
 
@@ -139,7 +139,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
                 } => {},
         }
 
-        // if we have any controller running now - sent shutdown message to it
+        // if we have any controller running now, send a shutdown message to it
         if let Some(controllers) = controllers {
             if let Err(err) = changed_tx.send(true) {
                 error!(error = %err, "sending change event");
@@ -150,10 +150,10 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
         }
     }
 
-    // when we got shutdown message or signal and exit from the previous loop
+    // when we got shut down message or signal and exit from the previous loop,
     // free leader lease
     drop(leader_lease_channel);
-    // and wait for finish of all tasks
+    // and wait for finishing of all tasks
     let _ = tokio::join!(leader_lease_task, utils_web, hooks_web, jobs_queue);
 
     Ok(())
@@ -185,7 +185,7 @@ fn generate_config_yaml(options: CliConfigDumpOptions) -> anyhow::Result<()> {
         git_events_runner::config::YamlConfigOpts::Raw
     };
 
-    let yaml_str = RuntimeConfig::to_yaml_string(opts)?;
+    let yaml_str = RuntimeConfig::default_as_yaml_string(opts)?;
     print!("{yaml_str}");
 
     Ok(())

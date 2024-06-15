@@ -104,7 +104,7 @@ impl RuntimeConfig {
 
     /// Serialize default dynamic config to YAML string.
     /// If opts is `HelmTemplate` - produces Helm templates for some parameters instead of the raw strings.
-    pub fn to_yaml_string(opts: YamlConfigOpts) -> Result<String> {
+    pub fn default_as_yaml_string(opts: YamlConfigOpts) -> Result<String> {
         let config = match opts {
             YamlConfigOpts::Raw => Self::default(),
             YamlConfigOpts::HelmTemplate => {
@@ -159,13 +159,11 @@ impl TryFrom<ConfigMap> for RuntimeConfig {
 }
 
 //
-// Everything below is runtime configuration structure definition
-// with defaults and everything needed to deserialize data section of CM.
+// Everything below is a runtime configuration structure definition,
+// with defaults and everything needed to deserialize the data section of CM.
 // Config watcher/reload just deserializes CM's data field into `RuntimeConfig` instance.
 //
 // ATTENTION: Don't forget to reflect any changes into Helm values.yaml, runtimeConfig section
-// TODO: Make new subcommand to dump out default config and update it in the chart as part of CD
-
 #[derive(Clone, Deserialize, Serialize, Debug, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct RuntimeConfig {
@@ -291,7 +289,7 @@ mod tests {
 
     #[test]
     fn yaml_config_consistency() {
-        let config_yaml_string = RuntimeConfig::to_yaml_string(YamlConfigOpts::HelmTemplate).unwrap();
+        let config_yaml_string = RuntimeConfig::default_as_yaml_string(YamlConfigOpts::HelmTemplate).unwrap();
         assert_ron_snapshot!(config_yaml_string);
     }
 }

@@ -225,7 +225,7 @@ pub trait GitRepoGetter: GitRepoInternals {
             HashMap::new()
         };
 
-        // Create callback object with necessary secrets
+        // Create a callback object with necessary secrets
         let mut callbacks = RemoteCallbacks::new();
         let mut init_opts = RepositoryInitOptions::new();
         let mut fetch_opt = FetchOptions::default();
@@ -314,7 +314,7 @@ pub trait GitRepoGetter: GitRepoInternals {
                     }
                 });
             } else {
-                // no custom CA - lets verify cert in usual way
+                // no custom CA - let's verify cert in a usual way
                 callbacks.certificate_check(move |_, _| Ok(CertificateCheckStatus::CertificatePassthrough));
             }
         }

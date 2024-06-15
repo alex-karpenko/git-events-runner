@@ -1,7 +1,7 @@
-// Since `kubert` still uses outdated `kube` and `k8s_openapi` crates
-// we have to depend to two different versions of those crates
+// Since `kubert` still uses outdated `kube` and `k8s_openapi` crates,
+// we have to depend on two different versions of those crates
 // by importing old version with different names with prefix `kubert_`.
-// This module is only place where it's used.
+// This module is the only place where it's used.
 use crate::Result;
 use kubert::{
     lease::{Claim, ClaimParams, Error},

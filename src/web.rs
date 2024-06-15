@@ -34,7 +34,7 @@ struct WebState {
     source_clone_folder: String,       // config to pass to Trigger::create_trigger_task()
 }
 
-/// Struct to convert it to response using set of From trait implementations.
+/// Struct to convert it to a response using a set of From trait implementations.
 /// We return JSON with predefined status (ok/err/...) and mandatory message
 /// which explains status
 /// task_id is for successful calls to triggers
@@ -138,9 +138,9 @@ pub async fn build_hooks_web(
             error!(error = %err, "running Webhooks server");
         }
 
-        // To shutdown task scheduler we have to extract it from shared reference (Arc), but
-        // sometimes controller works few milliseconds longer than expected,
-        // just wait few async-state-machine cycles to finish
+        // To shut down task scheduler, we have to extract it from shared reference (Arc), but
+        // sometimes the controller works few milliseconds longer than expected,
+        // so wait for few async-state-machine cycles to finish
         for _ in 0..10 {
             if Arc::strong_count(&scheduler) <= 1 {
                 info!("shutting down WebhookTriggers task scheduler");
@@ -233,7 +233,7 @@ async fn handle_post_source_webhook(
         let task = trigger.create_trigger_task(
             state.client.clone(),
             sacs::task::TaskSchedule::Once,
-            TriggerTaskSources::Single(source.clone()), // by specifying single source we restrict scope of task
+            TriggerTaskSources::Single(source.clone()), // by specifying `single source` we restrict scope of the task.
             state.source_clone_folder,
         );
         let scheduler = state.scheduler.write().await;
@@ -359,7 +359,7 @@ impl WebState {
                 //     .as_ref()
                 let secret = SecretsCache::get(namespace, &auth_config.secret_ref.name, &auth_config.key)
                     .await
-                    .map_err(|_| WebError::AuthorizationError)?; // something went wrong during interaction with secrets cache
+                    .map_err(|_| WebError::AuthorizationError)?; // something went wrong during interaction with secret cache
                 if *secret == *header {
                     Ok(()) // hit!
                 } else {

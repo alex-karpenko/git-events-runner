@@ -17,7 +17,7 @@ use std::{
     fmt::Debug,
     sync::{Arc, OnceLock},
 };
-use tokio::sync::{self, watch, RwLock};
+use tokio::sync::{mpsc, watch, RwLock};
 use tracing::{debug, error, info, trace, warn};
 
 const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identity";
@@ -27,9 +27,9 @@ static JOBS_QUEUE: OnceLock<Arc<JobsQueue>> = OnceLock::new();
 pub struct JobsQueue {
     client: Client,
     identity: String,
-    queue_event_tx: sync::watch::Sender<()>,
-    queue_jobs_tx: sync::mpsc::UnboundedSender<(Job, SystemTime)>,
-    queue_jobs_rx: RwLock<sync::mpsc::UnboundedReceiver<(Job, SystemTime)>>,
+    queue_event_tx: watch::Sender<()>,
+    queue_jobs_tx: mpsc::UnboundedSender<(Job, SystemTime)>,
+    queue_jobs_rx: RwLock<mpsc::UnboundedReceiver<(Job, SystemTime)>>,
     running_jobs: AtomicUsize,
 }
 
@@ -41,14 +41,14 @@ impl Debug for JobsQueue {
 
 impl JobsQueue {
     /// Watch and store changes of OURS K8s jobs.
-    /// We identify jobs as `ours` by label (ACTION_JOB_IDENTITY_LABEL) with value of our own identity.
+    /// We identify jobs as `ours` by label (ACTION_JOB_IDENTITY_LABEL) with the value of our own identity.
     /// So each controller instance watches its own jobs only.
     ///
-    /// This method is used to calculate number of the jobs running by this particular instance,
+    /// This method is used to calculate a number of the jobs running by this particular instance,
     /// and apply limits on that number.
     pub async fn init_and_watch(client: Client, identity: String, mut shutdown: watch::Receiver<bool>) {
-        let (queue_event_tx, mut queue_event_rx) = sync::watch::channel(());
-        let (queue_jobs_tx, queue_jobs_rx) = sync::mpsc::unbounded_channel();
+        let (queue_event_tx, mut queue_event_rx) = watch::channel(());
+        let (queue_jobs_tx, queue_jobs_rx) = mpsc::unbounded_channel();
         let (store, writer) = reflector::store();
         let mut statuses: HashMap<ObjectRef<Job>, JobStatus> = HashMap::new();
 
@@ -77,7 +77,7 @@ impl JobsQueue {
                     let jobs_queue = JOBS_QUEUE.get().unwrap();
 
                     // Filter duplicates by watching on resource status changes.
-                    let key = reflector::ObjectRef::new(&name).within(&ns);
+                    let key = ObjectRef::new(&name).within(&ns);
                     if let Some(store_status) = &store.get(&key).unwrap_or_default().status {
                         if let Some(prev_status) = statuses.get(&key) {
                             if store_status != prev_status {
@@ -158,9 +158,9 @@ impl JobsQueue {
         }
     }
 
-    /// Checks if there are jobs in queue to run and if there is free capacity
+    /// Checks if there are jobs in the queue to run and if there is free capacity
     /// (check store for number of running jobs is less of the limit)
-    /// then starts as many job as possible ot satisfy limits.
+    /// then starts as many jobs as possible ot satisfy limits.
     async fn run_queue() {
         let queue = JOBS_QUEUE.get().unwrap();
         let mut queue_jobs_rx = queue.queue_jobs_rx.write().await;
@@ -235,7 +235,7 @@ impl JobsQueue {
             ));
             let expiration_time = SystemTime::now().checked_add(timeout).unwrap();
 
-            // Put job into tje queue
+            // Put the job into the queue
             let jobs_tx = queue.queue_jobs_tx.clone();
             jobs_tx
                 .send((job.clone(), expiration_time))
