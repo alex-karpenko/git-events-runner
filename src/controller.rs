@@ -142,7 +142,10 @@ pub async fn run_leader_controllers(
 
         // first controller to handle
         let triggers_api = Api::<ScheduleTrigger>::all(client.clone());
-        check_api_by_list(&triggers_api, "Triggers").await;
+        if let Err(_e) = check_api_by_list(&triggers_api).await {
+            std::process::exit(1);
+        }
+
         let mut shutdown = shutdown_channel.clone();
         controllers.push(tokio::task::spawn(
             Controller::new(triggers_api, Config::default().any_semantic())
@@ -174,15 +177,16 @@ pub async fn run_leader_controllers(
 }
 
 /// Call `List` on custom resource to verify if the required custom Api is present.
-/// ATTENTION: It exits application if CRD isn't present.
-async fn check_api_by_list<K>(api: &Api<K>, api_name: &str)
+async fn check_api_by_list<K>(api: &Api<K>) -> Result<()>
 where
-    K: Clone + DeserializeOwned + Debug,
+    K: Clone + DeserializeOwned + Debug + CustomApiResource,
 {
     if let Err(e) = api.list(&ListParams::default().limit(1)).await {
-        error!(api = %api_name, error = %e, "CRD is not queryable, looks like CRD isn't installed/updated?");
+        error!(api = %K::crd_kind(), error = %e, "CRD is not queryable, looks like CRD isn't installed/updated?");
         info!("to install run: {} crds | kubectl apply -f -", env!("CARGO_PKG_NAME"));
-        std::process::exit(1);
+        Err(Error::KubeError(e))
+    } else {
+        Ok(())
     }
 }
 
@@ -206,7 +210,7 @@ where
     let ns = resource.namespace().unwrap();
     let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
 
-    debug!(kind = %resource.kind(), namespace = %ns, resource = %resource.name_any(), "reconciling");
+    debug!(kind = %K::crd_kind(), namespace = %ns, resource = %resource.name_any(), "reconciling");
     if let Some(finalizer_name) = resource.finalizer_name() {
         finalizer(&resource_api, finalizer_name, resource, |event| async {
             match event {
@@ -218,5 +222,160 @@ where
         .map_err(|e| Error::FinalizerError(Box::new(e)))
     } else {
         resource.reconcile(ctx.clone()).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        cli::CliConfig,
+        resources::{
+            action::{Action, ClusterAction},
+            git_repo::{ClusterGitRepo, GitRepo},
+            trigger::{self, WebhookTrigger},
+        },
+    };
+    use clap::Parser;
+    use k8s_openapi::api::core::v1::Namespace;
+    use kube::{
+        api::{Api, DeleteParams, PostParams},
+        Client, CustomResource,
+    };
+    use schemars::JsonSchema;
+    use serde::Deserialize;
+    use std::ffi::OsString;
+    use tokio::sync::OnceCell;
+
+    static TRACING_INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
+    #[cfg_attr(test, derive(Default))]
+    #[kube(kind = "FakeCustomResource", group = "git-events-runner.rs", version = "v1alpha1")]
+    #[serde(rename_all = "camelCase")]
+    pub struct FakeCustomResourceSpec {
+        some_field: String,
+    }
+
+    impl CustomApiResource for FakeCustomResource {
+        fn crd_kind() -> &'static str {
+            "FakeCustomResource"
+        }
+    }
+
+    async fn init() {
+        TRACING_INITIALIZED.get_or_init(|| async { init_tracing().await }).await;
+    }
+
+    async fn init_tracing() {
+        tracing_subscriber::fmt::init();
+    }
+
+    /// Unattended namespace creation
+    async fn create_namespace(client: Client, ns: &str) {
+        let api = Api::<Namespace>::all(client);
+        let pp = PostParams::default();
+
+        let mut data = Namespace::default();
+        data.meta_mut().name = Some(String::from(ns));
+
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
+
+    /// Create the simplest test context: default client, scheduler and state
+    async fn get_test_context() -> Arc<Context> {
+        let client = Client::try_default().await.unwrap();
+        let state = State::new(Arc::new(CliConfig::parse_from(None::<OsString>.iter())));
+        let scheduler = Arc::new(RwLock::new(Scheduler::default()));
+        let triggers = Arc::new(RwLock::new(TriggersState::default()));
+        let ctx = state.to_context(client, scheduler, triggers);
+
+        ctx
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn reconcile_schedule_trigger_should_set_idle_status() {
+        init().await;
+
+        let ctx = get_test_context().await;
+        let ns = "reconcile-trigger-should-update-status";
+        let trigger_i_name = "good-interval-trigger";
+        let trigger_c_name = "good-cron-trigger";
+
+        create_namespace(ctx.client.clone(), &ns).await;
+
+        let api = Api::<ScheduleTrigger>::namespaced(ctx.client.clone(), &ns);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create good trigger with interval schedule
+        let trigger_i = ScheduleTrigger::test_with_interval(trigger_i_name, &ns, "30s");
+        let trigger_i = api.create(&pp, &trigger_i).await.unwrap();
+        let _ = trigger_i.reconcile(ctx.clone()).await.unwrap();
+        // Assert status
+        let output = api.get_status(trigger_i_name).await.unwrap();
+        assert!(output.status.is_some());
+        assert_eq!(output.status.unwrap().state, trigger::TriggerState::Idle);
+        assert_eq!(ctx.triggers.read().await.schedules.len(), 1);
+        assert_eq!(ctx.triggers.read().await.tasks.len(), 1);
+
+        // Create good trigger with cron schedule
+        let trigger_c = ScheduleTrigger::test_with_cron(trigger_c_name, &ns, "0 0 * * *");
+        let trigger_c = api.create(&pp, &trigger_c).await.unwrap();
+        let _ = trigger_c.reconcile(ctx.clone()).await.unwrap();
+        // Assert status
+        let output = api.get_status(trigger_c_name).await.unwrap();
+        assert!(output.status.is_some());
+        assert_eq!(output.status.unwrap().state, trigger::TriggerState::Idle);
+        assert_eq!(ctx.triggers.read().await.schedules.len(), 2);
+        assert_eq!(ctx.triggers.read().await.tasks.len(), 2);
+
+        // Clean up interval trigger
+        let _result = api.delete(trigger_i_name, &dp).await.unwrap();
+        let _ = trigger_i.cleanup(ctx.clone()).await.unwrap();
+        // Assert for changed state
+        assert_eq!(ctx.triggers.read().await.schedules.len(), 1);
+        assert_eq!(ctx.triggers.read().await.tasks.len(), 1);
+
+        // Clean up cron trigger
+        let _result = api.delete(trigger_c_name, &dp).await.unwrap();
+        let _ = trigger_c.cleanup(ctx.clone()).await.unwrap();
+        // Assert for empty state
+        assert_eq!(ctx.triggers.read().await.schedules.len(), 0);
+        assert_eq!(ctx.triggers.read().await.tasks.len(), 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn all_crds_should_be_installed() {
+        let ctx = get_test_context().await;
+
+        assert!(check_api_by_list(&Api::<ScheduleTrigger>::all(ctx.client.clone()))
+            .await
+            .is_ok());
+        assert!(check_api_by_list(&Api::<WebhookTrigger>::all(ctx.client.clone()))
+            .await
+            .is_ok());
+        assert!(check_api_by_list(&Api::<Action>::all(ctx.client.clone())).await.is_ok());
+        assert!(check_api_by_list(&Api::<ClusterAction>::all(ctx.client.clone()))
+            .await
+            .is_ok());
+        assert!(check_api_by_list(&Api::<GitRepo>::all(ctx.client.clone()))
+            .await
+            .is_ok());
+        assert!(check_api_by_list(&Api::<ClusterGitRepo>::all(ctx.client.clone()))
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn fake_crd_error() {
+        let ctx = get_test_context().await;
+
+        assert!(check_api_by_list(&Api::<FakeCustomResource>::all(ctx.client.clone()))
+            .await
+            .is_err());
     }
 }

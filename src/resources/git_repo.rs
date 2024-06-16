@@ -1,3 +1,4 @@
+use super::CustomApiResource;
 use crate::{Error, Result};
 use git2::{CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions};
 use k8s_openapi::api::core::v1::Secret;
@@ -166,6 +167,18 @@ impl GitRepoInternals for ClusterGitRepo {
     }
 }
 
+impl CustomApiResource for GitRepo {
+    fn crd_kind() -> &'static str {
+        "GitRepo"
+    }
+}
+
+impl CustomApiResource for ClusterGitRepo {
+    fn crd_kind() -> &'static str {
+        "ClusterGitRepo"
+    }
+}
+
 impl GitRepoGetter for GitRepo {}
 impl GitRepoGetter for ClusterGitRepo {}
 
@@ -245,7 +258,7 @@ pub trait GitRepoGetter: GitRepoInternals {
                             username_from_url.unwrap_or(""),
                             None,
                             auth_secrets["private_key"].clone().as_str(),
-                            None, // TODO: add support to keys with password
+                            None, // TODO: add support of keys with password
                         )
                     });
                 }

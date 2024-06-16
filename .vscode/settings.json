@@ -35,6 +35,7 @@
         "scheduletrigger",
         "scheduletriggers",
         "schemars",
+        "stdext",
         "thiserror",
         "tolerations",
         "userpass",

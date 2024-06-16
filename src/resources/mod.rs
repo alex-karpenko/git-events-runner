@@ -11,7 +11,7 @@ const API_GROUP: &str = "git-events-runner.rs";
 const CURRENT_API_VERSION: &str = "v1alpha1";
 
 pub(crate) trait CustomApiResource {
-    fn kind(&self) -> &str;
+    fn crd_kind() -> &'static str;
 }
 
 #[allow(async_fn_in_trait)]

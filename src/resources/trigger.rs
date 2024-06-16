@@ -44,6 +44,8 @@ use tokio::{
 };
 use tracing::{debug, debug_span, error, info, instrument};
 
+const NEVER_LAST_RUN_STR: &str = "Never";
+
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
     kind = "ScheduleTrigger",
@@ -83,11 +85,11 @@ pub struct WebhookTriggerSpec {
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerStatus {
-    state: TriggerState,
+    pub(crate) state: TriggerState,
     #[serde(skip_serializing_if = "Option::is_none")]
-    last_run: Option<String>,
+    pub(crate) last_run: Option<String>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    checked_sources: HashMap<String, CheckedSourceState>,
+    pub(crate) checked_sources: HashMap<String, CheckedSourceState>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
@@ -282,13 +284,13 @@ impl From<&String> for TriggerTaskSources {
 }
 
 impl CustomApiResource for ScheduleTrigger {
-    fn kind(&self) -> &str {
+    fn crd_kind() -> &'static str {
         "ScheduleTrigger"
     }
 }
 
 impl CustomApiResource for WebhookTrigger {
-    fn kind(&self) -> &str {
+    fn crd_kind() -> &'static str {
         "WebhookTrigger"
     }
 }
@@ -324,7 +326,7 @@ impl Trigger<WebhookTriggerSpec> for WebhookTrigger {
 impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
     #[instrument(level = "debug", skip_all,
         fields(
-            kind=self.kind(),
+            kind=Self::crd_kind(),
             namespace=self.namespace().unwrap(),
             trigger=self.name_any()
         )
@@ -349,11 +351,15 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
 
             // Get a time of last triggers' run if it was run ever.
             let last_run: Option<SystemTime> = if let Some(status) = self.status() {
-                status.last_run.as_ref().map(|last_run| {
-                    DateTime::parse_from_rfc3339(last_run)
-                        .expect("Incorrect time format in LastRun field, looks like a BUG.")
-                        .into()
-                })
+                status
+                    .last_run
+                    .as_ref()
+                    .filter(|lr| **lr != String::from(NEVER_LAST_RUN_STR))
+                    .map(|last_run| {
+                        DateTime::parse_from_rfc3339(last_run)
+                            .expect("Incorrect time format in LastRun field, looks like a BUG.")
+                            .into()
+                    })
             } else {
                 None
             };
@@ -386,6 +392,14 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 }
             }
 
+            self.update_trigger_status(
+                None,
+                None,
+                None,
+                &Api::<Self>::namespaced(ctx.client.clone(), &self.namespace().unwrap()),
+            )
+            .await?;
+
             // Update trigger schedule in the map
             triggers
                 .schedules
@@ -397,14 +411,14 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
 
     #[instrument(level = "debug", skip_all,
         fields(
-            kind=self.kind(),
+            kind=Self::crd_kind(),
             namespace=self.namespace().unwrap(),
             trigger=self.name_any()
         )
     )]
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
-            kind = %self.kind(),
+            kind = %Self::crd_kind(),
             namespace = %self.namespace().expect("unable to get resource namespace, looks like a BUG!"),
             trigger = %self.name_any(),
             "cleaning up"
@@ -528,6 +542,10 @@ where
     ) -> impl Future<Output = Result<()>> + Send {
         async move {
             let name = self.name_any();
+
+            #[cfg(test)]
+            let trigger = Arc::new(self);
+            #[cfg(not(test))]
             let trigger = Self::get(&name, Some(&self.namespace().unwrap()))?;
 
             let new_status = if let Some(status) = trigger.trigger_status() {
@@ -555,14 +573,16 @@ where
                 // No status so far, create new
                 TriggerStatus {
                     state: state.unwrap_or_default(),
-                    last_run: last_run.map(|last_run| last_run.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                    last_run: last_run
+                        .map(|last_run| last_run.to_rfc3339_opts(SecondsFormat::Secs, true))
+                        .or(Some(String::from(NEVER_LAST_RUN_STR))),
                     checked_sources: checked_sources.unwrap_or_default(),
                 }
             };
 
             let status = Patch::Apply(json!({
                 "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
-                "kind": self.kind(),
+                "kind": Self::crd_kind(),
                 "status": {
                     "state": new_status.state,
                     "lastRun": new_status.last_run,
@@ -886,4 +906,55 @@ async fn get_file_glob_hash(folder: &String, glob: &[String]) -> Result<Vec<u8>>
 
     let hash = hasher.finalize().to_vec();
     Ok(hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl ScheduleTrigger {
+        pub fn test_with_interval(name: &str, ns: &str, interval: &str) -> ScheduleTrigger {
+            let mut trigger = ScheduleTrigger::new(
+                name,
+                ScheduleTriggerSpec {
+                    sources: TriggerSources::default(),
+                    schedule: TriggerSchedule::Interval(String::from(interval)),
+                    action: TriggerAction::default(),
+                },
+            );
+            trigger.meta_mut().namespace = Some(String::from(ns));
+
+            trigger
+        }
+
+        pub fn test_with_cron(name: &str, ns: &str, cron: &str) -> ScheduleTrigger {
+            let mut trigger = ScheduleTrigger::new(
+                name,
+                ScheduleTriggerSpec {
+                    sources: TriggerSources::default(),
+                    schedule: TriggerSchedule::Cron(String::from(cron)),
+                    action: TriggerAction::default(),
+                },
+            );
+            trigger.meta_mut().namespace = Some(String::from(ns));
+
+            trigger
+        }
+    }
+
+    impl WebhookTrigger {
+        pub fn test_webhook(name: &str, ns: &str) -> WebhookTrigger {
+            let mut trigger = WebhookTrigger::new(
+                name,
+                WebhookTriggerSpec {
+                    sources: TriggerSources::default(),
+                    action: TriggerAction::default(),
+                    webhook: TriggerWebhook::default(),
+                },
+            );
+            trigger.meta_mut().namespace = Some(String::from(ns));
+
+            trigger
+        }
+    }
 }

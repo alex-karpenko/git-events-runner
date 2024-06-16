@@ -123,13 +123,13 @@ pub struct ActionJob {
 }
 
 impl CustomApiResource for Action {
-    fn kind(&self) -> &str {
+    fn crd_kind() -> &'static str {
         "Action"
     }
 }
 
 impl CustomApiResource for ClusterAction {
-    fn kind(&self) -> &str {
+    fn crd_kind() -> &'static str {
         "ClusterAction"
     }
 }
@@ -209,7 +209,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
 
         // Fill out custom jobs' labels
         let mut labels: BTreeMap<String, String> = BTreeMap::new();
-        labels.insert(ACTION_JOB_ACTION_KIND_LABEL.into(), self.kind().to_string());
+        labels.insert(ACTION_JOB_ACTION_KIND_LABEL.into(), Self::crd_kind().to_string());
         labels.insert(ACTION_JOB_ACTION_NAME_LABEL.into(), self.name_any());
         labels.insert(ACTION_JOB_SOURCE_KIND_LABEL.into(), source_kind.to_string());
         labels.insert(ACTION_JOB_SOURCE_NAME_LABEL.into(), source_name.into());
