@@ -47,7 +47,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     ));
     tokio::spawn(ApiCacheStore::watch(client.clone())); // detached task for custom resources cache
 
-    let state = State::new(Arc::new(cli_config.clone()));
+    let state = State::new(Arc::new(cli_config.source_clone_folder.clone()));
     SecretsCache::init_cache(Duration::from_secs(cli_config.secrets_cache_time), client.clone());
 
     // create leader lease to run ScheduleTrigger controller in single instance only

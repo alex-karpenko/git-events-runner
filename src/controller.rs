@@ -1,5 +1,4 @@
 use crate::{
-    cli::CliConfig,
     resources::{
         trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
         CustomApiResource, Reconcilable,
@@ -39,15 +38,15 @@ pub struct State {
     /// Web servers readiness
     pub ready: Arc<RwLock<bool>>,
     /// Cli config
-    pub cli_config: Arc<CliConfig>,
+    pub source_clone_folder: Arc<String>,
 }
 
 impl State {
-    pub fn new(cli_config: Arc<CliConfig>) -> Self {
+    pub fn new(source_clone_folder: Arc<String>) -> Self {
         Self {
             diagnostics: Default::default(),
             ready: Default::default(),
-            cli_config,
+            source_clone_folder,
         }
     }
 }
@@ -85,7 +84,7 @@ pub struct Context {
     /// Actual state of all Triggers
     pub triggers: Arc<RwLock<TriggersState>>,
     /// Cli config
-    pub cli_config: Arc<CliConfig>,
+    pub source_clone_folder: Arc<String>,
 }
 
 /// State wrapper around the controller outputs for the web server
@@ -102,7 +101,7 @@ impl State {
             diagnostics: self.diagnostics.clone(),
             scheduler,
             triggers,
-            cli_config: self.cli_config.clone(),
+            source_clone_folder: self.source_clone_folder.clone(),
         })
     }
 }
@@ -228,15 +227,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        cli::CliConfig,
-        resources::{
-            action::{Action, ClusterAction},
-            git_repo::{ClusterGitRepo, GitRepo},
-            trigger::{self, WebhookTrigger},
-        },
+    use crate::resources::{
+        action::{Action, ClusterAction},
+        git_repo::{ClusterGitRepo, GitRepo},
+        trigger::{self, WebhookTrigger},
     };
-    use clap::Parser;
     use k8s_openapi::api::core::v1::Namespace;
     use kube::{
         api::{Api, DeleteParams, PostParams},
@@ -244,7 +239,6 @@ mod tests {
     };
     use schemars::JsonSchema;
     use serde::Deserialize;
-    use std::ffi::OsString;
     use tokio::sync::OnceCell;
 
     static TRACING_INITIALIZED: OnceCell<()> = OnceCell::const_new();
@@ -285,7 +279,7 @@ mod tests {
     /// Create the simplest test context: default client, scheduler and state
     async fn get_test_context() -> Arc<Context> {
         let client = Client::try_default().await.unwrap();
-        let state = State::new(Arc::new(CliConfig::parse_from(None::<OsString>.iter())));
+        let state = State::new(Arc::new(String::from("/tmp/test_git_events_runner_context")));
         let scheduler = Arc::new(RwLock::new(Scheduler::default()));
         let triggers = Arc::new(RwLock::new(TriggersState::default()));
         let ctx = state.to_context(client, scheduler, triggers);

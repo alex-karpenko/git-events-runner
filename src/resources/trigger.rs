@@ -373,7 +373,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                         ctx.client.clone(),
                         schedule,
                         TriggerTaskSources::All,
-                        ctx.cli_config.source_clone_folder.clone(),
+                        ctx.source_clone_folder.to_string(),
                     );
                     let task_id = scheduler.add(task).await?;
                     let tasks = &mut triggers.tasks;
