@@ -242,6 +242,9 @@ mod tests {
     use tokio::sync::OnceCell;
 
     static TRACING_INITIALIZED: OnceCell<()> = OnceCell::const_new();
+    static NAMESPACE_INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    const NAMESPACE: &str = "reconcile-trigger-should-update-status";
 
     #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
     #[cfg_attr(test, derive(Default))]
@@ -259,6 +262,9 @@ mod tests {
 
     async fn init() {
         TRACING_INITIALIZED.get_or_init(|| async { init_tracing().await }).await;
+        NAMESPACE_INITIALIZED
+            .get_or_init(|| async { create_namespace().await })
+            .await;
     }
 
     async fn init_tracing() {
@@ -266,12 +272,13 @@ mod tests {
     }
 
     /// Unattended namespace creation
-    async fn create_namespace(client: Client, ns: &str) {
+    async fn create_namespace() {
+        let client = Client::try_default().await.unwrap();
         let api = Api::<Namespace>::all(client);
         let pp = PostParams::default();
 
         let mut data = Namespace::default();
-        data.meta_mut().name = Some(String::from(ns));
+        data.meta_mut().name = Some(String::from(NAMESPACE));
 
         api.create(&pp, &data).await.unwrap_or_default();
     }
@@ -282,9 +289,8 @@ mod tests {
         let state = State::new(Arc::new(String::from("/tmp/test_git_events_runner_context")));
         let scheduler = Arc::new(RwLock::new(Scheduler::default()));
         let triggers = Arc::new(RwLock::new(TriggersState::default()));
-        let ctx = state.to_context(client, scheduler, triggers);
 
-        ctx
+        state.to_context(client, scheduler, triggers)
     }
 
     #[tokio::test]
@@ -293,18 +299,15 @@ mod tests {
         init().await;
 
         let ctx = get_test_context().await;
-        let ns = "reconcile-trigger-should-update-status";
         let trigger_i_name = "good-interval-trigger";
         let trigger_c_name = "good-cron-trigger";
 
-        create_namespace(ctx.client.clone(), &ns).await;
-
-        let api = Api::<ScheduleTrigger>::namespaced(ctx.client.clone(), &ns);
+        let api = Api::<ScheduleTrigger>::namespaced(ctx.client.clone(), NAMESPACE);
         let pp = PostParams::default();
         let dp = DeleteParams::default();
 
         // Create good trigger with interval schedule
-        let trigger_i = ScheduleTrigger::test_with_interval(trigger_i_name, &ns, "30s");
+        let trigger_i = ScheduleTrigger::test_trigger_with_interval(trigger_i_name, NAMESPACE, "30s");
         let trigger_i = api.create(&pp, &trigger_i).await.unwrap();
         let _ = trigger_i.reconcile(ctx.clone()).await.unwrap();
         // Assert status
@@ -315,7 +318,7 @@ mod tests {
         assert_eq!(ctx.triggers.read().await.tasks.len(), 1);
 
         // Create good trigger with cron schedule
-        let trigger_c = ScheduleTrigger::test_with_cron(trigger_c_name, &ns, "0 0 * * *");
+        let trigger_c = ScheduleTrigger::test_trigger_with_cron(trigger_c_name, NAMESPACE, "0 0 * * *");
         let trigger_c = api.create(&pp, &trigger_c).await.unwrap();
         let _ = trigger_c.reconcile(ctx.clone()).await.unwrap();
         // Assert status

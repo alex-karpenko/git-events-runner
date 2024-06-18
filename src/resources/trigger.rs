@@ -354,7 +354,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 status
                     .last_run
                     .as_ref()
-                    .filter(|lr| **lr != String::from(NEVER_LAST_RUN_STR))
+                    .filter(|lr| (**lr).eq(NEVER_LAST_RUN_STR))
                     .map(|last_run| {
                         DateTime::parse_from_rfc3339(last_run)
                             .expect("Incorrect time format in LastRun field, looks like a BUG.")
@@ -542,10 +542,6 @@ where
     ) -> impl Future<Output = Result<()>> + Send {
         async move {
             let name = self.name_any();
-
-            #[cfg(test)]
-            let trigger = Arc::new(self);
-            #[cfg(not(test))]
             let trigger = Self::get(&name, Some(&self.namespace().unwrap()))?;
 
             let new_status = if let Some(status) = trigger.trigger_status() {
@@ -913,7 +909,7 @@ mod tests {
     use super::*;
 
     impl ScheduleTrigger {
-        pub fn test_with_interval(name: &str, ns: &str, interval: &str) -> ScheduleTrigger {
+        pub fn test_trigger_with_interval(name: &str, ns: &str, interval: &str) -> ScheduleTrigger {
             let mut trigger = ScheduleTrigger::new(
                 name,
                 ScheduleTriggerSpec {
@@ -927,7 +923,7 @@ mod tests {
             trigger
         }
 
-        pub fn test_with_cron(name: &str, ns: &str, cron: &str) -> ScheduleTrigger {
+        pub fn test_trigger_with_cron(name: &str, ns: &str, cron: &str) -> ScheduleTrigger {
             let mut trigger = ScheduleTrigger::new(
                 name,
                 ScheduleTriggerSpec {
@@ -943,13 +939,56 @@ mod tests {
     }
 
     impl WebhookTrigger {
-        pub fn test_webhook(name: &str, ns: &str) -> WebhookTrigger {
+        pub fn test_anonymous_webhook(
+            name: &str,
+            ns: &str,
+            sources: Vec<String>,
+            multi_source: bool,
+        ) -> WebhookTrigger {
             let mut trigger = WebhookTrigger::new(
                 name,
                 WebhookTriggerSpec {
-                    sources: TriggerSources::default(),
+                    sources: TriggerSources {
+                        kind: Default::default(),
+                        names: sources,
+                        watch_on: Default::default(),
+                    },
                     action: TriggerAction::default(),
-                    webhook: TriggerWebhook::default(),
+                    webhook: TriggerWebhook {
+                        multi_source,
+                        auth_config: None,
+                    },
+                },
+            );
+            trigger.meta_mut().namespace = Some(String::from(ns));
+
+            trigger
+        }
+
+        pub fn test_secure_webhook(
+            name: &str,
+            ns: &str,
+            sources: Vec<String>,
+            multi_source: bool,
+            secret: &str,
+        ) -> WebhookTrigger {
+            let mut trigger = WebhookTrigger::new(
+                name,
+                WebhookTriggerSpec {
+                    sources: TriggerSources {
+                        kind: Default::default(),
+                        names: sources,
+                        watch_on: Default::default(),
+                    },
+                    action: TriggerAction::default(),
+                    webhook: TriggerWebhook {
+                        multi_source,
+                        auth_config: Some(TriggerWebhookAuthConfig {
+                            secret_ref: SecretRef { name: secret.into() },
+                            key: "token".into(),
+                            header: Some("x-auth-token".into()),
+                        }),
+                    },
                 },
             );
             trigger.meta_mut().namespace = Some(String::from(ns));

@@ -39,10 +39,16 @@ static CONFIG_TX_CHANNEL: OnceLock<Sender<Arc<RuntimeConfig>>> = OnceLock::new()
 ///
 impl RuntimeConfig {
     /// Returns shared ref to current config
+    #[cfg(not(test))]
     pub fn get() -> Arc<RuntimeConfig> {
         let rx = CONFIG_TX_CHANNEL.get().unwrap().subscribe();
         let config = rx.borrow();
         config.clone()
+    }
+
+    #[cfg(test)]
+    pub fn get() -> Arc<RuntimeConfig> {
+        Arc::new(RuntimeConfig::default())
     }
 
     /// Returns watch receivers

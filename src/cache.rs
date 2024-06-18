@@ -127,6 +127,34 @@ impl ApiCache for GitRepo {
     fn set_cache_store(store: Store<Self>) {
         API_CACHE_STORE.git_repo.set(store).unwrap();
     }
+
+    #[cfg(test)]
+    fn get(name: &str, namespace: Option<&str>) -> Result<Arc<Self>>
+    where
+        Self: Sized + Clone,
+    {
+        use std::thread::spawn;
+        use tokio::runtime::Runtime;
+
+        spawn({
+            let name = String::from(name);
+            let namespace = namespace.map(String::from);
+
+            move || {
+                let rt = Runtime::new()?;
+                rt.block_on(async move {
+                    let client = Client::try_default().await.unwrap();
+                    let api = Api::<Self>::namespaced(client, &namespace.unwrap());
+                    match api.get(&name).await {
+                        Ok(resource) => Ok(Arc::new(resource)),
+                        Err(e) => Err(e.into()),
+                    }
+                })
+            }
+        })
+        .join()
+        .unwrap()
+    }
 }
 
 impl ApiCache for ClusterGitRepo {
@@ -167,6 +195,34 @@ impl ApiCache for WebhookTrigger {
     fn set_cache_store(store: Store<Self>) {
         API_CACHE_STORE.webhook_trigger.set(store).unwrap();
     }
+
+    #[cfg(test)]
+    fn get(name: &str, namespace: Option<&str>) -> Result<Arc<Self>>
+    where
+        Self: Sized + Clone,
+    {
+        use std::thread::spawn;
+        use tokio::runtime::Runtime;
+
+        spawn({
+            let name = String::from(name);
+            let namespace = namespace.map(String::from);
+
+            move || {
+                let rt = Runtime::new()?;
+                rt.block_on(async move {
+                    let client = Client::try_default().await.unwrap();
+                    let api = Api::<Self>::namespaced(client, &namespace.unwrap());
+                    match api.get(&name).await {
+                        Ok(resource) => Ok(Arc::new(resource)),
+                        Err(e) => Err(e.into()),
+                    }
+                })
+            }
+        })
+        .join()
+        .unwrap()
+    }
 }
 
 impl ApiCache for ScheduleTrigger {
@@ -176,6 +232,34 @@ impl ApiCache for ScheduleTrigger {
 
     fn set_cache_store(store: Store<Self>) {
         API_CACHE_STORE.schedule_trigger.set(store).unwrap();
+    }
+
+    #[cfg(test)]
+    fn get(name: &str, namespace: Option<&str>) -> Result<Arc<Self>>
+    where
+        Self: Sized + Clone,
+    {
+        use std::thread::spawn;
+        use tokio::runtime::Runtime;
+
+        spawn({
+            let name = String::from(name);
+            let namespace = namespace.map(String::from);
+
+            move || {
+                let rt = Runtime::new()?;
+                rt.block_on(async move {
+                    let client = Client::try_default().await.unwrap();
+                    let api = Api::<Self>::namespaced(client, &namespace.unwrap());
+                    match api.get(&name).await {
+                        Ok(resource) => Ok(Arc::new(resource)),
+                        Err(e) => Err(e.into()),
+                    }
+                })
+            }
+        })
+        .join()
+        .unwrap()
     }
 }
 
@@ -202,12 +286,21 @@ impl Debug for SecretsCache {
 }
 
 impl SecretsCache {
+    #[cfg(not(test))]
     pub async fn get(namespace: &str, secret_name: &str, key: &str) -> Result<String, Error> {
         SECRET_CACHE
             .get()
             .expect("unable to get shared secret cache instance, looks like a BUG!")
             .get_key_value(namespace, secret_name, key)
             .await
+    }
+
+    #[cfg(test)]
+    pub async fn get(namespace: &str, secret_name: &str, key: &str) -> Result<String, Error> {
+        let client = Client::try_default().await.unwrap();
+        let (_, secret_value) = Self::query_secrets_api(client, namespace, secret_name, key).await?;
+
+        Ok(secret_value)
     }
 
     /// Creates shared static instance of the cache
@@ -252,7 +345,28 @@ impl SecretsCache {
         // If it's not cached yet or already expired - retrieve secret from API and store to cache
         let mut cache = self.cache.write().await;
         trace!(secret = %hash_key, %key, "try to retrieve and save to the cache");
-        let secrets_api: Api<Secret> = Api::namespaced(self.client.clone(), namespace);
+        let (secret_data_raw, secret_value) =
+            Self::query_secrets_api(self.client.clone(), namespace, secret_name, key).await?;
+
+        let cache_data = SecretValue {
+            data: secret_data_raw,
+            expires_at: SystemTime::now()
+                .checked_add(self.expiration_timeout)
+                .expect("looks like a BUG!"),
+        };
+        trace!(secret = %hash_key, %key, "save object to the cache");
+        cache.insert(hash_key, cache_data);
+
+        Ok(secret_value)
+    }
+
+    pub async fn query_secrets_api(
+        client: Client,
+        namespace: &str,
+        secret_name: &str,
+        key: &str,
+    ) -> Result<(BTreeMap<String, ByteString>, String), Error> {
+        let secrets_api: Api<Secret> = Api::namespaced(client, namespace);
         let secret = secrets_api.get(secret_name).await?;
 
         let secret_data_raw = secret
@@ -269,15 +383,6 @@ impl SecretsCache {
             ))
         })?;
 
-        let cache_data = SecretValue {
-            data: secret_data_raw,
-            expires_at: SystemTime::now()
-                .checked_add(self.expiration_timeout)
-                .expect("looks like a BUG!"),
-        };
-        trace!(secret = %hash_key, %key, "save object to the cache");
-        cache.insert(hash_key, cache_data);
-
-        Ok(secret_value)
+        Ok((secret_data_raw, secret_value))
     }
 }
