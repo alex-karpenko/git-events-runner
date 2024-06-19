@@ -402,7 +402,6 @@ mod tests {
     use kube::{Api, Resource};
     use tokio::sync::OnceCell;
 
-    // static TRACING_INITIALIZED: OnceCell<()> = OnceCell::const_new();
     static INITIALIZED: OnceCell<()> = OnceCell::const_new();
 
     const NAMESPACE: &str = "web-webhook-triggers";
@@ -410,8 +409,6 @@ mod tests {
     const SECRET_TOKEN: &str = "0123456789";
 
     async fn init() -> WebState {
-        // TRACING_INITIALIZED.get_or_init(|| async { init_tracing().await }).await;
-
         INITIALIZED
             .get_or_init(|| async {
                 let client = Client::try_default().await.unwrap();
@@ -422,10 +419,6 @@ mod tests {
 
         get_test_web_state().await
     }
-
-    // async fn init_tracing() {
-    //     tracing_subscriber::fmt::init();
-    // }
 
     /// Unattended namespace creation
     async fn create_namespace(client: Client) {

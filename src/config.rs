@@ -39,20 +39,32 @@ static CONFIG_TX_CHANNEL: OnceLock<Sender<Arc<RuntimeConfig>>> = OnceLock::new()
 ///
 impl RuntimeConfig {
     /// Returns shared ref to current config
-    #[cfg(not(test))]
-    pub fn get() -> Arc<RuntimeConfig> {
-        let rx = CONFIG_TX_CHANNEL.get().unwrap().subscribe();
+    pub(crate) fn get() -> Arc<RuntimeConfig> {
+        #[cfg(not(test))]
+        {
+            Self::get_from_watch_channel()
+        }
+
+        #[cfg(test)]
+        {
+            Self::get_test_defaults()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_test_defaults() -> Arc<RuntimeConfig> {
+        Arc::new(RuntimeConfig::default())
+    }
+
+    /// Return config stored into sync channel
+    fn get_from_watch_channel() -> Arc<RuntimeConfig> {
+        let rx = Self::channel();
         let config = rx.borrow();
         config.clone()
     }
 
-    #[cfg(test)]
-    pub fn get() -> Arc<RuntimeConfig> {
-        Arc::new(RuntimeConfig::default())
-    }
-
     /// Returns watch receivers
-    pub fn channel() -> watch::Receiver<Arc<RuntimeConfig>> {
+    pub(crate) fn channel() -> watch::Receiver<Arc<RuntimeConfig>> {
         CONFIG_TX_CHANNEL.get().unwrap().subscribe()
     }
 
@@ -61,7 +73,7 @@ impl RuntimeConfig {
         let (tx, _) = watch::channel(Arc::new(RuntimeConfig::default()));
         let _ = CONFIG_TX_CHANNEL.set(tx);
 
-        let cm_api: Api<ConfigMap> = Api::default_namespaced(client.clone());
+        let cm_api: Api<ConfigMap> = Api::default_namespaced(client);
         // Load initial config content from ConfigMap
         let initial_config = match cm_api.get(cm_name.as_str()).await {
             Ok(cm) => {
@@ -170,14 +182,14 @@ impl TryFrom<ConfigMap> for RuntimeConfig {
 // Config watcher/reload just deserializes CM's data field into `RuntimeConfig` instance.
 //
 // ATTENTION: Don't forget to reflect any changes into Helm values.yaml, runtimeConfig section
-#[derive(Clone, Deserialize, Serialize, Debug, Default)]
+#[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct RuntimeConfig {
     pub action: ActionConfig,
     pub trigger: TriggerConfig,
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionConfig {
     pub max_running_jobs: usize,
@@ -204,7 +216,7 @@ impl Default for ActionConfig {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionWorkdirConfig {
     pub mount_path: String,
@@ -220,14 +232,14 @@ impl Default for ActionWorkdirConfig {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug, Default)]
+#[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersConfig {
     pub cloner: ActionContainersClonerConfig,
     pub worker: ActionContainersWorkerConfig,
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersClonerConfig {
     pub name: String,
@@ -246,7 +258,7 @@ impl Default for ActionContainersClonerConfig {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersWorkerConfig {
     pub name: String,
@@ -267,13 +279,13 @@ impl Default for ActionContainersWorkerConfig {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug, Default)]
+#[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct TriggerConfig {
     pub webhook: TriggerWebhookConfig,
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct TriggerWebhookConfig {
     pub default_auth_header: String,
@@ -289,13 +301,75 @@ impl Default for TriggerWebhookConfig {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_ron_snapshot;
+    use std::{collections::BTreeMap, time::Duration};
 
     use super::*;
+    use insta::assert_ron_snapshot;
+    use kube::api::{DeleteParams, ObjectMeta, PostParams};
+
+    const TEST_CM_NAME: &str = "test-runtime-config";
 
     #[test]
     fn yaml_config_consistency() {
         let config_yaml_string = RuntimeConfig::default_as_yaml_string(YamlConfigOpts::HelmTemplate).unwrap();
         assert_ron_snapshot!(config_yaml_string);
+    }
+
+    #[tokio::test]
+    async fn runtime_config() {
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<ConfigMap>::default_namespaced(client.clone());
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Ensure ConfigMap isn't present
+        let _ = api.delete(TEST_CM_NAME, &dp).await;
+
+        // Run config watcher
+        let watcher = tokio::spawn(RuntimeConfig::init_and_watch(client.clone(), TEST_CM_NAME.into()));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Assert default config without ConfigMap
+        let current_cfg = RuntimeConfig::get_from_watch_channel();
+        let default_cfg = RuntimeConfig::get_test_defaults();
+        assert_eq!(current_cfg, default_cfg);
+
+        // Create ConfigMap with redefined value
+        let mut data = BTreeMap::<String, String>::new();
+        let value = RuntimeConfig {
+            action: ActionConfig {
+                default_service_account: Some(String::from("some-non-default-value-here")),
+                ..Default::default()
+            },
+            trigger: Default::default(),
+        };
+
+        data.insert(CONFIG_MAP_DATA_NAME.into(), serde_yaml::to_string(&value).unwrap());
+        let new_config = ConfigMap {
+            metadata: ObjectMeta {
+                name: Some(String::from(TEST_CM_NAME)),
+                ..Default::default()
+            },
+            data: Some(data),
+            ..Default::default()
+        };
+        api.create(&pp, &new_config).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let current_cfg = RuntimeConfig::get_from_watch_channel();
+        // Assert CM was reloaded and redefined value was changed
+        assert_eq!(
+            current_cfg.action.default_service_account,
+            Some(String::from("some-non-default-value-here"))
+        );
+
+        // Assert other values still reflects defaults
+        assert_eq!(current_cfg.trigger, default_cfg.trigger);
+        assert_eq!(current_cfg.action.containers, default_cfg.action.containers);
+        assert_eq!(current_cfg.action.workdir, default_cfg.action.workdir);
+
+        // Clean up
+        watcher.abort();
+        let _ = api.delete(TEST_CM_NAME, &dp).await;
     }
 }
