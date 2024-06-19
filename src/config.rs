@@ -316,6 +316,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "uses k8s current-context"]
     async fn runtime_config() {
         let client = Client::try_default().await.unwrap();
         let api = Api::<ConfigMap>::default_namespaced(client.clone());
