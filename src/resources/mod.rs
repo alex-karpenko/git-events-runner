@@ -31,3 +31,21 @@ pub(crate) fn random_string(len: usize) -> String {
         .collect();
     rand
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn ensure_1000_4ch_random_strings() {
+        const SET_SIZE: usize = 1000;
+
+        let mut control_set = HashSet::new();
+        for _ in 0..SET_SIZE {
+            control_set.insert(random_string(4));
+        }
+
+        assert_eq!(control_set.len(), SET_SIZE);
+    }
+}
