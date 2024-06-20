@@ -1,0 +1,64 @@
+---
+source: src/resources/action.rs
+expression: job_spec
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    git-events-runner.rs/action-kind: ClusterAction
+    git-events-runner.rs/action-name: default-test-action
+    git-events-runner.rs/source-kind: ClusterGitRepo
+    git-events-runner.rs/source-name: action-test-source
+  name: default-test-action-YYYYMMDD-HHMMSS-xx
+  ownerReferences:
+    - apiVersion: ""
+      kind: ""
+      name: ""
+      uid: ""
+spec:
+  activeDeadlineSeconds: 3600
+  backoffLimit: 0
+  parallelism: 1
+  template:
+    spec:
+      containers:
+        - env:
+            - name: ACTION_JOB_WORKDIR
+              value: /action_workdir
+            - name: ACTION_JOB_TRIGGER_SOURCE_KIND
+              value: ClusterGitRepo
+            - name: ACTION_JOB_TRIGGER_SOURCE_NAME
+              value: action-test-source
+            - name: ACTION_JOB_TRIGGER_SOURCE_COMMIT
+              value: e03087d8f722a423bc13fd31542fb9545da784dd
+            - name: ACTION_JOB_TRIGGER_SOURCE_REF_TYPE
+              value: tag
+            - name: ACTION_JOB_TRIGGER_SOURCE_REF_NAME
+              value: tag
+          image: "ghcr.io/alex-karpenko/git-events-runner/action-worker:v0.2.0"
+          name: action-worker
+          volumeMounts:
+            - mountPath: /action_workdir
+              name: action-workdir
+          workingDir: /action_workdir
+      initContainers:
+        - args:
+            - "--kind"
+            - ClusterGitRepo
+            - "--source"
+            - action-test-source
+            - "--destination"
+            - /action_workdir
+            - "--commit"
+            - e03087d8f722a423bc13fd31542fb9545da784dd
+          image: "ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:v0.2.0"
+          name: action-cloner
+          volumeMounts:
+            - mountPath: /action_workdir
+              name: action-workdir
+      restartPolicy: Never
+      volumes:
+        - emptyDir: {}
+          name: action-workdir
+  ttlSecondsAfterFinished: 7200

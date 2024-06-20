@@ -429,9 +429,15 @@ impl ActionInternals for ClusterAction {
     }
 
     /// returns reference to action to set as an owner of the Job
+    #[cfg(not(test))]
     fn get_owner_reference(&self) -> OwnerReference {
         self.controller_owner_ref(&())
             .expect("unable to get owner reference, looks like a BUG!")
+    }
+
+    #[cfg(test)]
+    fn get_owner_reference(&self) -> OwnerReference {
+        OwnerReference::default()
     }
 }
 
@@ -444,9 +450,15 @@ impl ActionInternals for Action {
         self.spec.source_override.clone()
     }
 
+    #[cfg(not(test))]
     fn get_owner_reference(&self) -> OwnerReference {
         self.controller_owner_ref(&())
             .expect("unable to get owner reference, looks like a BUG!")
+    }
+
+    #[cfg(test)]
+    fn get_owner_reference(&self) -> OwnerReference {
+        OwnerReference::default()
     }
 }
 
@@ -460,5 +472,354 @@ fn format_action_job_env_var(name: &str, value: &str) -> EnvVar {
         ),
         value: Some(value.to_owned()),
         value_from: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_yaml_snapshot;
+    use k8s_openapi::{
+        api::core::v1::{Namespace, PodAffinityTerm, PodAntiAffinity},
+        apimachinery::pkg::apis::meta::v1::{LabelSelector, LabelSelectorRequirement},
+    };
+    use kube::{
+        api::{DeleteParams, PostParams},
+        Api, Client,
+    };
+
+    use super::*;
+
+    const TEST_DEFAULT_ACTION_NAME: &str = "default-test-action";
+    const TEST_CUSTOMIZED_ACTION_NAME: &str = "customized-test-action";
+    const TEST_ACTION_NAMESPACE: &str = "actions-test";
+    const TEST_SOURCE_NAME: &str = "action-test-source";
+    const TEST_SOURCE_COMMIT: &str = "e03087d8f722a423bc13fd31542fb9545da784dd";
+
+    fn default_action(name: impl Into<String>, namespace: impl Into<String>) -> Action {
+        Action {
+            metadata: ObjectMeta {
+                name: Some(name.into()),
+                namespace: Some(namespace.into()),
+                ..Default::default()
+            },
+            spec: ActionSpec::default(),
+        }
+    }
+
+    fn customized_action_job_spec() -> ActionJob {
+        ActionJob {
+            workdir: Some("/custom-workdir".into()),
+            cloner_image: Some("custom-cloner-image:latest".into()),
+            action_image: Some("custom-action-image:latest".into()),
+            args: Some(vec!["arg1".into(), "arg2".into()]),
+            command: Some(vec!["command1".into(), "command2".into()]),
+            service_account: Some("custom-service-account-name".into()),
+            annotations: Some(BTreeMap::<String, String>::from([
+                ("custom-annotation-key-1".into(), "custom-annotation-value-1".into()),
+                ("custom-annotation-key-2".into(), "custom-annotation-value-2".into()),
+            ])),
+            labels: Some(BTreeMap::<String, String>::from([
+                ("custom-label-key-1".into(), "custom-label-value-1".into()),
+                ("custom-label-key-2".into(), "custom-label-value-2".into()),
+            ])),
+            tolerations: Some(vec![
+                Toleration {
+                    effect: Some("NoSchedule".into()),
+                    key: Some("toleration-key-1".into()),
+                    operator: Some("In".into()),
+                    toleration_seconds: Some(234),
+                    value: Some("toleration-value-1".into()),
+                },
+                Toleration {
+                    effect: Some("NoSchedule".into()),
+                    key: Some("toleration-key-2".into()),
+                    operator: Some("In".into()),
+                    toleration_seconds: Some(345),
+                    value: Some("toleration-value-2".into()),
+                },
+            ]),
+            affinity: Some(Affinity {
+                node_affinity: None,
+                pod_affinity: None,
+                pod_anti_affinity: Some(PodAntiAffinity {
+                    preferred_during_scheduling_ignored_during_execution: None,
+                    required_during_scheduling_ignored_during_execution: Some(vec![PodAffinityTerm {
+                        label_selector: Some(LabelSelector {
+                            match_expressions: Some(vec![LabelSelectorRequirement {
+                                key: "selector-key".into(),
+                                operator: "In".into(),
+                                values: Some(vec!["selector-value-1".into(), "selector-value-2".into()]),
+                            }]),
+                            match_labels: Some(BTreeMap::<String, String>::from([
+                                ("custom-label-key-3".into(), "custom-label-value-3".into()),
+                                ("custom-label-key-4".into(), "custom-label-value-4".into()),
+                            ])),
+                        }),
+                        namespace_selector: None,
+                        namespaces: Some(vec!["ns1".into(), "ns2".into()]),
+                        topology_key: "kubernetes.io/hostname".into(),
+                    }]),
+                }),
+            }),
+            node_selector: Some(BTreeMap::<String, String>::from([
+                ("custom-node-label-key-1".into(), "custom-node-label-value-1".into()),
+                ("custom-node-label-key-2".into(), "custom-node-label-value-2".into()),
+            ])),
+            ttl_seconds_after_finished: Some(231),
+            active_deadline_seconds: Some(321),
+            job_waiting_timeout_seconds: Some(123),
+            enable_cloner_debug: true,
+            preserve_git_folder: true,
+        }
+    }
+
+    fn customized_action(name: impl Into<String>, namespace: impl Into<String>) -> Action {
+        Action {
+            metadata: ObjectMeta {
+                name: Some(name.into()),
+                namespace: Some(namespace.into()),
+                ..Default::default()
+            },
+            spec: ActionSpec {
+                source_override: Some(ActionSourceOverride {
+                    kind: TriggerSourceKind::GitRepo,
+                    name: "git-repo-override".into(),
+                    reference: TriggerGitRepoReference::Branch("overridden-branch".into()),
+                }),
+                action_job: customized_action_job_spec(),
+            },
+        }
+    }
+
+    fn default_cluster_action(name: impl Into<String>) -> ClusterAction {
+        ClusterAction {
+            metadata: ObjectMeta {
+                name: Some(name.into()),
+                ..Default::default()
+            },
+            spec: ClusterActionSpec::default(),
+        }
+    }
+
+    fn customized_cluster_action(name: impl Into<String>) -> ClusterAction {
+        ClusterAction {
+            metadata: ObjectMeta {
+                name: Some(name.into()),
+                ..Default::default()
+            },
+            spec: ClusterActionSpec {
+                source_override: Some(ClusterActionSourceOverride {
+                    kind: TriggerClusterSourceKind::ClusterGitRepo,
+                    name: "git-repo-override".into(),
+                    reference: TriggerGitRepoReference::Branch("overridden-branch".into()),
+                }),
+                action_job: customized_action_job_spec(),
+            },
+        }
+    }
+
+    /// Unattended namespace creation
+    async fn create_namespace() {
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<Namespace>::all(client);
+        let pp = PostParams::default();
+
+        let mut data = Namespace::default();
+        data.meta_mut().name = Some(String::from(TEST_ACTION_NAMESPACE));
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
+
+    #[test]
+    fn correct_env_var_prefix() {
+        let var = format_action_job_env_var("TEST_VAR", "test_value");
+        let prefix = RuntimeConfig::get().action.containers.worker.variables_prefix.clone();
+        assert_eq!(var.name, format!("{prefix}TEST_VAR"));
+        assert_eq!(var.value, Some(String::from("test_value")));
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn default_action_job() {
+        create_namespace().await;
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<Action>::namespaced(client, TEST_ACTION_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create test action
+        let action = default_action(TEST_DEFAULT_ACTION_NAME, TEST_ACTION_NAMESPACE);
+        api.create(&pp, &action).await.unwrap();
+
+        for reference in [
+            TriggerGitRepoReference::Branch("main".into()),
+            TriggerGitRepoReference::Tag("tag".into()),
+            TriggerGitRepoReference::Commit(TEST_SOURCE_COMMIT.into()),
+        ] {
+            // Assert job: GitRepo
+            let job_spec = action
+                .create_job_spec(
+                    &TriggerSourceKind::GitRepo,
+                    TEST_SOURCE_NAME,
+                    TEST_SOURCE_COMMIT,
+                    &reference,
+                    TEST_ACTION_NAMESPACE,
+                )
+                .unwrap();
+            assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_DEFAULT_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
+
+            // Assert job: ClusterGitRepo
+            let job_spec = action
+                .create_job_spec(
+                    &TriggerSourceKind::ClusterGitRepo,
+                    TEST_SOURCE_NAME,
+                    TEST_SOURCE_COMMIT,
+                    &reference,
+                    TEST_ACTION_NAMESPACE,
+                )
+                .unwrap();
+            assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_DEFAULT_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
+        }
+
+        // Clean up
+        let _ = api.delete(TEST_DEFAULT_ACTION_NAME, &dp).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn customized_action_job() {
+        create_namespace().await;
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<Action>::namespaced(client, TEST_ACTION_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create test action
+        let action = customized_action(TEST_CUSTOMIZED_ACTION_NAME, TEST_ACTION_NAMESPACE);
+        api.create(&pp, &action).await.unwrap();
+
+        for reference in [
+            TriggerGitRepoReference::Branch("main".into()),
+            TriggerGitRepoReference::Tag("tag".into()),
+            TriggerGitRepoReference::Commit(TEST_SOURCE_COMMIT.into()),
+        ] {
+            // Assert job: GitRepo
+            let job_spec = action
+                .create_job_spec(
+                    &TriggerSourceKind::GitRepo,
+                    TEST_SOURCE_NAME,
+                    TEST_SOURCE_COMMIT,
+                    &reference,
+                    TEST_ACTION_NAMESPACE,
+                )
+                .unwrap();
+            assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_CUSTOMIZED_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
+
+            // Assert job: ClusterGitRepo
+            let job_spec = action
+                .create_job_spec(
+                    &TriggerSourceKind::ClusterGitRepo,
+                    TEST_SOURCE_NAME,
+                    TEST_SOURCE_COMMIT,
+                    &reference,
+                    TEST_ACTION_NAMESPACE,
+                )
+                .unwrap();
+            assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_CUSTOMIZED_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
+        }
+
+        // Clean up
+        let _ = api.delete(TEST_CUSTOMIZED_ACTION_NAME, &dp).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn default_cluster_action_job() {
+        create_namespace().await;
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<ClusterAction>::all(client);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create test action
+        let action = default_cluster_action(TEST_DEFAULT_ACTION_NAME);
+        api.create(&pp, &action).await.unwrap();
+
+        for reference in [
+            TriggerGitRepoReference::Branch("main".into()),
+            TriggerGitRepoReference::Tag("tag".into()),
+            TriggerGitRepoReference::Commit(TEST_SOURCE_COMMIT.into()),
+        ] {
+            // Assert job: GitRepo
+            let job_spec = action
+                .create_job_spec(
+                    &TriggerSourceKind::GitRepo,
+                    TEST_SOURCE_NAME,
+                    TEST_SOURCE_COMMIT,
+                    &reference,
+                    TEST_ACTION_NAMESPACE,
+                )
+                .unwrap();
+            assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_DEFAULT_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
+
+            // Assert job: ClusterGitRepo
+            let job_spec = action
+                .create_job_spec(
+                    &TriggerSourceKind::ClusterGitRepo,
+                    TEST_SOURCE_NAME,
+                    TEST_SOURCE_COMMIT,
+                    &reference,
+                    TEST_ACTION_NAMESPACE,
+                )
+                .unwrap();
+            assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_DEFAULT_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
+        }
+        // Clean up
+        let _ = api.delete(TEST_DEFAULT_ACTION_NAME, &dp).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn customized_cluster_action_job() {
+        create_namespace().await;
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<ClusterAction>::all(client);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create test action
+        let action = customized_cluster_action(TEST_CUSTOMIZED_ACTION_NAME);
+        api.create(&pp, &action).await.unwrap();
+
+        for reference in [
+            TriggerGitRepoReference::Branch("main".into()),
+            TriggerGitRepoReference::Tag("tag".into()),
+            TriggerGitRepoReference::Commit(TEST_SOURCE_COMMIT.into()),
+        ] {
+            // Assert job: GitRepo
+            let job_spec = action
+                .create_job_spec(
+                    &TriggerSourceKind::GitRepo,
+                    TEST_SOURCE_NAME,
+                    TEST_SOURCE_COMMIT,
+                    &reference,
+                    TEST_ACTION_NAMESPACE,
+                )
+                .unwrap();
+            assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_CUSTOMIZED_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
+
+            // Assert job: ClusterGitRepo
+            let job_spec = action
+                .create_job_spec(
+                    &TriggerSourceKind::ClusterGitRepo,
+                    TEST_SOURCE_NAME,
+                    TEST_SOURCE_COMMIT,
+                    &reference,
+                    TEST_ACTION_NAMESPACE,
+                )
+                .unwrap();
+            assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_CUSTOMIZED_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
+        }
+        // Clean up
+        let _ = api.delete(TEST_CUSTOMIZED_ACTION_NAME, &dp).await.unwrap();
     }
 }
