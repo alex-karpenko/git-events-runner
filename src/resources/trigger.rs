@@ -866,17 +866,21 @@ pub fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference)
 }
 
 /// Calculates SHA256 hash of the file
-async fn get_file_hash(path: &Path) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
+async fn calc_file_hash(path: impl Into<&Path>) -> Result<Vec<u8>> {
     let mut buf: Vec<u8> = Vec::new();
 
-    File::open(&path)
+    File::open(&path.into())
         .await
         .map_err(Error::TriggerFileAccessError)?
         .read_to_end(&mut buf)
         .await
         .map_err(Error::TriggerFileAccessError)?;
 
+    calc_buffer_hash(&buf)
+}
+
+fn calc_buffer_hash(buf: &Vec<u8>) -> Result<Vec<u8>> {
+    let mut hasher = Sha256::new();
     let mut buf = buf.as_slice();
     io::copy(&mut buf, &mut hasher).map_err(Error::TriggerFileAccessError)?;
     let hash = hasher.finalize().to_vec();
@@ -885,9 +889,9 @@ async fn get_file_hash(path: &Path) -> Result<Vec<u8>> {
 }
 
 /// Calculates SHA256 hash of files selected by glob
-async fn get_file_glob_hash(folder: &String, glob: &[String]) -> Result<Vec<u8>> {
+async fn get_file_glob_hash(folder: impl Into<&String>, glob: &[String]) -> Result<Vec<u8>> {
     let mut hasher = Sha256::new();
-    let glob = GlobWalkerBuilder::from_patterns(folder, glob)
+    let glob = GlobWalkerBuilder::from_patterns(folder.into(), glob)
         .file_type(FileType::FILE)
         .sort_by(|p1, p2| p1.path().cmp(p2.path()))
         .build()?;
@@ -896,7 +900,7 @@ async fn get_file_glob_hash(folder: &String, glob: &[String]) -> Result<Vec<u8>>
         let file_name = file_name.map_err(|e| Error::TriggerDirWalkError(e.to_string()))?;
         let file_path = file_name.path();
 
-        let hash = get_file_hash(file_path).await?;
+        let hash = calc_file_hash(file_path).await?;
         hasher.update(hash);
     }
 
@@ -909,6 +913,8 @@ mod tests {
     use insta::assert_yaml_snapshot;
     use k8s_openapi::api::core::v1::Namespace;
     use kube::api::{DeleteParams, PostParams};
+    use tempdir::TempDir;
+    use tokio::io::AsyncWriteExt;
 
     use super::*;
 
@@ -1353,4 +1359,48 @@ mod tests {
         // Clean up
         let _ = api.delete(name, &dp).await;
     }
+
+    const TEST_BUFFER_SIZE: usize = 1024;
+
+    #[tokio::test]
+    async fn file_hasher() {
+        // Create three random files with names:
+        // 00.txt, 01.txt, 02.txt
+        // calculate hash with glob pattern:
+        // *.txt
+        // !0?.txt
+        // 00.txt
+        // *2.txt
+        // verify that we got hashes of 00 and 02 files only
+
+        let mut hasher = Sha256::new();
+        let temp_folder = TempDir::new("file_hasher_test").unwrap();
+
+        for i in 0..3 {
+            let file_name = format!("0{i}.txt");
+            let file_path = temp_folder.path().join(file_name);
+            let mut tmp_file = File::create(file_path).await.unwrap();
+
+            let mut buf: Vec<u8> = random_string(TEST_BUFFER_SIZE).into();
+            tmp_file.write(&mut buf).await.unwrap();
+
+            let hash = calc_buffer_hash(&buf).unwrap();
+            if i != 1 {
+                hasher.update(hash)
+            }
+        }
+
+        let folder: String = temp_folder.into_path().display().to_string();
+        let expected_hash = hasher.finalize().to_vec();
+        let calculated_hash = get_file_glob_hash(
+            &folder,
+            &["*.txt".into(), "!0?.txt".into(), "00.txt".into(), "?2.txt".into()],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(calculated_hash, expected_hash);
+    }
+
+    // CheckedSourceState::is_equal
 }

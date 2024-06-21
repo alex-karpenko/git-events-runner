@@ -1,0 +1,16 @@
+---
+source: src/cli.rs
+expression: cli
+---
+CliConfig {
+    webhooks_port: 8080,
+    utility_port: 3000,
+    webhooks_parallelism: 16,
+    schedule_parallelism: 16,
+    secrets_cache_time: 60,
+    source_clone_folder: "/tmp/git-events-runner",
+    config_map_name: "git-events-runner-config",
+    leader_lease_name: "git-events-runner-leader-lock",
+    leader_lease_duration: 30,
+    leader_lease_grace: 20,
+}
