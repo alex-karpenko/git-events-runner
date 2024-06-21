@@ -906,6 +906,10 @@ async fn get_file_glob_hash(folder: &String, glob: &[String]) -> Result<Vec<u8>>
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_yaml_snapshot;
+    use k8s_openapi::api::core::v1::Namespace;
+    use kube::api::{DeleteParams, PostParams};
+
     use super::*;
 
     impl ScheduleTrigger {
@@ -995,5 +999,358 @@ mod tests {
 
             trigger
         }
+    }
+
+    const TEST_NAMESPACE: &str = "triggers-test";
+
+    /// Unattended namespace creation
+    async fn create_namespace() {
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<Namespace>::all(client);
+        let pp = PostParams::default();
+
+        let mut data = Namespace::default();
+        data.meta_mut().name = Some(String::from(TEST_NAMESPACE));
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn update_trigger_status_state() {
+        create_namespace().await;
+
+        let name = "update-trigger-status-state";
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        let trigger = WebhookTrigger::test_anonymous_webhook(&name, TEST_NAMESPACE, vec![], true);
+        api.create(&pp, &trigger).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_yaml_snapshot!(
+            "update_trigger_status_state-just_created",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger
+            .update_trigger_status(Some(TriggerState::Idle), None, None, &api)
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_state-update_to_Idle",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger.update_trigger_status(None, None, None, &api).await.unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_state-update_w_o_changes",
+            api.get(name).await.unwrap().status()
+        );
+
+        // Clean up
+        let _ = api.delete(name, &dp).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn update_trigger_status_last_run() {
+        create_namespace().await;
+
+        let name = "update-trigger-status-last-run";
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        let trigger = WebhookTrigger::test_anonymous_webhook(&name, TEST_NAMESPACE, vec![], true);
+        api.create(&pp, &trigger).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_yaml_snapshot!(
+            "update_trigger_status_last_run-just_created",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                None,
+                Some(DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z").unwrap().into()),
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_last_run-update_to_some_value",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger.update_trigger_status(None, None, None, &api).await.unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_last_run-update_w_o_changes",
+            api.get(name).await.unwrap().status()
+        );
+
+        // Clean up
+        let _ = api.delete(name, &dp).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn update_trigger_status_sources() {
+        create_namespace().await;
+
+        let name = "update-trigger-status-sources";
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        let trigger = WebhookTrigger::test_anonymous_webhook(
+            &name,
+            TEST_NAMESPACE,
+            vec!["source-1".into(), "source-2".into(), "source-3".into()],
+            true,
+        );
+        api.create(&pp, &trigger).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-just_created",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-1".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("1234567890".into()),
+                        file_hash: None,
+                        changed: Some("2024-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-1",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-2".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("2345678901".into()),
+                        file_hash: Some("some-hash-value".into()),
+                        changed: Some("2021-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-2",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([
+                    (
+                        "source-2".into(),
+                        CheckedSourceState {
+                            commit_hash: Some("2345678901".into()),
+                            file_hash: Some("some-hash-value-2".into()),
+                            changed: Some("2023-02-03T04:05:06Z".into()),
+                        },
+                    ),
+                    (
+                        "source-3".into(),
+                        CheckedSourceState {
+                            commit_hash: Some("3456789012".into()),
+                            file_hash: Some("some-hash-value-3".into()),
+                            changed: Some("2022-02-03T04:05:06Z".into()),
+                        },
+                    ),
+                ])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-2-3",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-4".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("2345678901".into()),
+                        file_hash: Some("some-hash-value-4".into()),
+                        changed: Some("2023-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-4-wrong",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-1".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("1111111".into()),
+                        file_hash: Some("some-hash-value-1".into()),
+                        changed: Some("2020-02-03T23:24:25Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-1-once-more",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger.update_trigger_status(None, None, None, &api).await.unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_w_o_changes",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        // Clean up
+        let _ = api.delete(name, &dp).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn update_trigger_status_everything() {
+        create_namespace().await;
+
+        let name = "update-trigger-status-everything";
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        let trigger = WebhookTrigger::test_anonymous_webhook(
+            &name,
+            TEST_NAMESPACE,
+            vec!["source-1".into(), "source-2".into(), "source-3".into()],
+            true,
+        );
+        api.create(&pp, &trigger).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-just_created",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-1".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("1234567890".into()),
+                        file_hash: None,
+                        changed: Some("2024-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_to_some_value-1",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                None,
+                Some(DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z").unwrap().into()),
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_last_run",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(Some(TriggerState::Running), None, None, &api)
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_state_to_running",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-4".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("2345678901".into()),
+                        file_hash: Some("some-hash-value-4".into()),
+                        changed: Some("2023-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_to_wrong_source",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger.update_trigger_status(None, None, None, &api).await.unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_w_o_changes",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        // Clean up
+        let _ = api.delete(name, &dp).await;
     }
 }

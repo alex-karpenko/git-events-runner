@@ -304,7 +304,7 @@ mod tests {
     use std::{collections::BTreeMap, time::Duration};
 
     use super::*;
-    use insta::assert_ron_snapshot;
+    use insta::assert_snapshot;
     use kube::api::{DeleteParams, ObjectMeta, PostParams};
 
     const TEST_CM_NAME: &str = "test-runtime-config";
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn yaml_config_consistency() {
         let config_yaml_string = RuntimeConfig::default_as_yaml_string(YamlConfigOpts::HelmTemplate).unwrap();
-        assert_ron_snapshot!(config_yaml_string);
+        assert_snapshot!(config_yaml_string);
     }
 
     #[tokio::test]

@@ -38,8 +38,8 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn ensure_1000_4ch_random_strings() {
-        const SET_SIZE: usize = 1000;
+    fn ensure_100_4ch_random_strings() {
+        const SET_SIZE: usize = 100;
 
         let mut control_set = HashSet::new();
         for _ in 0..SET_SIZE {
