@@ -36,7 +36,7 @@ spec:
               value: commit
             - name: ACTION_JOB_TRIGGER_SOURCE_REF_NAME
               value: e03087d8f722a423bc13fd31542fb9545da784dd
-          image: "ghcr.io/alex-karpenko/git-events-runner/action-worker:v0.2.0"
+          image: "ghcr.io/alex-karpenko/git-events-runner/action-worker:v0.2.1"
           name: action-worker
           volumeMounts:
             - mountPath: /action_workdir
@@ -52,7 +52,7 @@ spec:
             - /action_workdir
             - "--commit"
             - e03087d8f722a423bc13fd31542fb9545da784dd
-          image: "ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:v0.2.0"
+          image: "ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:v0.2.1"
           name: action-cloner
           volumeMounts:
             - mountPath: /action_workdir
