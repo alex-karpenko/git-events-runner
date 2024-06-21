@@ -60,9 +60,10 @@ jobs:
         run: cargo build
 
       # Run the integration tests
-      - name: install crd
+      - name: Install CRDs
         run: cargo run --bin git-events-runner crds | kubectl apply -f -
-      - name: Run all default features integration library tests
+
+      - name: Run all integration tests
         run: cargo test --lib --all -- --ignored
 
   docker-test:

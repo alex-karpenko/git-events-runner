@@ -33,15 +33,21 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           k3d-args: "--no-lb --no-rollback --k3s-arg --disable=traefik,servicelb,metrics-server@server:*"
 
+      - name: Build
+        env:
+          CI: true
+        run: cargo build
+
+      - name: Install CRDs
+        run: cargo run --bin git-events-runner crds | kubectl apply -f -
+
       - name: Test
         env:
           CI: true
           RUSTFLAGS: -Cinstrument-coverage
           LLVM_PROFILE_FILE: git-events-runner-%p-%m.profraw
           RUST_LOG: debug
-        run: |
-          cargo build
-          cargo test --lib --all -- --include-ignored
+        run: cargo test --lib --all -- --include-ignored
 
       - name: Generate coverage
         run: |
