@@ -1,0 +1,69 @@
+name: Code coverage report
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - rel-v*
+  schedule:
+    - cron: "15 8 * * 5"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  codecov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup for testing
+        run: |
+          mkdir grcov
+          curl -sL https://github.com/mozilla/grcov/releases/latest/download/grcov-x86_64-unknown-linux-gnu.tar.bz2 | (cd grcov ; tar jxf -)
+          rustup toolchain add nightly --component llvm-tools-preview
+          rustup override set nightly
+
+      - uses: Swatinem/rust-cache@v2
+      - uses: nolar/setup-k3d-k3s@v1
+        with:
+          version: latest
+          k3d-name: kube
+          # Used to avoid rate limits when fetching the releases from k3s repo.
+          # Anonymous access is limited to 60 requests / hour / worker
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          k3d-args: "--no-lb --no-rollback --k3s-arg --disable=traefik,servicelb,metrics-server@server:*"
+
+      - name: Build
+        env:
+          CI: true
+        run: cargo build
+
+      - name: Install CRDs
+        run: cargo run --bin git-events-runner crds | kubectl apply -f -
+
+      - name: Test
+        env:
+          CI: true
+          RUSTFLAGS: -Cinstrument-coverage
+          LLVM_PROFILE_FILE: git-events-runner-%p-%m.profraw
+          RUST_LOG: debug
+        run: cargo test --lib --all -- --include-ignored
+
+      - name: Generate coverage
+        run: |
+          grcov/grcov $(find . -name "git-events-runner-*.profraw" -print) \
+            --branch \
+            --ignore-not-existing \
+            --binary-path ./target/debug/ \
+            -s src \
+            -t lcov \
+            --ignore "/*" \
+            --excl-line '^\s*\.await\??;?$' --excl-br-line '^\s*\.await\??;?$' \
+            -o lcov.info
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+          file: ./lcov.info

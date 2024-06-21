@@ -1,0 +1,18 @@
+---
+source: src/resources/trigger.rs
+expression: api.get(name).await.unwrap().status()
+---
+state: Idle
+lastRun: Never
+checkedSources:
+  source-1:
+    commitHash: "1234567890"
+    changed: "2024-02-03T04:05:06Z"
+  source-2:
+    commitHash: "2345678901"
+    fileHash: some-hash-value-2
+    changed: "2023-02-03T04:05:06Z"
+  source-3:
+    commitHash: "3456789012"
+    fileHash: some-hash-value-3
+    changed: "2022-02-03T04:05:06Z"

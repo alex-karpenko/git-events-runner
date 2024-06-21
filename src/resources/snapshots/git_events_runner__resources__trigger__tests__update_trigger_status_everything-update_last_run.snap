@@ -1,0 +1,10 @@
+---
+source: src/resources/trigger.rs
+expression: api.get(name).await.unwrap().status()
+---
+state: Idle
+lastRun: "2024-01-02T03:04:05Z"
+checkedSources:
+  source-1:
+    commitHash: "1234567890"
+    changed: "2024-02-03T04:05:06Z"

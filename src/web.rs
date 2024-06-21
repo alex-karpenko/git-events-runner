@@ -38,7 +38,7 @@ struct WebState {
 /// We return JSON with predefined status (ok/err/...) and mandatory message
 /// which explains status
 /// task_id is for successful calls to triggers
-#[derive(FromRequest, Serialize)]
+#[derive(FromRequest, Serialize, Debug)]
 #[from_request(via(axum::Json), rejection(WebError))]
 struct WebResponseJson {
     status: WebResponseStatus,
@@ -47,14 +47,14 @@ struct WebResponseJson {
     task_id: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum WebResponseStatus {
     Ok,
     Error,
 }
 
-#[derive(Display)]
+#[derive(Display, Debug, PartialEq)]
 enum WebError {
     #[strum(to_string = "multi-source hook isn't allowed")]
     ForbiddenMultiSource,
@@ -331,7 +331,22 @@ impl From<Error> for WebError {
     fn from(value: Error) -> Self {
         match value {
             Error::ResourceNotFoundError(_) => Self::TriggerNotFound,
-            e => Self::UnknownError { msg: e.to_string() },
+            e => {
+                if let Error::KubeError(e) = e {
+                    match e {
+                        kube::Error::Api(err) => {
+                            if err.code == 404 {
+                                Self::TriggerNotFound
+                            } else {
+                                Self::KubeError { msg: err.to_string() }
+                            }
+                        }
+                        _ => Self::KubeError { msg: e.to_string() },
+                    }
+                } else {
+                    Self::UnknownError { msg: e.to_string() }
+                }
+            }
         }
     }
 }
@@ -371,5 +386,352 @@ impl WebState {
         } else {
             Ok(()) // no need to auth
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::controller;
+    use axum::extract::State;
+    use axum::http::HeaderValue;
+    use k8s_openapi::api::core::v1::{Namespace, Secret};
+    use kube::api::{DeleteParams, PostParams};
+    use kube::{Api, Resource};
+    use tokio::sync::OnceCell;
+
+    static INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    const NAMESPACE: &str = "web-webhook-triggers";
+    const SECRET_NAME: &str = "webhook-triggers-auth-secret";
+    const SECRET_TOKEN: &str = "0123456789";
+
+    async fn init() -> WebState {
+        INITIALIZED
+            .get_or_init(|| async {
+                let client = Client::try_default().await.unwrap();
+                create_namespace(client.clone()).await;
+                create_secret(client.clone()).await;
+            })
+            .await;
+
+        get_test_web_state().await
+    }
+
+    /// Unattended namespace creation
+    async fn create_namespace(client: Client) {
+        let api = Api::<Namespace>::all(client);
+        let pp = PostParams::default();
+
+        let mut data = Namespace::default();
+        data.meta_mut().name = Some(String::from(NAMESPACE));
+
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
+
+    /// Unattended auth secret creation
+    async fn create_secret(client: Client) {
+        let api = Api::<Secret>::namespaced(client, NAMESPACE);
+        let pp = PostParams::default();
+
+        let mut secrets = BTreeMap::new();
+        secrets.insert("token".into(), k8s_openapi::ByteString(Vec::<u8>::from(SECRET_TOKEN)));
+
+        let mut data = Secret::default();
+        data.meta_mut().name = Some(String::from(SECRET_NAME));
+        let _ = data.data.insert(secrets);
+
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
+
+    /// Create the simplest test web state
+    async fn get_test_web_state() -> WebState {
+        let client = Client::try_default().await.unwrap();
+        let scheduler = Arc::new(RwLock::new(Scheduler::default()));
+
+        WebState {
+            client,
+            scheduler,
+            source_clone_folder: String::from("/tmp/test_git_events_runner_context"),
+        }
+    }
+
+    /// Create the simplest test web state
+    async fn get_test_controller_state() -> controller::State {
+        controller::State::new(Arc::new(String::from("/tmp/test_git_events_runner_context")))
+    }
+
+    #[tokio::test]
+    async fn readiness_responses_ready() {
+        let state = get_test_controller_state().await;
+
+        // Set ready
+        {
+            let mut ready = state.ready.write().await;
+            *ready = true;
+        }
+        // Assert ready
+        let (code, msg) = handle_ready(State(state.clone())).await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(msg, "Ready");
+    }
+
+    #[tokio::test]
+    async fn readiness_responses_not_ready() {
+        let state = get_test_controller_state().await;
+
+        // Assert not ready
+        let (code, msg) = handle_ready(State(state.clone())).await;
+        assert_eq!(code, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(msg, "Not ready");
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn nonexistent_post_trigger_webhook() {
+        let state = init().await;
+
+        let res = handle_post_trigger_webhook(
+            State(state),
+            Path(("nonexistent-namespace".into(), "nonexistent-trigger-name".into())),
+            HeaderMap::new(),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap(), WebError::TriggerNotFound);
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn nonexistent_post_source_webhook() {
+        let state = init().await;
+
+        let res = handle_post_source_webhook(
+            State(state),
+            Path((
+                "nonexistent-namespace".into(),
+                "nonexistent-trigger-name".into(),
+                "nonexistent-source-name".into(),
+            )),
+            HeaderMap::new(),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap(), WebError::TriggerNotFound);
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn good_multi_source_trigger_webhook_all_sources() {
+        let state = init().await;
+
+        let trigger_name = "multi-source-trigger-all-sources";
+        let source_name = "source-name";
+
+        let api = Api::<WebhookTrigger>::namespaced(state.client.clone(), NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create good multi-source webhook trigger
+        let trigger = WebhookTrigger::test_anonymous_webhook(trigger_name, NAMESPACE, vec![source_name.into()], true);
+        let _trigger = api.create(&pp, &trigger).await.unwrap();
+
+        // Test all sources request
+        let res = handle_post_trigger_webhook(
+            State(state.clone()),
+            Path((NAMESPACE.into(), trigger_name.into())),
+            HeaderMap::new(),
+        )
+        .await;
+        assert!(res.is_ok());
+        let res = res.unwrap();
+        assert_eq!(res.status, WebResponseStatus::Ok);
+        assert_eq!(res.message, "job has been scheduled");
+        assert!(res.task_id.is_some());
+
+        // Clean up
+        let _result = api.delete(trigger_name, &dp).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn good_single_source_trigger_webhook_with_all_sources_request() {
+        let state = init().await;
+
+        let trigger_name = "single-source-trigger-all-sources-request";
+        let source_name = "source-name";
+
+        let api = Api::<WebhookTrigger>::namespaced(state.client.clone(), NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create good multi-source webhook trigger
+        let trigger = WebhookTrigger::test_anonymous_webhook(trigger_name, NAMESPACE, vec![source_name.into()], false);
+        let _trigger = api.create(&pp, &trigger).await.unwrap();
+
+        // Test all sources request
+        let res = handle_post_trigger_webhook(
+            State(state.clone()),
+            Path((NAMESPACE.into(), trigger_name.into())),
+            HeaderMap::new(),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap(), WebError::ForbiddenMultiSource);
+
+        // Clean up
+        let _result = api.delete(trigger_name, &dp).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn good_multi_source_trigger_webhook_single_source() {
+        let state = init().await;
+
+        let trigger_name = "multi-source-trigger-single-source";
+        let source_name = "source-name";
+
+        let api = Api::<WebhookTrigger>::namespaced(state.client.clone(), NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create good multi-source webhook trigger
+        let trigger = WebhookTrigger::test_anonymous_webhook(trigger_name, NAMESPACE, vec![source_name.into()], true);
+        let _trigger = api.create(&pp, &trigger).await.unwrap();
+
+        // Test single sources request
+        let res = handle_post_source_webhook(
+            State(state.clone()),
+            Path((NAMESPACE.into(), trigger_name.into(), source_name.into())),
+            HeaderMap::new(),
+        )
+        .await;
+        assert!(res.is_ok());
+        let res = res.unwrap();
+        assert_eq!(res.status, WebResponseStatus::Ok);
+        assert_eq!(res.message, "job has been scheduled");
+        assert!(res.task_id.is_some());
+
+        // Clean up
+        let _result = api.delete(trigger_name, &dp).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn good_multi_source_trigger_webhook_wrong_single_source() {
+        let state = init().await;
+
+        let trigger_name = "multi-source-trigger-wrong-single-source";
+        let source_name = "source-name";
+
+        let api = Api::<WebhookTrigger>::namespaced(state.client.clone(), NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create good multi-source webhook trigger
+        let trigger = WebhookTrigger::test_anonymous_webhook(trigger_name, NAMESPACE, vec![source_name.into()], true);
+        let _trigger = api.create(&pp, &trigger).await.unwrap();
+
+        // Test single sources request with wrong source
+        let res = handle_post_source_webhook(
+            State(state.clone()),
+            Path((NAMESPACE.into(), trigger_name.into(), "wrong-source-name".into())),
+            HeaderMap::new(),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap(), WebError::SourceNotFound);
+
+        // Clean up
+        let _result = api.delete(trigger_name, &dp).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn good_multi_source_trigger_webhook_with_good_auth() {
+        let state = init().await;
+
+        let trigger_name = "multi-source-trigger-with-good-auth";
+        let source_name = "source-name";
+
+        let api = Api::<WebhookTrigger>::namespaced(state.client.clone(), NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create good multi-source webhook trigger
+        let trigger =
+            WebhookTrigger::test_secure_webhook(trigger_name, NAMESPACE, vec![source_name.into()], true, SECRET_NAME);
+        let _trigger = api.create(&pp, &trigger).await.unwrap();
+
+        // Test all sources request
+        let mut headers = HeaderMap::new();
+        headers.append("x-auth-token", HeaderValue::from_static(SECRET_TOKEN));
+
+        let res = handle_post_trigger_webhook(
+            State(state.clone()),
+            Path((NAMESPACE.into(), trigger_name.into())),
+            headers,
+        )
+        .await;
+
+        assert!(res.is_ok());
+        let res = res.unwrap();
+        assert_eq!(res.status, WebResponseStatus::Ok);
+        assert_eq!(res.message, "job has been scheduled");
+        assert!(res.task_id.is_some());
+
+        // Clean up
+        let _result = api.delete(trigger_name, &dp).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn good_multi_source_trigger_webhook_with_wrong_auth() {
+        let state = init().await;
+
+        let trigger_name = "multi-source-trigger-with-wrong-auth";
+        let source_name = "source-name";
+
+        let api = Api::<WebhookTrigger>::namespaced(state.client.clone(), NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        // Create good multi-source webhook trigger
+        let trigger =
+            WebhookTrigger::test_secure_webhook(trigger_name, NAMESPACE, vec![source_name.into()], true, SECRET_NAME);
+        let _trigger = api.create(&pp, &trigger).await.unwrap();
+
+        // Test all sources request with wrong header
+        let mut headers = HeaderMap::new();
+        headers.append("xxx-auth-token", HeaderValue::from_static(SECRET_TOKEN));
+
+        let res = handle_post_trigger_webhook(
+            State(state.clone()),
+            Path((NAMESPACE.into(), trigger_name.into())),
+            headers,
+        )
+        .await;
+
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap(), WebError::Unauthorized);
+
+        // Test all sources request with wrong token
+        let mut headers = HeaderMap::new();
+        headers.append("x-auth-token", HeaderValue::from_static("something definitely wrong"));
+
+        let res = handle_post_trigger_webhook(
+            State(state.clone()),
+            Path((NAMESPACE.into(), trigger_name.into())),
+            headers,
+        )
+        .await;
+
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap(), WebError::Forbidden);
+
+        // Clean up
+        let _result = api.delete(trigger_name, &dp).await.unwrap();
     }
 }

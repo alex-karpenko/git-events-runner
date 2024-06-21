@@ -1,0 +1,124 @@
+---
+source: src/resources/action.rs
+expression: job_spec
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    custom-annotation-key-1: custom-annotation-value-1
+    custom-annotation-key-2: custom-annotation-value-2
+  labels:
+    custom-label-key-1: custom-label-value-1
+    custom-label-key-2: custom-label-value-2
+    git-events-runner.rs/action-kind: ClusterAction
+    git-events-runner.rs/action-name: customized-test-action
+    git-events-runner.rs/source-kind: ClusterGitRepo
+    git-events-runner.rs/source-name: action-test-source
+  name: customized-test-action-YYYYMMDD-HHMMSS-xx
+  ownerReferences:
+    - apiVersion: ""
+      kind: ""
+      name: ""
+      uid: ""
+spec:
+  activeDeadlineSeconds: 321
+  backoffLimit: 0
+  parallelism: 1
+  template:
+    metadata:
+      annotations:
+        custom-annotation-key-1: custom-annotation-value-1
+        custom-annotation-key-2: custom-annotation-value-2
+      labels:
+        custom-label-key-1: custom-label-value-1
+        custom-label-key-2: custom-label-value-2
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: selector-key
+                    operator: In
+                    values:
+                      - selector-value-1
+                      - selector-value-2
+                matchLabels:
+                  custom-label-key-3: custom-label-value-3
+                  custom-label-key-4: custom-label-value-4
+              namespaces:
+                - ns1
+                - ns2
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - args:
+            - arg1
+            - arg2
+          command:
+            - command1
+            - command2
+          env:
+            - name: ACTION_JOB_WORKDIR
+              value: /custom-workdir
+            - name: ACTION_JOB_TRIGGER_SOURCE_KIND
+              value: ClusterGitRepo
+            - name: ACTION_JOB_TRIGGER_SOURCE_NAME
+              value: action-test-source
+            - name: ACTION_JOB_TRIGGER_SOURCE_COMMIT
+              value: e03087d8f722a423bc13fd31542fb9545da784dd
+            - name: ACTION_JOB_TRIGGER_SOURCE_REF_TYPE
+              value: branch
+            - name: ACTION_JOB_TRIGGER_SOURCE_REF_NAME
+              value: main
+            - name: ACTION_JOB_ACTION_SOURCE_KIND
+              value: ClusterGitRepo
+            - name: ACTION_JOB_ACTION_SOURCE_NAME
+              value: git-repo-override
+            - name: ACTION_JOB_ACTION_SOURCE_REF_TYPE
+              value: branch
+            - name: ACTION_JOB_ACTION_SOURCE_REF_NAME
+              value: overridden-branch
+          image: "custom-action-image:latest"
+          name: action-worker
+          volumeMounts:
+            - mountPath: /custom-workdir
+              name: action-workdir
+          workingDir: /custom-workdir
+      initContainers:
+        - args:
+            - "--kind"
+            - ClusterGitRepo
+            - "--source"
+            - git-repo-override
+            - "--destination"
+            - /custom-workdir
+            - "--branch"
+            - overridden-branch
+            - "--preserve-git-folder"
+            - "--debug"
+          image: "custom-cloner-image:latest"
+          name: action-cloner
+          volumeMounts:
+            - mountPath: /custom-workdir
+              name: action-workdir
+      nodeSelector:
+        custom-node-label-key-1: custom-node-label-value-1
+        custom-node-label-key-2: custom-node-label-value-2
+      restartPolicy: Never
+      serviceAccountName: custom-service-account-name
+      tolerations:
+        - effect: NoSchedule
+          key: toleration-key-1
+          operator: In
+          tolerationSeconds: 234
+          value: toleration-value-1
+        - effect: NoSchedule
+          key: toleration-key-2
+          operator: In
+          tolerationSeconds: 345
+          value: toleration-value-2
+      volumes:
+        - emptyDir: {}
+          name: action-workdir
+  ttlSecondsAfterFinished: 231

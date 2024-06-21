@@ -44,6 +44,8 @@ use tokio::{
 };
 use tracing::{debug, debug_span, error, info, instrument};
 
+const NEVER_LAST_RUN_STR: &str = "Never";
+
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
     kind = "ScheduleTrigger",
@@ -83,11 +85,11 @@ pub struct WebhookTriggerSpec {
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerStatus {
-    state: TriggerState,
+    pub(crate) state: TriggerState,
     #[serde(skip_serializing_if = "Option::is_none")]
-    last_run: Option<String>,
+    pub(crate) last_run: Option<String>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    checked_sources: HashMap<String, CheckedSourceState>,
+    pub(crate) checked_sources: HashMap<String, CheckedSourceState>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
@@ -282,13 +284,13 @@ impl From<&String> for TriggerTaskSources {
 }
 
 impl CustomApiResource for ScheduleTrigger {
-    fn kind(&self) -> &str {
+    fn crd_kind() -> &'static str {
         "ScheduleTrigger"
     }
 }
 
 impl CustomApiResource for WebhookTrigger {
-    fn kind(&self) -> &str {
+    fn crd_kind() -> &'static str {
         "WebhookTrigger"
     }
 }
@@ -324,7 +326,7 @@ impl Trigger<WebhookTriggerSpec> for WebhookTrigger {
 impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
     #[instrument(level = "debug", skip_all,
         fields(
-            kind=self.kind(),
+            kind=Self::crd_kind(),
             namespace=self.namespace().unwrap(),
             trigger=self.name_any()
         )
@@ -349,11 +351,15 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
 
             // Get a time of last triggers' run if it was run ever.
             let last_run: Option<SystemTime> = if let Some(status) = self.status() {
-                status.last_run.as_ref().map(|last_run| {
-                    DateTime::parse_from_rfc3339(last_run)
-                        .expect("Incorrect time format in LastRun field, looks like a BUG.")
-                        .into()
-                })
+                status
+                    .last_run
+                    .as_ref()
+                    .filter(|lr| (**lr).eq(NEVER_LAST_RUN_STR))
+                    .map(|last_run| {
+                        DateTime::parse_from_rfc3339(last_run)
+                            .expect("Incorrect time format in LastRun field, looks like a BUG.")
+                            .into()
+                    })
             } else {
                 None
             };
@@ -367,7 +373,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                         ctx.client.clone(),
                         schedule,
                         TriggerTaskSources::All,
-                        ctx.cli_config.source_clone_folder.clone(),
+                        ctx.source_clone_folder.to_string(),
                     );
                     let task_id = scheduler.add(task).await?;
                     let tasks = &mut triggers.tasks;
@@ -386,6 +392,14 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 }
             }
 
+            self.update_trigger_status(
+                None,
+                None,
+                None,
+                &Api::<Self>::namespaced(ctx.client.clone(), &self.namespace().unwrap()),
+            )
+            .await?;
+
             // Update trigger schedule in the map
             triggers
                 .schedules
@@ -397,14 +411,14 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
 
     #[instrument(level = "debug", skip_all,
         fields(
-            kind=self.kind(),
+            kind=Self::crd_kind(),
             namespace=self.namespace().unwrap(),
             trigger=self.name_any()
         )
     )]
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
         info!(
-            kind = %self.kind(),
+            kind = %Self::crd_kind(),
             namespace = %self.namespace().expect("unable to get resource namespace, looks like a BUG!"),
             trigger = %self.name_any(),
             "cleaning up"
@@ -555,14 +569,16 @@ where
                 // No status so far, create new
                 TriggerStatus {
                     state: state.unwrap_or_default(),
-                    last_run: last_run.map(|last_run| last_run.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                    last_run: last_run
+                        .map(|last_run| last_run.to_rfc3339_opts(SecondsFormat::Secs, true))
+                        .or(Some(String::from(NEVER_LAST_RUN_STR))),
                     checked_sources: checked_sources.unwrap_or_default(),
                 }
             };
 
             let status = Patch::Apply(json!({
                 "apiVersion": format!("{API_GROUP}/{CURRENT_API_VERSION}"),
-                "kind": self.kind(),
+                "kind": Self::crd_kind(),
                 "status": {
                     "state": new_status.state,
                     "lastRun": new_status.last_run,
@@ -850,17 +866,21 @@ pub fn get_latest_commit(repo: &Repository, reference: &TriggerGitRepoReference)
 }
 
 /// Calculates SHA256 hash of the file
-async fn get_file_hash(path: &Path) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
+async fn calc_file_hash(path: impl Into<&Path>) -> Result<Vec<u8>> {
     let mut buf: Vec<u8> = Vec::new();
 
-    File::open(&path)
+    File::open(&path.into())
         .await
         .map_err(Error::TriggerFileAccessError)?
         .read_to_end(&mut buf)
         .await
         .map_err(Error::TriggerFileAccessError)?;
 
+    calc_buffer_hash(&buf)
+}
+
+fn calc_buffer_hash(buf: &Vec<u8>) -> Result<Vec<u8>> {
+    let mut hasher = Sha256::new();
     let mut buf = buf.as_slice();
     io::copy(&mut buf, &mut hasher).map_err(Error::TriggerFileAccessError)?;
     let hash = hasher.finalize().to_vec();
@@ -869,9 +889,9 @@ async fn get_file_hash(path: &Path) -> Result<Vec<u8>> {
 }
 
 /// Calculates SHA256 hash of files selected by glob
-async fn get_file_glob_hash(folder: &String, glob: &[String]) -> Result<Vec<u8>> {
+async fn get_file_glob_hash(folder: impl Into<&String>, glob: &[String]) -> Result<Vec<u8>> {
     let mut hasher = Sha256::new();
-    let glob = GlobWalkerBuilder::from_patterns(folder, glob)
+    let glob = GlobWalkerBuilder::from_patterns(folder.into(), glob)
         .file_type(FileType::FILE)
         .sort_by(|p1, p2| p1.path().cmp(p2.path()))
         .build()?;
@@ -880,10 +900,507 @@ async fn get_file_glob_hash(folder: &String, glob: &[String]) -> Result<Vec<u8>>
         let file_name = file_name.map_err(|e| Error::TriggerDirWalkError(e.to_string()))?;
         let file_path = file_name.path();
 
-        let hash = get_file_hash(file_path).await?;
+        let hash = calc_file_hash(file_path).await?;
         hasher.update(hash);
     }
 
     let hash = hasher.finalize().to_vec();
     Ok(hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_yaml_snapshot;
+    use k8s_openapi::api::core::v1::Namespace;
+    use kube::api::{DeleteParams, PostParams};
+    use tempdir::TempDir;
+    use tokio::io::AsyncWriteExt;
+
+    use super::*;
+
+    impl ScheduleTrigger {
+        pub fn test_trigger_with_interval(name: &str, ns: &str, interval: &str) -> ScheduleTrigger {
+            let mut trigger = ScheduleTrigger::new(
+                name,
+                ScheduleTriggerSpec {
+                    sources: TriggerSources::default(),
+                    schedule: TriggerSchedule::Interval(String::from(interval)),
+                    action: TriggerAction::default(),
+                },
+            );
+            trigger.meta_mut().namespace = Some(String::from(ns));
+
+            trigger
+        }
+
+        pub fn test_trigger_with_cron(name: &str, ns: &str, cron: &str) -> ScheduleTrigger {
+            let mut trigger = ScheduleTrigger::new(
+                name,
+                ScheduleTriggerSpec {
+                    sources: TriggerSources::default(),
+                    schedule: TriggerSchedule::Cron(String::from(cron)),
+                    action: TriggerAction::default(),
+                },
+            );
+            trigger.meta_mut().namespace = Some(String::from(ns));
+
+            trigger
+        }
+    }
+
+    impl WebhookTrigger {
+        pub fn test_anonymous_webhook(
+            name: &str,
+            ns: &str,
+            sources: Vec<String>,
+            multi_source: bool,
+        ) -> WebhookTrigger {
+            let mut trigger = WebhookTrigger::new(
+                name,
+                WebhookTriggerSpec {
+                    sources: TriggerSources {
+                        kind: Default::default(),
+                        names: sources,
+                        watch_on: Default::default(),
+                    },
+                    action: TriggerAction::default(),
+                    webhook: TriggerWebhook {
+                        multi_source,
+                        auth_config: None,
+                    },
+                },
+            );
+            trigger.meta_mut().namespace = Some(String::from(ns));
+
+            trigger
+        }
+
+        pub fn test_secure_webhook(
+            name: &str,
+            ns: &str,
+            sources: Vec<String>,
+            multi_source: bool,
+            secret: &str,
+        ) -> WebhookTrigger {
+            let mut trigger = WebhookTrigger::new(
+                name,
+                WebhookTriggerSpec {
+                    sources: TriggerSources {
+                        kind: Default::default(),
+                        names: sources,
+                        watch_on: Default::default(),
+                    },
+                    action: TriggerAction::default(),
+                    webhook: TriggerWebhook {
+                        multi_source,
+                        auth_config: Some(TriggerWebhookAuthConfig {
+                            secret_ref: SecretRef { name: secret.into() },
+                            key: "token".into(),
+                            header: Some("x-auth-token".into()),
+                        }),
+                    },
+                },
+            );
+            trigger.meta_mut().namespace = Some(String::from(ns));
+
+            trigger
+        }
+    }
+
+    const TEST_NAMESPACE: &str = "triggers-test";
+
+    /// Unattended namespace creation
+    async fn create_namespace() {
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<Namespace>::all(client);
+        let pp = PostParams::default();
+
+        let mut data = Namespace::default();
+        data.meta_mut().name = Some(String::from(TEST_NAMESPACE));
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn update_trigger_status_state() {
+        create_namespace().await;
+
+        let name = "update-trigger-status-state";
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        let trigger = WebhookTrigger::test_anonymous_webhook(&name, TEST_NAMESPACE, vec![], true);
+        api.create(&pp, &trigger).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_yaml_snapshot!(
+            "update_trigger_status_state-just_created",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger
+            .update_trigger_status(Some(TriggerState::Idle), None, None, &api)
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_state-update_to_Idle",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger.update_trigger_status(None, None, None, &api).await.unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_state-update_w_o_changes",
+            api.get(name).await.unwrap().status()
+        );
+
+        // Clean up
+        let _ = api.delete(name, &dp).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn update_trigger_status_last_run() {
+        create_namespace().await;
+
+        let name = "update-trigger-status-last-run";
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        let trigger = WebhookTrigger::test_anonymous_webhook(&name, TEST_NAMESPACE, vec![], true);
+        api.create(&pp, &trigger).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_yaml_snapshot!(
+            "update_trigger_status_last_run-just_created",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                None,
+                Some(DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z").unwrap().into()),
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_last_run-update_to_some_value",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger.update_trigger_status(None, None, None, &api).await.unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_last_run-update_w_o_changes",
+            api.get(name).await.unwrap().status()
+        );
+
+        // Clean up
+        let _ = api.delete(name, &dp).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn update_trigger_status_sources() {
+        create_namespace().await;
+
+        let name = "update-trigger-status-sources";
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        let trigger = WebhookTrigger::test_anonymous_webhook(
+            &name,
+            TEST_NAMESPACE,
+            vec!["source-1".into(), "source-2".into(), "source-3".into()],
+            true,
+        );
+        api.create(&pp, &trigger).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-just_created",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-1".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("1234567890".into()),
+                        file_hash: None,
+                        changed: Some("2024-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-1",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-2".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("2345678901".into()),
+                        file_hash: Some("some-hash-value".into()),
+                        changed: Some("2021-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-2",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([
+                    (
+                        "source-2".into(),
+                        CheckedSourceState {
+                            commit_hash: Some("2345678901".into()),
+                            file_hash: Some("some-hash-value-2".into()),
+                            changed: Some("2023-02-03T04:05:06Z".into()),
+                        },
+                    ),
+                    (
+                        "source-3".into(),
+                        CheckedSourceState {
+                            commit_hash: Some("3456789012".into()),
+                            file_hash: Some("some-hash-value-3".into()),
+                            changed: Some("2022-02-03T04:05:06Z".into()),
+                        },
+                    ),
+                ])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-2-3",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-4".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("2345678901".into()),
+                        file_hash: Some("some-hash-value-4".into()),
+                        changed: Some("2023-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-4-wrong",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-1".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("1111111".into()),
+                        file_hash: Some("some-hash-value-1".into()),
+                        changed: Some("2020-02-03T23:24:25Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_to_some_value-1-once-more",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger.update_trigger_status(None, None, None, &api).await.unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_sources-update_w_o_changes",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        // Clean up
+        let _ = api.delete(name, &dp).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn update_trigger_status_everything() {
+        create_namespace().await;
+
+        let name = "update-trigger-status-everything";
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+
+        let trigger = WebhookTrigger::test_anonymous_webhook(
+            &name,
+            TEST_NAMESPACE,
+            vec!["source-1".into(), "source-2".into(), "source-3".into()],
+            true,
+        );
+        api.create(&pp, &trigger).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-just_created",
+            api.get(name).await.unwrap().status()
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-1".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("1234567890".into()),
+                        file_hash: None,
+                        changed: Some("2024-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_to_some_value-1",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                None,
+                Some(DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z").unwrap().into()),
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_last_run",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(Some(TriggerState::Running), None, None, &api)
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_state_to_running",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger
+            .update_trigger_status(
+                None,
+                Some(HashMap::from([(
+                    "source-4".into(),
+                    CheckedSourceState {
+                        commit_hash: Some("2345678901".into()),
+                        file_hash: Some("some-hash-value-4".into()),
+                        changed: Some("2023-02-03T04:05:06Z".into()),
+                    },
+                )])),
+                None,
+                &api,
+            )
+            .await
+            .unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_to_wrong_source",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        trigger.update_trigger_status(None, None, None, &api).await.unwrap();
+        assert_yaml_snapshot!(
+            "update_trigger_status_everything-update_w_o_changes",
+            api.get(name).await.unwrap().status(),
+            {".checkedSources" => insta::sorted_redaction()}
+        );
+
+        // Clean up
+        let _ = api.delete(name, &dp).await;
+    }
+
+    const TEST_BUFFER_SIZE: usize = 1024;
+
+    #[tokio::test]
+    async fn file_hasher() {
+        // Create three random files with names:
+        // 00.txt, 01.txt, 02.txt
+        // calculate hash with glob pattern:
+        // *.txt
+        // !0?.txt
+        // 00.txt
+        // *2.txt
+        // verify that we got hashes of 00 and 02 files only
+
+        let mut hasher = Sha256::new();
+        let temp_folder = TempDir::new("file_hasher_test").unwrap();
+
+        for i in 0..3 {
+            let file_name = format!("0{i}.txt");
+            let file_path = temp_folder.path().join(file_name);
+            let mut tmp_file = File::create(file_path).await.unwrap();
+
+            let mut buf: Vec<u8> = random_string(TEST_BUFFER_SIZE).into();
+            tmp_file.write(&mut buf).await.unwrap();
+
+            let hash = calc_buffer_hash(&buf).unwrap();
+            if i != 1 {
+                hasher.update(hash)
+            }
+        }
+
+        let folder: String = temp_folder.into_path().display().to_string();
+        let expected_hash = hasher.finalize().to_vec();
+        let calculated_hash = get_file_glob_hash(
+            &folder,
+            &["*.txt".into(), "!0?.txt".into(), "00.txt".into(), "?2.txt".into()],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(calculated_hash, expected_hash);
+    }
+
+    // CheckedSourceState::is_equal
 }

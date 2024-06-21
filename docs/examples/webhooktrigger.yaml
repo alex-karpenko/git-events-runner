@@ -86,9 +86,9 @@ spec:
 # Current trigger status
 status:
   # Current state, possible values:
-  # - Idle: indicates that trigger is in waiting for event state
-  # - Running: trigger runs sources check loop
-  # - WrongConfig: some misconfiguration of the trigger prevents running,
+  # - Idle: indicates that trigger is in waiting for event state,
+  # - Running: trigger runs sources check loop,
+  # - WrongConfig: misconfiguration of the trigger prevents running.
   state: Idle
   # Timestamp of last triggers' run
   lastRun: 2024-05-20T01:02:03Z

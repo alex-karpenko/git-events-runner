@@ -1,0 +1,6 @@
+---
+source: src/resources/trigger.rs
+expression: api.get(name).await.unwrap().status()
+---
+state: Idle
+lastRun: Never

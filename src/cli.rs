@@ -78,3 +78,16 @@ impl Cli {
         cli
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_debug_snapshot;
+
+    use super::*;
+
+    #[test]
+    fn default_cli_consistency() {
+        let cli = CliConfig::parse_from::<_, &str>([]);
+        assert_debug_snapshot!(cli);
+    }
+}

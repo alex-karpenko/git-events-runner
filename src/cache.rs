@@ -127,6 +127,34 @@ impl ApiCache for GitRepo {
     fn set_cache_store(store: Store<Self>) {
         API_CACHE_STORE.git_repo.set(store).unwrap();
     }
+
+    #[cfg(test)]
+    fn get(name: &str, namespace: Option<&str>) -> Result<Arc<Self>>
+    where
+        Self: Sized + Clone,
+    {
+        use std::thread::spawn;
+        use tokio::runtime::Runtime;
+
+        spawn({
+            let name = String::from(name);
+            let namespace = namespace.map(String::from);
+
+            move || {
+                let rt = Runtime::new()?;
+                rt.block_on(async move {
+                    let client = Client::try_default().await.unwrap();
+                    let api = Api::<Self>::namespaced(client, &namespace.unwrap());
+                    match api.get(&name).await {
+                        Ok(resource) => Ok(Arc::new(resource)),
+                        Err(e) => Err(e.into()),
+                    }
+                })
+            }
+        })
+        .join()
+        .unwrap()
+    }
 }
 
 impl ApiCache for ClusterGitRepo {
@@ -167,6 +195,34 @@ impl ApiCache for WebhookTrigger {
     fn set_cache_store(store: Store<Self>) {
         API_CACHE_STORE.webhook_trigger.set(store).unwrap();
     }
+
+    #[cfg(test)]
+    fn get(name: &str, namespace: Option<&str>) -> Result<Arc<Self>>
+    where
+        Self: Sized + Clone,
+    {
+        use std::thread::spawn;
+        use tokio::runtime::Runtime;
+
+        spawn({
+            let name = String::from(name);
+            let namespace = namespace.map(String::from);
+
+            move || {
+                let rt = Runtime::new()?;
+                rt.block_on(async move {
+                    let client = Client::try_default().await.unwrap();
+                    let api = Api::<Self>::namespaced(client, &namespace.unwrap());
+                    match api.get(&name).await {
+                        Ok(resource) => Ok(Arc::new(resource)),
+                        Err(e) => Err(e.into()),
+                    }
+                })
+            }
+        })
+        .join()
+        .unwrap()
+    }
 }
 
 impl ApiCache for ScheduleTrigger {
@@ -176,6 +232,34 @@ impl ApiCache for ScheduleTrigger {
 
     fn set_cache_store(store: Store<Self>) {
         API_CACHE_STORE.schedule_trigger.set(store).unwrap();
+    }
+
+    #[cfg(test)]
+    fn get(name: &str, namespace: Option<&str>) -> Result<Arc<Self>>
+    where
+        Self: Sized + Clone,
+    {
+        use std::thread::spawn;
+        use tokio::runtime::Runtime;
+
+        spawn({
+            let name = String::from(name);
+            let namespace = namespace.map(String::from);
+
+            move || {
+                let rt = Runtime::new()?;
+                rt.block_on(async move {
+                    let client = Client::try_default().await.unwrap();
+                    let api = Api::<Self>::namespaced(client, &namespace.unwrap());
+                    match api.get(&name).await {
+                        Ok(resource) => Ok(Arc::new(resource)),
+                        Err(e) => Err(e.into()),
+                    }
+                })
+            }
+        })
+        .join()
+        .unwrap()
     }
 }
 
@@ -203,6 +287,21 @@ impl Debug for SecretsCache {
 
 impl SecretsCache {
     pub async fn get(namespace: &str, secret_name: &str, key: &str) -> Result<String, Error> {
+        #[cfg(not(test))]
+        {
+            Self::query_secrets_cache(namespace, secret_name, key).await
+        }
+
+        #[cfg(test)]
+        {
+            let client = Client::try_default().await.unwrap();
+            let (_, secret_value) = Self::query_secrets_api(client, namespace, secret_name, key).await?;
+
+            Ok(secret_value)
+        }
+    }
+
+    pub async fn query_secrets_cache(namespace: &str, secret_name: &str, key: &str) -> Result<String, Error> {
         SECRET_CACHE
             .get()
             .expect("unable to get shared secret cache instance, looks like a BUG!")
@@ -252,7 +351,31 @@ impl SecretsCache {
         // If it's not cached yet or already expired - retrieve secret from API and store to cache
         let mut cache = self.cache.write().await;
         trace!(secret = %hash_key, %key, "try to retrieve and save to the cache");
-        let secrets_api: Api<Secret> = Api::namespaced(self.client.clone(), namespace);
+        let (secret_data_raw, secret_value) =
+            Self::query_secrets_api(self.client.clone(), namespace, secret_name, key).await?;
+
+        let cache_data = SecretValue {
+            data: secret_data_raw,
+            expires_at: SystemTime::now()
+                .checked_add(self.expiration_timeout)
+                .expect("looks like a BUG!"),
+        };
+        trace!(secret = %hash_key, %key, "save object to the cache");
+        cache.insert(hash_key, cache_data);
+
+        Ok(secret_value)
+    }
+
+    /// Retrieve secrets' content and particular key value
+    /// Return whole content of the secret (BTreeMap) for caching and
+    /// extract single value by key (String)
+    pub async fn query_secrets_api(
+        client: Client,
+        namespace: &str,
+        secret_name: &str,
+        key: &str,
+    ) -> Result<(BTreeMap<String, ByteString>, String), Error> {
+        let secrets_api: Api<Secret> = Api::namespaced(client, namespace);
         let secret = secrets_api.get(secret_name).await?;
 
         let secret_data_raw = secret
@@ -269,15 +392,88 @@ impl SecretsCache {
             ))
         })?;
 
-        let cache_data = SecretValue {
-            data: secret_data_raw,
-            expires_at: SystemTime::now()
-                .checked_add(self.expiration_timeout)
-                .expect("looks like a BUG!"),
-        };
-        trace!(secret = %hash_key, %key, "save object to the cache");
-        cache.insert(hash_key, cache_data);
+        Ok((secret_data_raw, secret_value))
+    }
+}
 
-        Ok(secret_value)
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use insta::assert_debug_snapshot;
+    use k8s_openapi::api::core::v1::Namespace;
+    use kube::{
+        api::{DeleteParams, PostParams},
+        Resource,
+    };
+
+    const TEST_SECRET_NAME: &str = "test-secrets-cache-data";
+    const TEST_SECRET_KEY: &str = "token";
+    const TEST_SECRET_TOKEN: &str = "1234567890";
+    const NAMESPACE: &str = "secret-cache-test";
+
+    /// Unattended namespace creation
+    async fn create_namespace() {
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<Namespace>::all(client);
+        let pp = PostParams::default();
+
+        let mut data = Namespace::default();
+        data.meta_mut().name = Some(String::from(NAMESPACE));
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn secrets_cache() {
+        create_namespace().await;
+        let pp = PostParams::default();
+        let dp = DeleteParams::default();
+        let expire_time = Duration::from_secs(1);
+
+        let client = Client::try_default().await.unwrap();
+        let api = Api::<Secret>::namespaced(client.clone(), NAMESPACE);
+
+        // Ensure Secret isn't present
+        let _ = api.delete(TEST_SECRET_NAME, &dp).await;
+
+        // Init secrets cache
+        SecretsCache::init_cache(expire_time, client.clone());
+
+        // Try to retrieve non-existent secret
+        let res = SecretsCache::query_secrets_cache(NAMESPACE, TEST_SECRET_NAME, TEST_SECRET_KEY).await;
+        assert!(res.is_err());
+        assert_debug_snapshot!(res.err().unwrap());
+
+        // Create secret
+        let mut secrets = BTreeMap::new();
+        let value = k8s_openapi::ByteString(Vec::<u8>::from(TEST_SECRET_TOKEN));
+        secrets.insert("token".into(), value);
+        let mut data = Secret::default();
+        data.meta_mut().name = Some(String::from(TEST_SECRET_NAME));
+        let _ = data.data.insert(secrets);
+        api.create(&pp, &data).await.unwrap_or_default();
+
+        // Try to retrieve non-existent key
+        let res = SecretsCache::query_secrets_cache(NAMESPACE, TEST_SECRET_NAME, "some-non-existent-key").await;
+        assert!(res.is_err());
+        assert_debug_snapshot!(res.err().unwrap());
+
+        // Try to retrieve existent key
+        let res = SecretsCache::query_secrets_cache(NAMESPACE, TEST_SECRET_NAME, TEST_SECRET_KEY)
+            .await
+            .unwrap();
+        assert_eq!(res, TEST_SECRET_TOKEN);
+
+        // Delete secret while cache is valid, and try to retrieve secret from cache
+        let _ = api.delete(TEST_SECRET_NAME, &dp).await;
+        let res = SecretsCache::query_secrets_cache(NAMESPACE, TEST_SECRET_NAME, TEST_SECRET_KEY)
+            .await
+            .unwrap();
+        assert_eq!(res, TEST_SECRET_TOKEN);
+
+        // Wait for expiration, try to retrieve and get error
+        tokio::time::sleep(expire_time).await;
+        let res = SecretsCache::query_secrets_cache(NAMESPACE, TEST_SECRET_NAME, "some-non-existent-key").await;
+        assert!(res.is_err());
     }
 }
