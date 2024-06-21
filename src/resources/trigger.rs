@@ -913,7 +913,6 @@ mod tests {
     use insta::assert_yaml_snapshot;
     use k8s_openapi::api::core::v1::Namespace;
     use kube::api::{DeleteParams, PostParams};
-    use tempdir::TempDir;
     use tokio::io::AsyncWriteExt;
 
     use super::*;
@@ -1374,7 +1373,7 @@ mod tests {
         // verify that we got hashes of 00 and 02 files only
 
         let mut hasher = Sha256::new();
-        let temp_folder = TempDir::new("file_hasher_test").unwrap();
+        let temp_folder = tempfile::Builder::new().prefix("file_hasher_test").tempdir().unwrap();
 
         for i in 0..3 {
             let file_name = format!("0{i}.txt");
@@ -1401,6 +1400,4 @@ mod tests {
 
         assert_eq!(calculated_hash, expected_hash);
     }
-
-    // CheckedSourceState::is_equal
 }

@@ -97,4 +97,4 @@ insta = { version = "1", features = [
     "filters",
     "yaml",
 ] }
-tempdir = "0.3.7"
+tempfile = "3.10.1"
