@@ -37,6 +37,7 @@
         "scheduletriggers",
         "schemars",
         "stdext",
+        "tempfile",
         "thiserror",
         "tolerations",
         "userpass",
