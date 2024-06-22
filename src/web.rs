@@ -2,7 +2,7 @@ use crate::cache::{ApiCache, SecretsCache};
 use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
-use crate::{get_trace_id, Error};
+use crate::{get_trace_id, Error, METRICS_PREFIX};
 use axum::routing::post;
 use axum::{
     extract::{FromRequest, Path, State},
@@ -13,7 +13,8 @@ use axum::{
 };
 use futures::Future;
 use kube::Client;
-use prometheus::{Encoder, TextEncoder};
+use lazy_static::lazy_static;
+use prometheus::{histogram_opts, opts, register, Encoder, HistogramVec, IntCounterVec, TextEncoder};
 use sacs::{
     scheduler::{Scheduler, TaskScheduler},
     task::TaskId,
@@ -21,11 +22,16 @@ use sacs::{
 use serde::Serialize;
 use std::{sync::Arc, time::Duration};
 use strum::Display;
+use tokio::time::Instant;
 use tokio::{
     net::TcpListener,
     sync::{watch, RwLock},
 };
 use tracing::{debug, error, info, instrument, trace, warn};
+
+lazy_static! {
+    static ref METRICS: Metrics = Metrics::default().register();
+}
 
 /// State is attached to each web request
 #[derive(Clone)]
@@ -39,7 +45,7 @@ struct WebState {
 /// We return JSON with predefined status (ok/err/...) and mandatory message
 /// which explains status
 /// task_id is for successful calls to triggers
-#[derive(FromRequest, Serialize, Debug)]
+#[derive(Clone, FromRequest, Serialize, Debug)]
 #[from_request(via(axum::Json), rejection(WebError))]
 struct WebResponseJson {
     status: WebResponseStatus,
@@ -48,14 +54,14 @@ struct WebResponseJson {
     task_id: Option<String>,
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum WebResponseStatus {
     Ok,
     Error,
 }
 
-#[derive(Display, Debug, PartialEq)]
+#[derive(Clone, Display, Debug, PartialEq)]
 enum WebError {
     #[strum(to_string = "multi-source hook isn't allowed")]
     ForbiddenMultiSource,
@@ -75,6 +81,63 @@ enum WebError {
     SchedulerError { msg: String },
     #[strum(to_string = "Unknown: {msg}")]
     UnknownError { msg: String },
+}
+
+struct Metrics {
+    duration: HistogramVec,
+    count: IntCounterVec,
+}
+
+impl Metrics {
+    fn register(self) -> Self {
+        register(Box::new(self.duration.clone())).unwrap();
+        register(Box::new(self.count.clone())).unwrap();
+        self
+    }
+
+    fn count_and_measure(
+        &self,
+        namespace: &str,
+        trigger: &str,
+        start: &Instant,
+        result: &Result<WebResponseJson, WebError>,
+    ) {
+        let latency = start.elapsed().as_secs_f64();
+        let status = result.clone().into_response().status();
+        let labels: [&str; 3] = [namespace, trigger, status.as_str()];
+
+        METRICS
+            .duration
+            .get_metric_with_label_values(&labels)
+            .unwrap()
+            .observe(latency);
+        METRICS.count.get_metric_with_label_values(&labels).unwrap().inc();
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let duration = HistogramVec::new(
+            histogram_opts!(
+                format!("{METRICS_PREFIX}_webhook_requests_duration_seconds"),
+                "The time of webhook request scheduling in seconds"
+            )
+            .buckets(vec![0.001, 0.01, 0.1, 0.5, 1.]),
+            &["namespace", "trigger", "status"],
+        )
+        .unwrap();
+
+        let count = IntCounterVec::new(
+            opts!(
+                format!("{METRICS_PREFIX}_webhook_requests_count"),
+                "The number of webhook requests",
+            ),
+            &["namespace", "trigger", "status"],
+        )
+        .unwrap();
+
+        Self { duration, count }
+    }
 }
 
 /// Returns web server Future with endpoints for health/live checks and metrics responder.
@@ -194,30 +257,38 @@ async fn handle_post_trigger_webhook(
     Path((namespace, trigger)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<WebResponseJson, WebError> {
-    trace!(%namespace, %trigger, "POST request");
+    let start = Instant::now();
 
-    let trigger = WebhookTrigger::get(&trigger, Some(&namespace))?;
-    let trigger_hash_key = trigger.trigger_hash_key();
+    let result = async {
+        trace!(%namespace, %trigger, "POST request");
 
-    state
-        .check_hook_authorization(&headers, &trigger.spec, &namespace)
-        .await?;
-    if trigger.spec.webhook.multi_source {
-        info!(trigger = %trigger_hash_key, "running all-sources check");
-        let task = trigger.create_trigger_task(
-            state.client.clone(),
-            sacs::task::TaskSchedule::Once,
-            TriggerTaskSources::All,
-            state.source_clone_folder,
-        );
-        let scheduler = state.scheduler.write().await;
-        let task_id = scheduler.add(task).await?;
+        let trigger = WebhookTrigger::get(&trigger, Some(&namespace))?;
+        let trigger_hash_key = trigger.trigger_hash_key();
 
-        Ok(task_id.into()) // include task_id into successful response
-    } else {
-        warn!(trigger = %trigger_hash_key, "multi-source hook is forbidden");
-        Err(WebError::ForbiddenMultiSource)
+        state
+            .check_hook_authorization(&headers, &trigger.spec, &namespace)
+            .await?;
+        if trigger.spec.webhook.multi_source {
+            info!(trigger = %trigger_hash_key, "running all-sources check");
+            let task = trigger.create_trigger_task(
+                state.client.clone(),
+                sacs::task::TaskSchedule::Once,
+                TriggerTaskSources::All,
+                state.source_clone_folder,
+            );
+            let scheduler = state.scheduler.write().await;
+            let task_id = scheduler.add(task).await?;
+
+            Ok(task_id.into()) // include task_id into successful response
+        } else {
+            warn!(trigger = %trigger_hash_key, "multi-source hook is forbidden");
+            Err(WebError::ForbiddenMultiSource)
+        }
     }
+    .await;
+
+    METRICS.count_and_measure(&namespace, &trigger, &start, &result);
+    result
 }
 
 /// Single source trigger run
@@ -227,30 +298,38 @@ async fn handle_post_source_webhook(
     Path((namespace, trigger, source)): Path<(String, String, String)>,
     headers: HeaderMap,
 ) -> Result<WebResponseJson, WebError> {
-    trace!(%namespace, %trigger, %source, "POST request");
+    let start = Instant::now();
 
-    let trigger = WebhookTrigger::get(&trigger, Some(&namespace))?;
-    let trigger_hash_key = trigger.trigger_hash_key();
+    let result = async {
+        trace!(%namespace, %trigger, %source, "POST request");
 
-    state
-        .check_hook_authorization(&headers, &trigger.spec, &namespace)
-        .await?;
-    if trigger.spec.sources.names.contains(&source) {
-        info!(trigger = %trigger_hash_key, %source, "running single-source check");
-        let task = trigger.create_trigger_task(
-            state.client.clone(),
-            sacs::task::TaskSchedule::Once,
-            TriggerTaskSources::Single(source.clone()), // by specifying `single source` we restrict scope of the task.
-            state.source_clone_folder,
-        );
-        let scheduler = state.scheduler.write().await;
-        let task_id = scheduler.add(task).await?;
+        let trigger = WebhookTrigger::get(&trigger, Some(&namespace))?;
+        let trigger_hash_key = trigger.trigger_hash_key();
 
-        Ok(task_id.into())
-    } else {
-        warn!(trigger = %trigger_hash_key, %source, "source doesn't exist in the trigger");
-        Err(WebError::SourceNotFound)
+        state
+            .check_hook_authorization(&headers, &trigger.spec, &namespace)
+            .await?;
+        if trigger.spec.sources.names.contains(&source) {
+            info!(trigger = %trigger_hash_key, %source, "running single-source check");
+            let task = trigger.create_trigger_task(
+                state.client.clone(),
+                sacs::task::TaskSchedule::Once,
+                TriggerTaskSources::Single(source.clone()), // by specifying `single source` we restrict scope of the task.
+                state.source_clone_folder,
+            );
+            let scheduler = state.scheduler.write().await;
+            let task_id = scheduler.add(task).await?;
+
+            Ok(task_id.into())
+        } else {
+            warn!(trigger = %trigger_hash_key, %source, "source doesn't exist in the trigger");
+            Err(WebError::SourceNotFound)
+        }
     }
+    .await;
+
+    METRICS.count_and_measure(&namespace, &trigger, &start, &result);
+    result
 }
 
 impl IntoResponse for WebResponseJson {

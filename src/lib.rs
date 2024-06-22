@@ -13,6 +13,8 @@ use thiserror::Error;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+pub const METRICS_PREFIX: &str = "git_events_runner";
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Kube Error: {0}")]
