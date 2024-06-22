@@ -1,5 +1,5 @@
 use crate::config::RuntimeConfig;
-use crate::{Error, Result};
+use crate::{Error, Result, METRICS_PREFIX};
 use futures::{future::ready, StreamExt};
 use k8s_openapi::api::batch::v1::JobStatus;
 use k8s_openapi::{api::batch::v1::Job, Metadata};
@@ -10,6 +10,8 @@ use kube::{
     runtime::{reflector, watcher, WatchStreamExt},
     Api, Client,
 };
+use lazy_static::lazy_static;
+use prometheus::{histogram_opts, opts, register, Histogram, HistogramVec, IntCounterVec, IntGauge};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, SystemTime};
@@ -24,6 +26,115 @@ const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identit
 
 static JOBS_QUEUE: OnceLock<Arc<JobsQueue>> = OnceLock::new();
 
+lazy_static! {
+    static ref METRICS: Metrics = Metrics::default().register();
+}
+
+struct Metrics {
+    current_limit: IntGauge,
+    running_jobs: IntGauge,
+    waiting_jobs: IntGauge,
+    waiting_duration: Histogram,
+    completed_count: IntCounterVec,
+    completed_duration: HistogramVec,
+}
+
+impl Metrics {
+    fn register(self) -> Self {
+        register(Box::new(self.current_limit.clone())).unwrap();
+        register(Box::new(self.running_jobs.clone())).unwrap();
+        register(Box::new(self.waiting_jobs.clone())).unwrap();
+        register(Box::new(self.waiting_duration.clone())).unwrap();
+        register(Box::new(self.completed_count.clone())).unwrap();
+        register(Box::new(self.completed_duration.clone())).unwrap();
+
+        self
+    }
+
+    fn update_gauges(&self, running_jobs: usize, waiting_jobs: usize) {
+        self.running_jobs.set(running_jobs.try_into().unwrap());
+        self.waiting_jobs.set(waiting_jobs.try_into().unwrap());
+        self.current_limit
+            .set(RuntimeConfig::get().action.max_running_jobs.try_into().unwrap());
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let current_limit = IntGauge::new(
+            format!("{METRICS_PREFIX}_jobs_queue_limit"),
+            "The limit of simultaneously running jobs",
+        )
+        .unwrap();
+
+        let running_jobs = IntGauge::new(
+            format!("{METRICS_PREFIX}_jobs_queue_running_jobs"),
+            "The current number of waiting in the queue jobs",
+        )
+        .unwrap();
+
+        let waiting_jobs = IntGauge::new(
+            format!("{METRICS_PREFIX}_jobs_queue_waiting_jobs"),
+            "The current number of runnings jobs",
+        )
+        .unwrap();
+
+        let waiting_duration = Histogram::with_opts(
+            histogram_opts!(
+                format!("{METRICS_PREFIX}_jobs_queue_waiting_duration_seconds"),
+                "The jobs queue waiting time in seconds"
+            )
+            .buckets(vec![0.1, 0.5, 1., 2., 5., 10., 20., 60.]),
+        )
+        .unwrap();
+
+        let completed_count = IntCounterVec::new(
+            opts!(
+                format!("{METRICS_PREFIX}_jobs_queue_completed_count"),
+                "The number completed jobs",
+            ),
+            &[
+                "namespace",
+                "trigger_kind",
+                "trigger",
+                "source_kind",
+                "source",
+                "action_kind",
+                "action",
+                "status",
+            ],
+        )
+        .unwrap();
+
+        let completed_duration = HistogramVec::new(
+            histogram_opts!(
+                format!("{METRICS_PREFIX}_jobs_queue_completed_duration_seconds"),
+                "The jobs execution time in seconds"
+            )
+            .buckets(vec![1., 5., 10., 30., 60., 120., 300.]),
+            &[
+                "namespace",
+                "trigger_kind",
+                "trigger",
+                "source_kind",
+                "source",
+                "action_kind",
+                "action",
+                "status",
+            ],
+        )
+        .unwrap();
+
+        Self {
+            current_limit,
+            running_jobs,
+            waiting_jobs,
+            waiting_duration,
+            completed_count,
+            completed_duration,
+        }
+    }
+}
 pub struct JobsQueue {
     client: Client,
     identity: String,
@@ -117,6 +228,8 @@ impl JobsQueue {
                 ready(())
             });
 
+        METRICS.update_gauges(0, 0);
+
         tokio::select! {
             biased;
             // Listen on shutdown events
@@ -166,13 +279,17 @@ impl JobsQueue {
         let mut queue_jobs_rx = queue.queue_jobs_rx.write().await;
 
         let running_jobs = queue.running_jobs.load(std::sync::atomic::Ordering::SeqCst);
-        if running_jobs > RuntimeConfig::get().action.max_running_jobs {
+        let mut waiting_jobs = queue_jobs_rx.len();
+        let max_running_jobs = RuntimeConfig::get().action.max_running_jobs;
+
+        METRICS.update_gauges(running_jobs, waiting_jobs);
+
+        if running_jobs > max_running_jobs {
             warn!(%running_jobs, "jobs queue capacity is exceeded");
             return;
         }
 
         let mut free_capacity = RuntimeConfig::get().action.max_running_jobs - running_jobs;
-        let mut waiting_jobs = queue_jobs_rx.len();
         let now = SystemTime::now();
 
         debug!(%running_jobs, %waiting_jobs, %free_capacity, "jobs queue state");
