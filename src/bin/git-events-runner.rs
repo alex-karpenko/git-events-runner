@@ -3,7 +3,6 @@ use git_events_runner::{
     cli::{Cli, CliConfig, CliConfigDumpOptions},
     config::RuntimeConfig,
     controller::{run_leader_controllers, State},
-    get_trace_id,
     jobs::JobsQueue,
     leader,
     resources::{
@@ -36,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-#[instrument("controller", skip_all, fields(trace_id = %get_trace_id()))]
+#[instrument("controller", skip_all)]
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let client = Client::try_default().await?;
     let identity = Uuid::new_v4().to_string();

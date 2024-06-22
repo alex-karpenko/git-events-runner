@@ -174,9 +174,9 @@ async fn handle_ready(State(state): State<AppState>) -> (StatusCode, &'static st
     }
 }
 
-#[instrument("metrics", level = "warn", skip_all, fields(trace_id = %get_trace_id()))]
+#[instrument("metrics", level = "trace", skip_all, fields(trace_id = %get_trace_id()))]
 async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) {
-    warn!("metrics requested");
+    trace!("metrics requested");
 
     let mut buffer = Vec::new();
     let encoder = TextEncoder::new();
