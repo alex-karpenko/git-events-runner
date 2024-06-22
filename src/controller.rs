@@ -206,6 +206,8 @@ where
     <K as Resource>::DynamicType: Default,
     K: Resource<Scope = NamespaceResourceScope>,
 {
+    ctx.diagnostics.write().await.last_event = Utc::now();
+
     let ns = resource.namespace().unwrap();
     let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
 

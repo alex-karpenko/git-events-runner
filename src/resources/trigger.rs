@@ -1,6 +1,7 @@
 use crate::{
     cache::ApiCache,
     controller::Context,
+    get_trace_id,
     resources::{
         action::{Action, ActionExecutor, ClusterAction},
         git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
@@ -328,7 +329,8 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         fields(
             kind=Self::crd_kind(),
             namespace=self.namespace().unwrap(),
-            trigger=self.name_any()
+            trigger=self.name_any(),
+            trace_id = %get_trace_id()
         )
     )]
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {
@@ -413,7 +415,8 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
         fields(
             kind=Self::crd_kind(),
             namespace=self.namespace().unwrap(),
-            trigger=self.name_any()
+            trigger=self.name_any(),
+            trace_id = %get_trace_id()
         )
     )]
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction> {

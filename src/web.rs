@@ -2,7 +2,7 @@ use crate::cache::{ApiCache, SecretsCache};
 use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
-use crate::Error;
+use crate::{get_trace_id, Error};
 use axum::routing::post;
 use axum::{
     extract::{FromRequest, Path, State},
@@ -13,6 +13,7 @@ use axum::{
 };
 use futures::Future;
 use kube::Client;
+use prometheus::{Encoder, TextEncoder};
 use sacs::{
     scheduler::{Scheduler, TaskScheduler},
     task::TaskId,
@@ -78,7 +79,6 @@ enum WebError {
 
 /// Returns web server Future with endpoints for health/live checks and metrics responder.
 /// It exits by receiving anything from `shutdown` channel.
-/// TODO: Use state to store metrics
 pub async fn build_utils_web(
     app_state: AppState,
     mut shutdown: watch::Receiver<bool>,
@@ -162,7 +162,7 @@ pub async fn build_hooks_web(
     }
 }
 
-#[instrument("ready", level = "trace", skip_all)]
+#[instrument("ready", level = "trace", skip_all, fields(trace_id = %get_trace_id()))]
 async fn handle_ready(State(state): State<AppState>) -> (StatusCode, &'static str) {
     // depends on global readiness state
     let ready = *state.ready.read().await;
@@ -174,14 +174,21 @@ async fn handle_ready(State(state): State<AppState>) -> (StatusCode, &'static st
     }
 }
 
-#[instrument("metrics", level = "trace", skip_all)]
+#[instrument("metrics", level = "warn", skip_all, fields(trace_id = %get_trace_id()))]
 async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) {
-    warn!("metrics endpoint isn't implemented");
-    (StatusCode::NOT_IMPLEMENTED, "Not implemented".into())
+    warn!("metrics requested");
+
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+    let metric_families = prometheus::gather();
+    encoder.encode(&metric_families, &mut buffer).unwrap();
+    let output = String::from_utf8(buffer.clone()).unwrap();
+
+    (StatusCode::OK, output)
 }
 
 /// Trigger jobs for all sources of the trigger
-#[instrument("trigger webhook", skip_all, fields(namespace, trigger))]
+#[instrument("trigger webhook", skip_all, fields(namespace, trigger, trace_id = %get_trace_id()))]
 async fn handle_post_trigger_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
@@ -214,7 +221,7 @@ async fn handle_post_trigger_webhook(
 }
 
 /// Single source trigger run
-#[instrument("source webhook", skip_all, fields(namespace, trigger, source))]
+#[instrument("source webhook", skip_all, fields(namespace, trigger, source, trace_id = %get_trace_id()))]
 async fn handle_post_source_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,

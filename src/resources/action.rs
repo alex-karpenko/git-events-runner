@@ -3,7 +3,7 @@ use super::{
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
     CustomApiResource,
 };
-use crate::{config::RuntimeConfig, jobs::JobsQueue, Result};
+use crate::{config::RuntimeConfig, get_trace_id, jobs::JobsQueue, Result};
 use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
@@ -145,7 +145,8 @@ pub(crate) trait ActionExecutor: ActionInternals {
             source_kind = %source_kind,
             source_name = %source_name,
             source_commit = %source_commit,
-            reference = %trigger_ref
+            reference = %trigger_ref,
+            trace_id = %get_trace_id()
         ))]
     async fn execute(
         &self,
