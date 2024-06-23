@@ -763,6 +763,8 @@ where
                                                         &new_source_state.commit_hash.clone().unwrap(),
                                                         &trigger.sources().watch_on.reference,
                                                         &trigger_ns,
+                                                        Self::crd_kind(),
+                                                        &trigger_name,
                                                     )
                                                     .await
                                             }
@@ -780,6 +782,8 @@ where
                                                         &new_source_state.commit_hash.clone().unwrap(),
                                                         &trigger.sources().watch_on.reference,
                                                         &trigger_ns,
+                                                        Self::crd_kind(),
+                                                        &trigger_name,
                                                     )
                                                     .await
                                             }
@@ -1033,7 +1037,7 @@ mod tests {
         let pp = PostParams::default();
         let dp = DeleteParams::default();
 
-        let trigger = WebhookTrigger::test_anonymous_webhook(&name, TEST_NAMESPACE, vec![], true);
+        let trigger = WebhookTrigger::test_anonymous_webhook(name, TEST_NAMESPACE, vec![], true);
         api.create(&pp, &trigger).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_yaml_snapshot!(
@@ -1071,7 +1075,7 @@ mod tests {
         let pp = PostParams::default();
         let dp = DeleteParams::default();
 
-        let trigger = WebhookTrigger::test_anonymous_webhook(&name, TEST_NAMESPACE, vec![], true);
+        let trigger = WebhookTrigger::test_anonymous_webhook(name, TEST_NAMESPACE, vec![], true);
         api.create(&pp, &trigger).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_yaml_snapshot!(
@@ -1115,7 +1119,7 @@ mod tests {
         let dp = DeleteParams::default();
 
         let trigger = WebhookTrigger::test_anonymous_webhook(
-            &name,
+            name,
             TEST_NAMESPACE,
             vec!["source-1".into(), "source-2".into(), "source-3".into()],
             true,
@@ -1270,7 +1274,7 @@ mod tests {
         let dp = DeleteParams::default();
 
         let trigger = WebhookTrigger::test_anonymous_webhook(
-            &name,
+            name,
             TEST_NAMESPACE,
             vec!["source-1".into(), "source-2".into(), "source-3".into()],
             true,
@@ -1383,8 +1387,8 @@ mod tests {
             let file_path = temp_folder.path().join(file_name);
             let mut tmp_file = File::create(file_path).await.unwrap();
 
-            let mut buf: Vec<u8> = random_string(TEST_BUFFER_SIZE).into();
-            tmp_file.write(&mut buf).await.unwrap();
+            let buf: Vec<u8> = random_string(TEST_BUFFER_SIZE).into();
+            tmp_file.write_all(&buf).await.unwrap();
 
             let hash = calc_buffer_hash(&buf).unwrap();
             if i != 1 {

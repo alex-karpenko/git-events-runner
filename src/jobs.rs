@@ -1,4 +1,8 @@
 use crate::config::RuntimeConfig;
+use crate::resources::action::{
+    ACTION_JOB_ACTION_KIND_LABEL, ACTION_JOB_ACTION_NAME_LABEL, ACTION_JOB_SOURCE_KIND_LABEL,
+    ACTION_JOB_SOURCE_NAME_LABEL, ACTION_JOB_TRIGGER_KIND_LABEL, ACTION_JOB_TRIGGER_NAME_LABEL,
+};
 use crate::{Error, Result, METRICS_PREFIX};
 use futures::{future::ready, StreamExt};
 use k8s_openapi::api::batch::v1::JobStatus;
@@ -19,6 +23,7 @@ use std::{
     fmt::Debug,
     sync::{Arc, OnceLock},
 };
+use strum::Display;
 use tokio::sync::{mpsc, watch, RwLock};
 use tracing::{debug, error, info, trace, warn};
 
@@ -30,6 +35,15 @@ lazy_static! {
     static ref METRICS: Metrics = Metrics::default().register();
 }
 
+#[derive(Clone, Debug, PartialEq, Display)]
+enum JobCompletionStatus {
+    Succeed,
+    Failed,
+    Expired,
+    Deleted,
+    CreateError,
+}
+
 struct Metrics {
     current_limit: IntGauge,
     running_jobs: IntGauge,
@@ -37,26 +51,6 @@ struct Metrics {
     waiting_duration: Histogram,
     completed_count: IntCounterVec,
     completed_duration: HistogramVec,
-}
-
-impl Metrics {
-    fn register(self) -> Self {
-        register(Box::new(self.current_limit.clone())).unwrap();
-        register(Box::new(self.running_jobs.clone())).unwrap();
-        register(Box::new(self.waiting_jobs.clone())).unwrap();
-        register(Box::new(self.waiting_duration.clone())).unwrap();
-        register(Box::new(self.completed_count.clone())).unwrap();
-        register(Box::new(self.completed_duration.clone())).unwrap();
-
-        self
-    }
-
-    fn update_gauges(&self, running_jobs: usize, waiting_jobs: usize) {
-        self.running_jobs.set(running_jobs.try_into().unwrap());
-        self.waiting_jobs.set(waiting_jobs.try_into().unwrap());
-        self.current_limit
-            .set(RuntimeConfig::get().action.max_running_jobs.try_into().unwrap());
-    }
 }
 
 impl Default for Metrics {
@@ -96,11 +90,11 @@ impl Default for Metrics {
             &[
                 "namespace",
                 "trigger_kind",
-                "trigger",
+                "trigger_name",
                 "source_kind",
-                "source",
+                "source_name",
                 "action_kind",
-                "action",
+                "action_name",
                 "status",
             ],
         )
@@ -115,11 +109,11 @@ impl Default for Metrics {
             &[
                 "namespace",
                 "trigger_kind",
-                "trigger",
+                "trigger_name",
                 "source_kind",
-                "source",
+                "source_name",
                 "action_kind",
-                "action",
+                "action_name",
                 "status",
             ],
         )
@@ -135,18 +129,111 @@ impl Default for Metrics {
         }
     }
 }
+impl Metrics {
+    fn register(self) -> Self {
+        register(Box::new(self.current_limit.clone())).unwrap();
+        register(Box::new(self.running_jobs.clone())).unwrap();
+        register(Box::new(self.waiting_jobs.clone())).unwrap();
+        register(Box::new(self.waiting_duration.clone())).unwrap();
+        register(Box::new(self.completed_count.clone())).unwrap();
+        register(Box::new(self.completed_duration.clone())).unwrap();
+
+        self
+    }
+
+    fn update_gauges(&self, waiting_jobs: usize) {
+        let running_jobs = JOBS_QUEUE.get().unwrap().running_jobs();
+
+        self.running_jobs.set(running_jobs.try_into().unwrap());
+        self.current_limit
+            .set(RuntimeConfig::get().action.max_running_jobs.try_into().unwrap());
+
+        self.waiting_jobs.set(waiting_jobs.try_into().unwrap());
+    }
+
+    fn count_and_measure_completed(&self, job: &Job, status: JobCompletionStatus) {
+        let job = job.clone();
+        let status_str = status.to_string();
+        let namespace = job.metadata.namespace.unwrap();
+
+        let job_labels = job.metadata.labels.unwrap();
+        let action_kind = job_labels.get(ACTION_JOB_ACTION_KIND_LABEL).unwrap();
+        let action_name = job_labels.get(ACTION_JOB_ACTION_NAME_LABEL).unwrap();
+        let source_kind = job_labels.get(ACTION_JOB_SOURCE_KIND_LABEL).unwrap();
+        let source_name = job_labels.get(ACTION_JOB_SOURCE_NAME_LABEL).unwrap();
+        let trigger_kind = job_labels.get(ACTION_JOB_TRIGGER_KIND_LABEL).unwrap();
+        let trigger_name = job_labels.get(ACTION_JOB_TRIGGER_NAME_LABEL).unwrap();
+
+        let labels: [&str; 8] = [
+            namespace.as_str(),
+            trigger_kind,
+            trigger_name,
+            source_kind,
+            source_name,
+            action_kind,
+            action_name,
+            status_str.as_str(),
+        ];
+
+        if let Ok(metric) = self.completed_count.get_metric_with_label_values(&labels) {
+            metric.inc();
+        }
+
+        match status {
+            JobCompletionStatus::Expired | JobCompletionStatus::Deleted | JobCompletionStatus::CreateError => {}
+            JobCompletionStatus::Succeed | JobCompletionStatus::Failed => {
+                if let Ok(metric) = self.completed_duration.get_metric_with_label_values(&labels) {
+                    let start = job.status.unwrap_or_default().start_time;
+                    if let Some(start) = start {
+                        let elapsed = SystemTime::now().duration_since(start.0.into());
+                        if let Ok(elapsed) = elapsed {
+                            metric.observe(elapsed.as_secs_f64());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn measure_waiting_duration(&self, duration: Duration) {
+        self.waiting_duration.observe(duration.as_secs_f64());
+    }
+}
+
 pub struct JobsQueue {
     client: Client,
     identity: String,
     queue_event_tx: watch::Sender<()>,
-    queue_jobs_tx: mpsc::UnboundedSender<(Job, SystemTime)>,
-    queue_jobs_rx: RwLock<mpsc::UnboundedReceiver<(Job, SystemTime)>>,
+    queue_jobs_tx: mpsc::UnboundedSender<JobsQueueItem>,
+    queue_jobs_rx: RwLock<mpsc::UnboundedReceiver<JobsQueueItem>>,
     running_jobs: AtomicUsize,
+}
+
+impl JobsQueue {
+    fn running_jobs(&self) -> usize {
+        self.running_jobs.load(std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 impl Debug for JobsQueue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("JobsQueue").field("identity", &self.identity).finish()
+    }
+}
+
+struct JobsQueueItem {
+    job: Job,
+    enqueued_at: SystemTime,
+    expire_after: Option<Duration>,
+}
+
+impl JobsQueueItem {
+    fn is_expired(&self) -> bool {
+        let expired_after = self.expire_after.unwrap_or(Duration::from_secs(
+            RuntimeConfig::get().action.job_waiting_timeout_seconds,
+        ));
+
+        SystemTime::now() > self.enqueued_at.checked_add(expired_after).unwrap()
     }
 }
 
@@ -201,11 +288,13 @@ impl JobsQueue {
                                     jobs_queue
                                         .running_jobs
                                         .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                    METRICS.count_and_measure_completed(&job, JobCompletionStatus::Succeed);
                                 } else if store_status.failed.is_some() {
                                     warn!(namespace = %ns, job = %name, "job failed");
                                     jobs_queue
                                         .running_jobs
                                         .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                    METRICS.count_and_measure_completed(&job, JobCompletionStatus::Failed);
                                 }
                             }
                         }
@@ -221,6 +310,7 @@ impl JobsQueue {
                             jobs_queue
                                 .running_jobs
                                 .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            METRICS.count_and_measure_completed(&job, JobCompletionStatus::Deleted);
                         }
                     }
                 }
@@ -228,7 +318,7 @@ impl JobsQueue {
                 ready(())
             });
 
-        METRICS.update_gauges(0, 0);
+        METRICS.update_gauges(0);
 
         tokio::select! {
             biased;
@@ -278,47 +368,53 @@ impl JobsQueue {
         let queue = JOBS_QUEUE.get().unwrap();
         let mut queue_jobs_rx = queue.queue_jobs_rx.write().await;
 
-        let running_jobs = queue.running_jobs.load(std::sync::atomic::Ordering::SeqCst);
+        let running_jobs = queue.running_jobs();
         let mut waiting_jobs = queue_jobs_rx.len();
         let max_running_jobs = RuntimeConfig::get().action.max_running_jobs;
 
-        METRICS.update_gauges(running_jobs, waiting_jobs);
+        METRICS.update_gauges(waiting_jobs);
 
         if running_jobs > max_running_jobs {
             warn!(%running_jobs, "jobs queue capacity is exceeded");
             return;
         }
 
-        let mut free_capacity = RuntimeConfig::get().action.max_running_jobs - running_jobs;
-        let now = SystemTime::now();
-
+        let mut free_capacity = max_running_jobs - running_jobs;
         debug!(%running_jobs, %waiting_jobs, %free_capacity, "jobs queue state");
 
         while waiting_jobs > 0 && free_capacity > 0 {
-            if let Some((job, expiration_time)) = queue_jobs_rx.recv().await {
-                let ns = job.namespace().unwrap();
-                let name = job.name_any();
-                if now < expiration_time {
+            if let Some(job_item) = queue_jobs_rx.recv().await {
+                let ns = job_item.job.namespace().unwrap();
+                let name = job_item.job.name_any();
+
+                waiting_jobs -= 1;
+
+                if !job_item.is_expired() {
                     debug!(namespace = %ns, job = %name , "creating job");
+                    METRICS.measure_waiting_duration(SystemTime::now().duration_since(job_item.enqueued_at).unwrap());
+
                     let jobs_api: Api<Job> = Api::namespaced(queue.client.clone(), &ns);
                     let result = jobs_api
-                        .create(&PostParams::default(), &job)
+                        .create(&PostParams::default(), &job_item.job)
                         .await
                         .map_err(Error::KubeError);
 
                     match result {
                         Ok(_) => {
-                            waiting_jobs -= 1;
                             free_capacity -= 1;
                             debug!(namespace = %ns, job = %name , "job created");
                         }
                         Err(error) => {
-                            error!(namespace = %ns, job = %name, %error, "error creating job")
+                            error!(namespace = %ns, job = %name, %error, "error creating job");
+                            METRICS.count_and_measure_completed(&job_item.job, JobCompletionStatus::CreateError);
                         }
                     }
                 } else {
                     warn!(namespace = %ns, job = %name, "job expired");
+                    METRICS.count_and_measure_completed(&job_item.job, JobCompletionStatus::Expired);
                 }
+
+                METRICS.update_gauges(waiting_jobs);
             } else {
                 debug!("jobs queue is empty");
                 break;
@@ -329,7 +425,7 @@ impl JobsQueue {
     /// Enqueue Jobs.
     /// Add/update necessary metadata and
     /// put job with queue timeout into the queue and trigger run_queue.
-    pub async fn enqueue(job: Job, ns: &str, timeout: Option<Duration>) -> Result<Job> {
+    pub async fn enqueue(job: Job, ns: &str, expire_after: Option<Duration>) -> Result<()> {
         if let Some(queue) = JOBS_QUEUE.get() {
             debug!(namespace = %ns, job = %job.name_any(), "enqueue job");
 
@@ -347,22 +443,22 @@ impl JobsQueue {
                 ..job
             };
 
-            let timeout = timeout.unwrap_or(Duration::from_secs(
-                RuntimeConfig::get().action.job_waiting_timeout_seconds,
-            ));
-            let expiration_time = SystemTime::now().checked_add(timeout).unwrap();
-
             // Put the job into the queue
+            let job_item = JobsQueueItem {
+                job,
+                enqueued_at: SystemTime::now(),
+                expire_after,
+            };
             let jobs_tx = queue.queue_jobs_tx.clone();
             jobs_tx
-                .send((job.clone(), expiration_time))
+                .send(job_item)
                 .map_err(|e| Error::JobsQueueError(e.to_string()))?;
 
             // Trigger run_queue method indirectly.
             let event_tx = queue.queue_event_tx.clone();
             event_tx.send(()).map_err(|e| Error::JobsQueueError(e.to_string()))?;
 
-            Ok(job)
+            Ok(())
         } else {
             Err(Error::JobsQueueError("jobs queue isn't initialized".into()))
         }

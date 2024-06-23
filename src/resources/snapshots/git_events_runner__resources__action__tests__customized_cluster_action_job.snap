@@ -15,6 +15,8 @@ metadata:
     git-events-runner.rs/action-name: customized-test-action
     git-events-runner.rs/source-kind: GitRepo
     git-events-runner.rs/source-name: action-test-source
+    git-events-runner.rs/trigger-kind: ScheduleTrigger
+    git-events-runner.rs/trigger-name: test-schedule-trigger-name
   name: customized-test-action-YYYYMMDD-HHMMSS-xx
   ownerReferences:
     - apiVersion: ""
@@ -71,6 +73,10 @@ spec:
               value: branch
             - name: ACTION_JOB_TRIGGER_SOURCE_REF_NAME
               value: main
+            - name: ACTION_JOB_TRIGGER_KIND
+              value: ScheduleTrigger
+            - name: ACTION_JOB_TRIGGER_NAME
+              value: test-schedule-trigger-name
             - name: ACTION_JOB_TRIGGER_SOURCE_NAMESPACE
               value: actions-test
             - name: ACTION_JOB_ACTION_SOURCE_KIND
