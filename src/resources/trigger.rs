@@ -7,7 +7,7 @@ use crate::{
         git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
         random_string, CustomApiResource, Reconcilable, API_GROUP, CURRENT_API_VERSION,
     },
-    Error, Result,
+    Error, Result, METRICS_PREFIX,
 };
 use chrono::{DateTime, Utc};
 use git2::{Oid, Repository};
@@ -22,6 +22,8 @@ use kube::{
     },
     Api, Client, CustomResource, Resource, ResourceExt,
 };
+use lazy_static::lazy_static;
+use prometheus::{histogram_opts, opts, register, HistogramVec, IntCounterVec};
 use sacs::{
     scheduler::{CancelOpts, TaskScheduler},
     task::{CronOpts, CronSchedule, Task, TaskSchedule},
@@ -42,10 +44,69 @@ use strum_macros::{Display, EnumString};
 use tokio::{
     fs::{create_dir_all, remove_dir_all, File},
     io::AsyncReadExt,
+    time::Instant,
 };
 use tracing::{debug, debug_span, error, info, instrument};
 
 const NEVER_LAST_RUN_STR: &str = "Never";
+
+lazy_static! {
+    static ref METRICS: Metrics = Metrics::default().register();
+}
+
+struct Metrics {
+    trigger_check_duration: HistogramVec,
+    trigger_check_count: IntCounterVec,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let trigger_check_count = IntCounterVec::new(
+            opts!(
+                format!("{METRICS_PREFIX}_trigger_check_count"),
+                "The number trigger checks for changes",
+            ),
+            &["namespace", "trigger_kind", "trigger_name"],
+        )
+        .unwrap();
+
+        let trigger_check_duration = HistogramVec::new(
+            histogram_opts!(
+                format!("{METRICS_PREFIX}_trigger_check_duration_seconds"),
+                "The duration of trigger checks for changes"
+            )
+            .buckets(vec![0.1, 1., 2., 5., 10., 30., 60.]),
+            &["namespace", "trigger_kind", "trigger_name"],
+        )
+        .unwrap();
+
+        Self {
+            trigger_check_duration,
+            trigger_check_count,
+        }
+    }
+}
+
+impl Metrics {
+    fn register(self) -> Self {
+        register(Box::new(self.trigger_check_count.clone())).unwrap();
+        register(Box::new(self.trigger_check_duration.clone())).unwrap();
+
+        self
+    }
+
+    fn count_and_measure(&self, namespace: &str, trigger_kind: &str, trigger_name: &str, latency: Duration) {
+        let labels: [&str; 3] = [namespace, trigger_kind, trigger_name];
+
+        if let Ok(metric) = self.trigger_check_count.get_metric_with_label_values(&labels) {
+            metric.inc();
+        }
+
+        if let Ok(metric) = self.trigger_check_duration.get_metric_with_label_values(&labels) {
+            metric.observe(latency.as_secs_f64());
+        }
+    }
+}
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
@@ -617,6 +678,7 @@ where
 
             // Actual trigger job
             Box::pin(async move {
+                let start = Instant::now();
                 let span = debug_span!("trigger task", id = id.to_string());
                 let _span = span.enter();
 
@@ -845,6 +907,7 @@ where
                 }
 
                 debug!(namespace = %trigger_ns, trigger = %trigger_name, job_id = %id, "finishing trigger job");
+                METRICS.count_and_measure(&trigger_ns, Self::crd_kind(), &trigger_name, start.elapsed())
             })
         })
     }
