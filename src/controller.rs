@@ -3,7 +3,7 @@ use crate::{
         trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
         CustomApiResource, Reconcilable,
     },
-    Error, Result,
+    Error, Result, METRICS_PREFIX,
 };
 use chrono::{DateTime, Utc};
 use futures::{future::join_all, StreamExt};
@@ -19,6 +19,8 @@ use kube::{
     },
     Api, Client, Resource, ResourceExt,
 };
+use lazy_static::lazy_static;
+use prometheus::{histogram_opts, opts, register, HistogramVec, IntCounterVec};
 use sacs::{
     scheduler::{
         GarbageCollector, RuntimeThreads, Scheduler, SchedulerBuilder, TaskScheduler, WorkerParallelism, WorkerType,
@@ -27,8 +29,89 @@ use sacs::{
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration};
-use tokio::sync::{watch, RwLock};
+use tokio::{
+    sync::{watch, RwLock},
+    time::Instant,
+};
 use tracing::{debug, error, info, warn};
+
+lazy_static! {
+    static ref METRICS: Metrics = Metrics::default().register();
+}
+
+struct Metrics {
+    reconcile_duration: HistogramVec,
+    reconcile_count: IntCounterVec,
+    failed_count: IntCounterVec,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let reconcile_count = IntCounterVec::new(
+            opts!(
+                format!("{METRICS_PREFIX}_reconcile_count"),
+                "The number reconciliations",
+            ),
+            &["namespace", "resource_kind", "resource_name"],
+        )
+        .unwrap();
+
+        let failed_count = IntCounterVec::new(
+            opts!(
+                format!("{METRICS_PREFIX}_failed_reconcile_count"),
+                "The number failed reconciliations",
+            ),
+            &["namespace", "resource_kind", "resource_name"],
+        )
+        .unwrap();
+
+        let reconcile_duration = HistogramVec::new(
+            histogram_opts!(
+                format!("{METRICS_PREFIX}_reconcile_duration_seconds"),
+                "The duration of reconciliations"
+            )
+            .buckets(vec![0.001, 0.01, 0.1, 0.5, 1., 2.]),
+            &["namespace", "resource_kind", "resource_name"],
+        )
+        .unwrap();
+
+        Self {
+            reconcile_duration,
+            reconcile_count,
+            failed_count,
+        }
+    }
+}
+
+impl Metrics {
+    fn register(self) -> Self {
+        register(Box::new(self.reconcile_count.clone())).unwrap();
+        register(Box::new(self.reconcile_duration.clone())).unwrap();
+        register(Box::new(self.failed_count.clone())).unwrap();
+
+        self
+    }
+
+    fn count_and_measure(&self, namespace: &str, resource_kind: &str, resource_name: &str, latency: Duration) {
+        let labels: [&str; 3] = [namespace, resource_kind, resource_name];
+
+        if let Ok(metric) = self.reconcile_count.get_metric_with_label_values(&labels) {
+            metric.inc();
+        }
+
+        if let Ok(metric) = self.reconcile_duration.get_metric_with_label_values(&labels) {
+            metric.observe(latency.as_secs_f64());
+        }
+    }
+
+    fn count_failed(&self, namespace: &str, resource_kind: &str, resource_name: &str) {
+        let labels: [&str; 3] = [namespace, resource_kind, resource_name];
+
+        if let Ok(metric) = self.failed_count.get_metric_with_label_values(&labels) {
+            metric.inc();
+        }
+    }
+}
 
 /// State shared between the controllers and the web server
 #[derive(Clone)]
@@ -190,11 +273,17 @@ where
 }
 
 /// Reconciliation errors handler
-fn error_policy<K, S>(_resource: Arc<K>, error: &Error, _ctx: Arc<Context>) -> ReconcileAction
+fn error_policy<K, S>(resource: Arc<K>, error: &Error, _ctx: Arc<Context>) -> ReconcileAction
 where
     K: Reconcilable<S>,
+    K: CustomApiResource + kube::Resource,
 {
     warn!(%error, "reconcile failed");
+    METRICS.count_failed(
+        &resource.namespace().unwrap_or_default(),
+        K::crd_kind(),
+        &resource.name_any(),
+    );
     ReconcileAction::await_change()
 }
 
@@ -206,13 +295,15 @@ where
     <K as Resource>::DynamicType: Default,
     K: Resource<Scope = NamespaceResourceScope>,
 {
+    let start = Instant::now();
     ctx.diagnostics.write().await.last_event = Utc::now();
 
     let ns = resource.namespace().unwrap();
+    let resource_name = resource.name_any();
     let resource_api: Api<K> = Api::namespaced(ctx.client.clone(), &ns);
 
-    debug!(kind = %K::crd_kind(), namespace = %ns, resource = %resource.name_any(), "reconciling");
-    if let Some(finalizer_name) = resource.finalizer_name() {
+    debug!(kind = %K::crd_kind(), namespace = %ns, resource = %resource_name, "reconciling");
+    let result = if let Some(finalizer_name) = resource.finalizer_name() {
         finalizer(&resource_api, finalizer_name, resource, |event| async {
             match event {
                 Finalizer::Apply(resource) => resource.reconcile(ctx.clone()).await,
@@ -223,7 +314,10 @@ where
         .map_err(|e| Error::FinalizerError(Box::new(e)))
     } else {
         resource.reconcile(ctx.clone()).await
-    }
+    };
+
+    METRICS.count_and_measure(&ns, K::crd_kind(), &resource_name, start.elapsed());
+    result
 }
 
 #[cfg(test)]
