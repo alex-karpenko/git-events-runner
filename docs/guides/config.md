@@ -14,12 +14,10 @@ Let's explain all of them with some details.
 
 ### logLevel
 
-Allowed values: `info`, `debug`.
+Allowed values: `error`, `warn`, `info`, `debug`, `trace`.
 
-Controller hs three possible log levels: debug, info, warning.
-If nothing is specified (this is equivalent to omit both `--debug` and `--verbose` command line options) the default
-level is warning.
 Using this parameter, you can change log level.
+If nothing is specified the default level is `info`.
 
 ### otlp
 
@@ -66,6 +64,11 @@ verification for changes.
 
 At the same time, parameter `volumeName` defines name of the Pods' volume, which should be used for that folder.
 Helm chart defines controllers' Pod with this volume of type `emptyDir`.
+
+### metricsPrefix
+
+The parameter specifies prefix ("namespace") to use for Prometheus metrics.
+The default value is `git_events_runner`.
 
 ## Runtime config
 
@@ -155,6 +158,8 @@ Options:
           Leader lease duration, seconds [default: 30]
       --leader-lease-grace <LEADER_LEASE_GRACE>
           Leader lease grace interval, seconds [default: 20]
+      --metrics-prefix <METRICS_PREFIX>
+          Name of the ConfigMap with dynamic controller config [default: git_events_runner]
   -h, --help
           Print help
 ```

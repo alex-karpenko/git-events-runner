@@ -2,8 +2,6 @@
 
 ## In work
 
-- controller: metrics
-
 ## Next release
 
 - hooks: implement hook requests rate control/throttling
@@ -37,3 +35,4 @@
 - controller: tracing
 - jobs: reschedule jobs if config was changed
 - jobs: stop scheduling after shutdown signal
+- controller: metrics

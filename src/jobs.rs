@@ -65,13 +65,13 @@ impl Default for Metrics {
         .unwrap();
 
         let running_jobs = IntGauge::new(
-            format!("{}_jobs_queue_running_jobs", cli_config.metrics_prefix),
+            format!("{}_jobs_queue_running", cli_config.metrics_prefix),
             "The current number of waiting in the queue jobs",
         )
         .unwrap();
 
         let waiting_jobs = IntGauge::new(
-            format!("{}_jobs_queue_waiting_jobs", cli_config.metrics_prefix),
+            format!("{}_jobs_queue_waiting", cli_config.metrics_prefix),
             "The current number of runnings jobs",
         )
         .unwrap();

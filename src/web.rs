@@ -126,7 +126,7 @@ impl Default for Metrics {
                 "The time of webhook request scheduling in seconds"
             )
             .buckets(vec![0.001, 0.01, 0.1, 0.5, 1.]),
-            &["namespace", "trigger", "status"],
+            &["namespace", "trigger_name", "status"],
         )
         .unwrap();
 
@@ -135,7 +135,7 @@ impl Default for Metrics {
                 format!("{}_webhook_requests_count", cli_config.metrics_prefix),
                 "The number of webhook requests",
             ),
-            &["namespace", "trigger", "status"],
+            &["namespace", "trigger_name", "status"],
         )
         .unwrap();
 
