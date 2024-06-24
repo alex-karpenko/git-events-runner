@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2024-06-24
+### Details
+#### Added
+- Implement runtime metrics and imorove traces by @alex-karpenko in [#23](https://github.com/alex-karpenko/git-events-runner/pull/23)
+
+#### Changed
+- Improve unit and integration testing by @alex-karpenko in [#21](https://github.com/alex-karpenko/git-events-runner/pull/21)
+
+#### Fixed
+- Fix security findings by @alex-karpenko in [#22](https://github.com/alex-karpenko/git-events-runner/pull/22)
+
 ## [0.2.0] - 2024-06-15
 ### Details
 #### Breaking changes
@@ -51,6 +62,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
+[0.2.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.0..v0.2.1
 [0.2.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.1.1..v0.2.0
 [0.1.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.1.0..v0.1.1
 
