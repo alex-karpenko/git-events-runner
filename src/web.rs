@@ -1,5 +1,5 @@
 use crate::cache::{ApiCache, SecretsCache};
-use crate::cli::CLI_CONFIG;
+use crate::cli::CliConfig;
 use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
@@ -118,7 +118,7 @@ impl Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
-        let cli_config = CLI_CONFIG.get().unwrap();
+        let cli_config = CliConfig::get();
 
         let duration = HistogramVec::new(
             histogram_opts!(

@@ -1,5 +1,5 @@
 use clap::Parser;
-use tokio::sync::OnceCell;
+use std::sync::OnceLock;
 use tracing::debug;
 
 const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
@@ -7,7 +7,7 @@ const DEFAULT_CONFIG_MAP_NAME: &str = "git-events-runner-config";
 const DEFAULT_LEADER_LOCK_LEASE_NAME: &str = "git-events-runner-leader-lock";
 const DEFAULT_METRICS_PREFIX: &str = "git_events_runner";
 
-pub static CLI_CONFIG: OnceCell<CliConfig> = OnceCell::const_new();
+static CLI_CONFIG: OnceLock<CliConfig> = OnceLock::new();
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -83,7 +83,28 @@ impl Cli {
     pub fn new() -> Cli {
         let cli: Cli = Parser::parse();
         debug!(config = ?cli, "creating cli config");
-        cli
+
+        // If we run controller - set shared CLiConfig instance
+        if let Cli::Run(config) = cli {
+            CLI_CONFIG.set(config.clone()).unwrap();
+            Cli::Run(config)
+        } else {
+            cli
+        }
+    }
+}
+
+impl CliConfig {
+    pub fn get() -> &'static Self {
+        #[cfg(not(test))]
+        {
+            CLI_CONFIG.get().unwrap()
+        }
+
+        #[cfg(test)]
+        {
+            CLI_CONFIG.get_or_init(|| CliConfig::parse_from::<_, &String>(&[]))
+        }
     }
 }
 

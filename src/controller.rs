@@ -1,5 +1,5 @@
 use crate::{
-    cli::CLI_CONFIG,
+    cli::CliConfig,
     resources::{
         trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
         CustomApiResource, Reconcilable,
@@ -48,7 +48,7 @@ struct Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
-        let cli_config = CLI_CONFIG.get().unwrap();
+        let cli_config = CliConfig::get();
 
         let reconcile_count = IntCounterVec::new(
             opts!(

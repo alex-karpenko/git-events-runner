@@ -1,6 +1,6 @@
 use crate::{
     cache::ApiCache,
-    cli::CLI_CONFIG,
+    cli::CliConfig,
     controller::Context,
     get_trace_id,
     resources::{
@@ -62,7 +62,7 @@ struct Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
-        let cli_config = CLI_CONFIG.get().unwrap();
+        let cli_config = CliConfig::get();
 
         let trigger_check_count = IntCounterVec::new(
             opts!(

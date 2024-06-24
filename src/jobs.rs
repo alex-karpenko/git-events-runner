@@ -1,4 +1,4 @@
-use crate::cli::CLI_CONFIG;
+use crate::cli::CliConfig;
 use crate::config::RuntimeConfig;
 use crate::resources::action::{
     ACTION_JOB_ACTION_KIND_LABEL, ACTION_JOB_ACTION_NAME_LABEL, ACTION_JOB_SOURCE_KIND_LABEL,
@@ -56,7 +56,7 @@ struct Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
-        let cli_config = CLI_CONFIG.get().unwrap();
+        let cli_config = CliConfig::get();
 
         let current_limit = IntGauge::new(
             format!("{}_jobs_queue_limit", cli_config.metrics_prefix),
