@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 #### Fixed
 - Fix security findings by @alex-karpenko in [#22](https://github.com/alex-karpenko/git-events-runner/pull/22)
+- Update dependencies by @alex-karpenko in [#24](https://github.com/alex-karpenko/git-events-runner/pull/24)
 
 ## [0.2.0] - 2024-06-15
 ### Details
