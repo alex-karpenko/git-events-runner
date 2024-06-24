@@ -20,7 +20,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.26">
+      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.27">
     
     
       
@@ -458,6 +458,8 @@
       
         
       
+        
+      
     
     
       
@@ -668,6 +670,27 @@
           </ul>
         </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/observability/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Observability
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -963,17 +986,12 @@
 
 <h1 id="roadmap">Roadmap<a class="headerlink" href="#roadmap" title="Permanent link">&para;</a></h1>
 <h2 id="in-work">In work<a class="headerlink" href="#in-work" title="Permanent link">&para;</a></h2>
-<ul>
-<li>tests: automate everything possible</li>
-</ul>
 <h2 id="next-release">Next release<a class="headerlink" href="#next-release" title="Permanent link">&para;</a></h2>
 <ul>
-<li>controller: metrics</li>
 <li>hooks: implement hook requests rate control/throttling</li>
 <li>hooks: tls listener for webhooks</li>
 <li>gitrepo: add support for private keys with passphrase</li>
 <li>gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images <code>FROM scratch</code></li>
-<li>gitrepo: update to use <code>gix</code> instead of <code>git2</code>, if possible</li>
 <li>controller: get rid of kubert dependency</li>
 </ul>
 <h2 id="wishes">Wishes<a class="headerlink" href="#wishes" title="Permanent link">&para;</a></h2>
@@ -983,6 +1001,7 @@
 <li>cli: deploy, config, get state, remove</li>
 <li>cli: configure webhook auth secrets and store them as hashes</li>
 <li>chart: update to specify container registry and use docker.io by default.</li>
+<li>tests: improve tests</li>
 </ul>
 <h2 id="done">Done<a class="headerlink" href="#done" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1002,6 +1021,7 @@
 <li>controller: tracing</li>
 <li>jobs: reschedule jobs if config was changed</li>
 <li>jobs: stop scheduling after shutdown signal</li>
+<li>controller: metrics</li>
 </ul>
 
 
