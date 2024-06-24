@@ -2,16 +2,12 @@
 
 ## In work
 
-- tests: automate everything possible
-
 ## Next release
 
-- controller: metrics
 - hooks: implement hook requests rate control/throttling
 - hooks: tls listener for webhooks
 - gitrepo: add support for private keys with passphrase
 - gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images `FROM scratch`
-- gitrepo: update to use `gix` instead of `git2`, if possible
 - controller: get rid of kubert dependency
 
 ## Wishes
@@ -21,6 +17,7 @@
 - cli: deploy, config, get state, remove
 - cli: configure webhook auth secrets and store them as hashes
 - chart: update to specify container registry and use docker.io by default.
+- tests: improve tests
 
 ## Done
 
@@ -38,3 +35,4 @@
 - controller: tracing
 - jobs: reschedule jobs if config was changed
 - jobs: stop scheduling after shutdown signal
+- controller: metrics

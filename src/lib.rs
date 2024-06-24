@@ -8,6 +8,7 @@ pub mod resources;
 pub mod signals;
 pub mod web;
 
+use opentelemetry::trace::TraceId;
 use thiserror::Error;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -97,4 +98,12 @@ impl Error {
     pub fn metric_label(&self) -> String {
         format!("{self:?}").to_lowercase()
     }
+}
+
+///  Fetch an opentelemetry::trace::TraceId as hex through the full tracing stack
+pub fn get_trace_id() -> TraceId {
+    use opentelemetry::trace::TraceContextExt as _; // opentelemetry::Context -> opentelemetry::trace::Span
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _; // tracing::Span to opentelemetry::Context
+
+    tracing::Span::current().context().span().span_context().trace_id()
 }

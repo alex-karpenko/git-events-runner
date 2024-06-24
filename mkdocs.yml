@@ -69,6 +69,7 @@ nav:
           - Sources: resources/sources.md
           - Triggers: resources/triggers.md
           - Actions: resources/actions.md
+      - Observability: guides/observability.md
   - Development:
       - Changelog: changelog.md
       - Roadmap: roadmap.md

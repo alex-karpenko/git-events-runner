@@ -1,5 +1,5 @@
 use super::CustomApiResource;
-use crate::{Error, Result};
+use crate::{get_trace_id, Error, Result};
 use git2::{CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions};
 use k8s_openapi::api::core::v1::Secret;
 use kube::{Api, Client, CustomResource};
@@ -185,7 +185,7 @@ impl GitRepoGetter for ClusterGitRepo {}
 /// Getter trait to implement shared behavior: it's able to get content (clone) of repo's particular reference
 #[allow(private_bounds, async_fn_in_trait)]
 pub trait GitRepoGetter: GitRepoInternals {
-    #[instrument("fetch repo reference", skip_all, fields(reference=ref_name,path))]
+    #[instrument("fetch repo reference", skip_all, fields(reference=ref_name,path, trace_id = %get_trace_id()))]
     async fn fetch_repo_ref(
         &self,
         client: Client,

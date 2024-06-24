@@ -87,6 +87,8 @@ opentelemetry-otlp = { version = "0.16.0", features = [
 ] }
 tracing-opentelemetry = "0.24.0"
 uuid = { version = "1.8.0", features = ["v4"] }
+prometheus = { version = "0.13.4", default-features = false }
+lazy_static = "1.5.0"
 
 
 [dev-dependencies]

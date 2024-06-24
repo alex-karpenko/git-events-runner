@@ -115,6 +115,8 @@ As mentioned above, `ACTION_JOB_` is just default prefix and may be configured t
 | Variable name                       | Mandatory | Description                                                                                |
 |-------------------------------------|-----------|--------------------------------------------------------------------------------------------|
 | ACTION_JOB_WORKDIR                  | Yes       | Worker container workdir (folder where source repo is cloned)                              |
+| ACTION_JOB_TRIGGER_KIND             | Yes       | Kind of the trigger (ScheduleTrigger, WebhookTrigger)                                      |     
+| ACTION_JOB_TRIGGER_NAME             | Yes       | Name of the trigger.                                                                       |
 | ACTION_JOB_TRIGGER_SOURCE_KIND      | Yes       | Kind of the triggers' source (Gitrepo, ClusterGitRepo)                                     |     
 | ACTION_JOB_TRIGGER_SOURCE_NAME      | Yes       | Name of the triggers' source.                                                              |
 | ACTION_JOB_TRIGGER_SOURCE_NAMESPACE | No        | Namespace of the triggers' source (for GitRepo only).                                      |

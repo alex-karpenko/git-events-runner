@@ -3,7 +3,7 @@ use super::{
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
     CustomApiResource,
 };
-use crate::{config::RuntimeConfig, jobs::JobsQueue, Result};
+use crate::{config::RuntimeConfig, get_trace_id, jobs::JobsQueue, Result};
 use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
@@ -29,6 +29,8 @@ pub const ACTION_JOB_ACTION_KIND_LABEL: &str = "git-events-runner.rs/action-kind
 pub const ACTION_JOB_ACTION_NAME_LABEL: &str = "git-events-runner.rs/action-name";
 pub const ACTION_JOB_SOURCE_KIND_LABEL: &str = "git-events-runner.rs/source-kind";
 pub const ACTION_JOB_SOURCE_NAME_LABEL: &str = "git-events-runner.rs/source-name";
+pub const ACTION_JOB_TRIGGER_KIND_LABEL: &str = "git-events-runner.rs/trigger-kind";
+pub const ACTION_JOB_TRIGGER_NAME_LABEL: &str = "git-events-runner.rs/trigger-name";
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[cfg_attr(test, derive(Default))]
@@ -140,12 +142,14 @@ impl ActionExecutor for ClusterAction {}
 #[allow(private_bounds)]
 pub(crate) trait ActionExecutor: ActionInternals {
     /// Creates K8s Job spec and run an actual job from it
+    #[allow(clippy::too_many_arguments)]
     #[instrument(skip_all,
         fields(
             source_kind = %source_kind,
             source_name = %source_name,
             source_commit = %source_commit,
-            reference = %trigger_ref
+            reference = %trigger_ref,
+            trace_id = %get_trace_id()
         ))]
     async fn execute(
         &self,
@@ -154,8 +158,18 @@ pub(crate) trait ActionExecutor: ActionInternals {
         source_commit: &str,
         trigger_ref: &TriggerGitRepoReference,
         ns: &str,
-    ) -> Result<Job> {
-        let job = self.create_job_spec(source_kind, source_name, source_commit, trigger_ref, ns)?;
+        trigger_kind: &str,
+        trigger_name: &str,
+    ) -> Result<()> {
+        let job = self.create_job_spec(
+            source_kind,
+            source_name,
+            source_commit,
+            trigger_ref,
+            ns,
+            trigger_kind,
+            trigger_name,
+        )?;
         info!(namespace = %ns, job = %job.name_any(), "enqueue job");
 
         let timeout = self
@@ -182,6 +196,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
     }
 
     /// Create K8s Job specification
+    #[allow(clippy::too_many_arguments)]
     fn create_job_spec(
         &self,
         source_kind: &TriggerSourceKind,
@@ -189,6 +204,8 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         source_commit: &str,
         trigger_ref: &TriggerGitRepoReference,
         ns: &str,
+        trigger_kind: &str,
+        trigger_name: &str,
     ) -> Result<Job> {
         let config = RuntimeConfig::get();
         let action_job = self.action_job_spec();
@@ -213,6 +230,8 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         labels.insert(ACTION_JOB_ACTION_NAME_LABEL.into(), self.name_any());
         labels.insert(ACTION_JOB_SOURCE_KIND_LABEL.into(), source_kind.to_string());
         labels.insert(ACTION_JOB_SOURCE_NAME_LABEL.into(), source_name.into());
+        labels.insert(ACTION_JOB_TRIGGER_KIND_LABEL.into(), trigger_kind.into());
+        labels.insert(ACTION_JOB_TRIGGER_NAME_LABEL.into(), trigger_name.into());
 
         // And add additional labels if defined
         if let Some(additional_labels) = action_job.labels {
@@ -301,6 +320,8 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
                                 source_commit,
                                 trigger_ref,
                                 ns,
+                                trigger_kind,
+                                trigger_name,
                             )),
                             volume_mounts: Some(vec![VolumeMount {
                                 name: config.action.workdir.volume_name.clone(),
@@ -328,6 +349,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
 
     /// Prepare a list of special environment variables to pass to worker container,
     /// use `format_action_job_env_var` helper to unify approach
+    #[allow(clippy::too_many_arguments)]
     fn get_action_job_envs(
         &self,
         source_kind: &TriggerSourceKind,
@@ -335,6 +357,8 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
         source_commit: &str,
         trigger_ref: &TriggerGitRepoReference,
         ns: &str,
+        trigger_kind: &str,
+        trigger_name: &str,
     ) -> Vec<EnvVar> {
         let action_job = self.action_job_spec();
         let source_override = self.source_override_spec();
@@ -352,6 +376,8 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
             format_action_job_env_var("TRIGGER_SOURCE_COMMIT", source_commit),
             format_action_job_env_var("TRIGGER_SOURCE_REF_TYPE", &trigger_ref_type),
             format_action_job_env_var("TRIGGER_SOURCE_REF_NAME", trigger_ref_name),
+            format_action_job_env_var("TRIGGER_KIND", trigger_kind),
+            format_action_job_env_var("TRIGGER_NAME", trigger_name),
         ];
 
         if source_kind == &TriggerSourceKind::GitRepo {
@@ -494,6 +520,8 @@ mod tests {
     const TEST_ACTION_NAMESPACE: &str = "actions-test";
     const TEST_SOURCE_NAME: &str = "action-test-source";
     const TEST_SOURCE_COMMIT: &str = "e03087d8f722a423bc13fd31542fb9545da784dd";
+    const TEST_TRIGGER_KIND: &str = "ScheduleTrigger";
+    const TEST_TRIGGER_NAME: &str = "test-schedule-trigger-name";
 
     fn default_action(name: impl Into<String>, namespace: impl Into<String>) -> Action {
         Action {
@@ -663,6 +691,8 @@ mod tests {
                     TEST_SOURCE_COMMIT,
                     &reference,
                     TEST_ACTION_NAMESPACE,
+                    TEST_TRIGGER_KIND,
+                    TEST_TRIGGER_NAME,
                 )
                 .unwrap();
             assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_DEFAULT_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
@@ -675,6 +705,8 @@ mod tests {
                     TEST_SOURCE_COMMIT,
                     &reference,
                     TEST_ACTION_NAMESPACE,
+                    TEST_TRIGGER_KIND,
+                    TEST_TRIGGER_NAME,
                 )
                 .unwrap();
             assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_DEFAULT_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
@@ -710,6 +742,8 @@ mod tests {
                     TEST_SOURCE_COMMIT,
                     &reference,
                     TEST_ACTION_NAMESPACE,
+                    TEST_TRIGGER_KIND,
+                    TEST_TRIGGER_NAME,
                 )
                 .unwrap();
             assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_CUSTOMIZED_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
@@ -722,6 +756,8 @@ mod tests {
                     TEST_SOURCE_COMMIT,
                     &reference,
                     TEST_ACTION_NAMESPACE,
+                    TEST_TRIGGER_KIND,
+                    TEST_TRIGGER_NAME,
                 )
                 .unwrap();
             assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_CUSTOMIZED_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
@@ -757,6 +793,8 @@ mod tests {
                     TEST_SOURCE_COMMIT,
                     &reference,
                     TEST_ACTION_NAMESPACE,
+                    TEST_TRIGGER_KIND,
+                    TEST_TRIGGER_NAME,
                 )
                 .unwrap();
             assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_DEFAULT_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
@@ -769,6 +807,8 @@ mod tests {
                     TEST_SOURCE_COMMIT,
                     &reference,
                     TEST_ACTION_NAMESPACE,
+                    TEST_TRIGGER_KIND,
+                    TEST_TRIGGER_NAME,
                 )
                 .unwrap();
             assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_DEFAULT_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
@@ -803,6 +843,8 @@ mod tests {
                     TEST_SOURCE_COMMIT,
                     &reference,
                     TEST_ACTION_NAMESPACE,
+                    TEST_TRIGGER_KIND,
+                    TEST_TRIGGER_NAME,
                 )
                 .unwrap();
             assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_CUSTOMIZED_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
@@ -815,6 +857,8 @@ mod tests {
                     TEST_SOURCE_COMMIT,
                     &reference,
                     TEST_ACTION_NAMESPACE,
+                    TEST_TRIGGER_KIND,
+                    TEST_TRIGGER_NAME,
                 )
                 .unwrap();
             assert_yaml_snapshot!(job_spec, {".metadata.name" => insta::dynamic_redaction(|_, _| {format!("{TEST_CUSTOMIZED_ACTION_NAME}-YYYYMMDD-HHMMSS-xx")})});
