@@ -1,8 +1,9 @@
 use crate::cache::{ApiCache, SecretsCache};
+use crate::cli::CLI_CONFIG;
 use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
-use crate::{get_trace_id, Error, METRICS_PREFIX};
+use crate::{get_trace_id, Error};
 use axum::routing::post;
 use axum::{
     extract::{FromRequest, Path, State},
@@ -117,9 +118,11 @@ impl Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
+        let cli_config = CLI_CONFIG.get().unwrap();
+
         let duration = HistogramVec::new(
             histogram_opts!(
-                format!("{METRICS_PREFIX}_webhook_requests_duration_seconds"),
+                format!("{}_webhook_requests_duration_seconds", cli_config.metrics_prefix),
                 "The time of webhook request scheduling in seconds"
             )
             .buckets(vec![0.001, 0.01, 0.1, 0.5, 1.]),
@@ -129,7 +132,7 @@ impl Default for Metrics {
 
         let count = IntCounterVec::new(
             opts!(
-                format!("{METRICS_PREFIX}_webhook_requests_count"),
+                format!("{}_webhook_requests_count", cli_config.metrics_prefix),
                 "The number of webhook requests",
             ),
             &["namespace", "trigger", "status"],

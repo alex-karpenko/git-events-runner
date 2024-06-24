@@ -1,5 +1,6 @@
 use crate::{
     cache::ApiCache,
+    cli::CLI_CONFIG,
     controller::Context,
     get_trace_id,
     resources::{
@@ -7,7 +8,7 @@ use crate::{
         git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
         random_string, CustomApiResource, Reconcilable, API_GROUP, CURRENT_API_VERSION,
     },
-    Error, Result, METRICS_PREFIX,
+    Error, Result,
 };
 use chrono::{DateTime, Utc};
 use git2::{Oid, Repository};
@@ -61,9 +62,11 @@ struct Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
+        let cli_config = CLI_CONFIG.get().unwrap();
+
         let trigger_check_count = IntCounterVec::new(
             opts!(
-                format!("{METRICS_PREFIX}_trigger_check_count"),
+                format!("{}_trigger_check_count", cli_config.metrics_prefix),
                 "The number trigger checks for changes",
             ),
             &["namespace", "trigger_kind", "trigger_name"],
@@ -72,7 +75,7 @@ impl Default for Metrics {
 
         let trigger_check_duration = HistogramVec::new(
             histogram_opts!(
-                format!("{METRICS_PREFIX}_trigger_check_duration_seconds"),
+                format!("{}_trigger_check_duration_seconds", cli_config.metrics_prefix),
                 "The duration of trigger checks for changes"
             )
             .buckets(vec![0.1, 1., 2., 5., 10., 30., 60.]),

@@ -1,9 +1,10 @@
 use crate::{
+    cli::CLI_CONFIG,
     resources::{
         trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
         CustomApiResource, Reconcilable,
     },
-    Error, Result, METRICS_PREFIX,
+    Error, Result,
 };
 use chrono::{DateTime, Utc};
 use futures::{future::join_all, StreamExt};
@@ -47,9 +48,11 @@ struct Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
+        let cli_config = CLI_CONFIG.get().unwrap();
+
         let reconcile_count = IntCounterVec::new(
             opts!(
-                format!("{METRICS_PREFIX}_reconcile_count"),
+                format!("{}_reconcile_count", cli_config.metrics_prefix),
                 "The number reconciliations",
             ),
             &["namespace", "resource_kind", "resource_name"],
@@ -58,7 +61,7 @@ impl Default for Metrics {
 
         let failed_count = IntCounterVec::new(
             opts!(
-                format!("{METRICS_PREFIX}_failed_reconcile_count"),
+                format!("{}_failed_reconcile_count", cli_config.metrics_prefix),
                 "The number failed reconciliations",
             ),
             &["namespace", "resource_kind", "resource_name"],
@@ -67,7 +70,7 @@ impl Default for Metrics {
 
         let reconcile_duration = HistogramVec::new(
             histogram_opts!(
-                format!("{METRICS_PREFIX}_reconcile_duration_seconds"),
+                format!("{}_reconcile_duration_seconds", cli_config.metrics_prefix),
                 "The duration of reconciliations"
             )
             .buckets(vec![0.001, 0.01, 0.1, 0.5, 1., 2.]),

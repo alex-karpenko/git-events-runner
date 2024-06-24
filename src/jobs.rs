@@ -1,9 +1,10 @@
+use crate::cli::CLI_CONFIG;
 use crate::config::RuntimeConfig;
 use crate::resources::action::{
     ACTION_JOB_ACTION_KIND_LABEL, ACTION_JOB_ACTION_NAME_LABEL, ACTION_JOB_SOURCE_KIND_LABEL,
     ACTION_JOB_SOURCE_NAME_LABEL, ACTION_JOB_TRIGGER_KIND_LABEL, ACTION_JOB_TRIGGER_NAME_LABEL,
 };
-use crate::{Error, Result, METRICS_PREFIX};
+use crate::{Error, Result};
 use futures::{future::ready, StreamExt};
 use k8s_openapi::api::batch::v1::JobStatus;
 use k8s_openapi::{api::batch::v1::Job, Metadata};
@@ -55,27 +56,29 @@ struct Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
+        let cli_config = CLI_CONFIG.get().unwrap();
+
         let current_limit = IntGauge::new(
-            format!("{METRICS_PREFIX}_jobs_queue_limit"),
+            format!("{}_jobs_queue_limit", cli_config.metrics_prefix),
             "The limit of simultaneously running jobs",
         )
         .unwrap();
 
         let running_jobs = IntGauge::new(
-            format!("{METRICS_PREFIX}_jobs_queue_running_jobs"),
+            format!("{}_jobs_queue_running_jobs", cli_config.metrics_prefix),
             "The current number of waiting in the queue jobs",
         )
         .unwrap();
 
         let waiting_jobs = IntGauge::new(
-            format!("{METRICS_PREFIX}_jobs_queue_waiting_jobs"),
+            format!("{}_jobs_queue_waiting_jobs", cli_config.metrics_prefix),
             "The current number of runnings jobs",
         )
         .unwrap();
 
         let waiting_duration = Histogram::with_opts(
             histogram_opts!(
-                format!("{METRICS_PREFIX}_jobs_queue_waiting_duration_seconds"),
+                format!("{}_jobs_queue_waiting_duration_seconds", cli_config.metrics_prefix),
                 "The jobs queue waiting time in seconds"
             )
             .buckets(vec![0.1, 0.5, 1., 2., 5., 10., 20., 60.]),
@@ -84,7 +87,7 @@ impl Default for Metrics {
 
         let completed_count = IntCounterVec::new(
             opts!(
-                format!("{METRICS_PREFIX}_jobs_queue_completed_count"),
+                format!("{}_jobs_queue_completed_count", cli_config.metrics_prefix),
                 "The number completed jobs",
             ),
             &[
@@ -102,7 +105,7 @@ impl Default for Metrics {
 
         let completed_duration = HistogramVec::new(
             histogram_opts!(
-                format!("{METRICS_PREFIX}_jobs_queue_completed_duration_seconds"),
+                format!("{}_jobs_queue_completed_duration_seconds", cli_config.metrics_prefix),
                 "The jobs execution time in seconds"
             )
             .buckets(vec![1., 5., 10., 30., 60., 120., 300.]),

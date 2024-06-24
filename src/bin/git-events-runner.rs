@@ -1,6 +1,6 @@
 use git_events_runner::{
     cache::{ApiCacheStore, SecretsCache},
-    cli::{Cli, CliConfig, CliConfigDumpOptions},
+    cli::{Cli, CliConfig, CliConfigDumpOptions, CLI_CONFIG},
     config::RuntimeConfig,
     controller::{run_leader_controllers, State},
     jobs::JobsQueue,
@@ -37,6 +37,8 @@ async fn main() -> anyhow::Result<()> {
 
 #[instrument("controller", skip_all)]
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
+    CLI_CONFIG.set(cli_config.clone()).unwrap();
+
     let client = Client::try_default().await?;
     let identity = Uuid::new_v4().to_string();
 

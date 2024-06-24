@@ -1,9 +1,13 @@
 use clap::Parser;
+use tokio::sync::OnceCell;
 use tracing::debug;
 
 const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
 const DEFAULT_CONFIG_MAP_NAME: &str = "git-events-runner-config";
 const DEFAULT_LEADER_LOCK_LEASE_NAME: &str = "git-events-runner-leader-lock";
+const DEFAULT_METRICS_PREFIX: &str = "git_events_runner";
+
+pub static CLI_CONFIG: OnceCell<CliConfig> = OnceCell::const_new();
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -57,6 +61,10 @@ pub struct CliConfig {
     /// Leader lease grace interval, seconds
     #[arg(long, value_parser=clap::value_parser!(u64).range(1..301), default_value = "20")]
     pub leader_lease_grace: u64,
+
+    /// Name of the ConfigMap with dynamic controller config
+    #[arg(long, default_value = DEFAULT_METRICS_PREFIX)]
+    pub metrics_prefix: String,
     // /// Write logs in JSON format
     // #[arg(short, long)]
     // json_log: bool,
