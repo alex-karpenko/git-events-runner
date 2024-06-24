@@ -460,6 +460,8 @@
       
         
       
+        
+      
     
     
       
@@ -654,6 +656,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#metricsprefix" class="md-nav__link">
+    <span class="md-ellipsis">
+      metricsPrefix
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -833,6 +844,27 @@
           </ul>
         </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../observability/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Observability
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1055,6 +1087,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#metricsprefix" class="md-nav__link">
+    <span class="md-ellipsis">
+      metricsPrefix
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1141,11 +1182,9 @@ the <a href="https://github.com/alex-karpenko/helm-charts/blob/main/charts/git-e
 <p>Let's explain all of them with some details.</p>
 <h2 id="controller-options">Controller options<a class="headerlink" href="#controller-options" title="Permanent link">&para;</a></h2>
 <h3 id="loglevel">logLevel<a class="headerlink" href="#loglevel" title="Permanent link">&para;</a></h3>
-<p>Allowed values: <code>info</code>, <code>debug</code>.</p>
-<p>Controller hs three possible log levels: debug, info, warning.
-If nothing is specified (this is equivalent to omit both <code>--debug</code> and <code>--verbose</code> command line options) the default
-level is warning.
-Using this parameter, you can change log level.</p>
+<p>Allowed values: <code>error</code>, <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>.</p>
+<p>Using this parameter, you can change log level.
+If nothing is specified the default level is <code>info</code>.</p>
 <h3 id="otlp">otlp<a class="headerlink" href="#otlp" title="Permanent link">&para;</a></h3>
 <p>This section describes OpenTelemetry configuration.
 If <code>otlp.enabled</code> is <code>true</code> then <code>otlp.endpoint</code> should point to the OpenTelemetry collector endpoint.</p>
@@ -1180,6 +1219,9 @@ during periodic
 verification for changes.</p>
 <p>At the same time, parameter <code>volumeName</code> defines name of the Pods' volume, which should be used for that folder.
 Helm chart defines controllers' Pod with this volume of type <code>emptyDir</code>.</p>
+<h3 id="metricsprefix">metricsPrefix<a class="headerlink" href="#metricsprefix" title="Permanent link">&para;</a></h3>
+<p>The parameter specifies prefix ("namespace") to use for Prometheus metrics.
+The default value is <code>git_events_runner</code>.</p>
 <h2 id="runtime-config">Runtime config<a class="headerlink" href="#runtime-config" title="Permanent link">&para;</a></h2>
 <h3 id="trigger">trigger<a class="headerlink" href="#trigger" title="Permanent link">&para;</a></h3>
 <p>Defines triggers defaults:</p>
@@ -1316,6 +1358,8 @@ Options:
 <span class="w">          </span>Leader<span class="w"> </span>lease<span class="w"> </span>duration,<span class="w"> </span>seconds<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">30</span><span class="o">]</span>
 <span class="w">      </span>--leader-lease-grace<span class="w"> </span>&lt;LEADER_LEASE_GRACE&gt;
 <span class="w">          </span>Leader<span class="w"> </span>lease<span class="w"> </span>grace<span class="w"> </span>interval,<span class="w"> </span>seconds<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">20</span><span class="o">]</span>
+<span class="w">      </span>--metrics-prefix<span class="w"> </span>&lt;METRICS_PREFIX&gt;
+<span class="w">          </span>Name<span class="w"> </span>of<span class="w"> </span>the<span class="w"> </span>ConfigMap<span class="w"> </span>with<span class="w"> </span>dynamic<span class="w"> </span>controller<span class="w"> </span>config<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span>git_events_runner<span class="o">]</span>
 <span class="w">  </span>-h,<span class="w"> </span>--help
 <span class="w">          </span>Print<span class="w"> </span><span class="nb">help</span>
 </code></pre></div>
