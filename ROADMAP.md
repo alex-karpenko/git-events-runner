@@ -2,8 +2,6 @@
 
 ## In work
 
-- controller: fix error with incorrect leader lock grace period
-
 ## Next release
 
 - hooks: implement hook requests rate control/throttling
@@ -38,3 +36,4 @@
 - jobs: reschedule jobs if config was changed
 - jobs: stop scheduling after shutdown signal
 - controller: metrics
+- controller: fix error with incorrect leader lock grace period
