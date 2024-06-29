@@ -59,7 +59,7 @@ pub struct CliConfig {
     pub leader_lease_duration: u64,
 
     /// Leader lease grace interval, seconds
-    #[arg(long, value_parser=clap::value_parser!(u64).range(1..301), default_value = "20")]
+    #[arg(long, value_parser=clap::value_parser!(u64).range(1..301), default_value = "5")]
     pub leader_lease_grace: u64,
 
     /// Name of the ConfigMap with dynamic controller config

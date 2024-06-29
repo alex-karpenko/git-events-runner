@@ -12,6 +12,6 @@ CliConfig {
     config_map_name: "git-events-runner-config",
     leader_lease_name: "git-events-runner-leader-lock",
     leader_lease_duration: 30,
-    leader_lease_grace: 20,
+    leader_lease_grace: 5,
     metrics_prefix: "git_events_runner",
 }
