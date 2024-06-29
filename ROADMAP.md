@@ -2,6 +2,8 @@
 
 ## In work
 
+- controller: fix error with incorrect leader lock grace period
+
 ## Next release
 
 - hooks: implement hook requests rate control/throttling

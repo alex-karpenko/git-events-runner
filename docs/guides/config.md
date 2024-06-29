@@ -30,10 +30,9 @@ This section declares the parameters of using Lease resource to manage leader el
 
 * `duration`: leader election will be started if the current leaseholder doesn't confirm its lock during this time (in
   seconds).
-* `grace`: leaseholder re-confirms (renews) its lock each this interval (in seconds).
+* `grace`: leaseholder re-confirms (renews) its lock the grace interval (in seconds) before lock expires.
 
-Logically, grace should be less than duration and the difference between these two parameters should be enough to
-re-confirm lock.
+Logically, grace should be less than duration and the grace interval should be enough to re-confirm lock.
 
 ### scheduleParallelism, webhooksParallelism
 
