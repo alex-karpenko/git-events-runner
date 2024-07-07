@@ -2,6 +2,8 @@
 
 ## In work
 
+- tests: fix flapping `reconcile_schedule_trigger_should_set_idle_status` test
+
 ## Next release
 
 - hooks: implement hook requests rate control/throttling
