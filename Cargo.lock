@@ -1451,7 +1451,8 @@ dependencies = [
 [[package]]
 name = "kube-lease-manager"
 version = "0.1.0"
-source = "git+https://github.com/alex-karpenko/kube-lease-manager.git?branch=feat/initial-release#f80cc10299dff354ce17587b8ec953a216c30541"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f3818a0eeac0d044dc55ed9bbfa6a9817186232b1786930377edbe3730f13fa"
 dependencies = [
  "k8s-openapi",
  "kube",
