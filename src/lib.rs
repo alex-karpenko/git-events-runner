@@ -3,7 +3,6 @@ pub mod cli;
 pub mod config;
 pub mod controller;
 pub mod jobs;
-pub mod leader;
 pub mod resources;
 pub mod signals;
 pub mod web;
@@ -22,18 +21,11 @@ pub enum Error {
         kube::Error,
     ),
 
-    #[error("Kube Error: {0}")]
-    KubertKubeError(
+    #[error("LeaseManager Error: {0}")]
+    LeaseManagerError(
         #[source]
         #[from]
-        kubert_kube::Error,
-    ),
-
-    #[error("Leader Lock Error: {0}")]
-    LeaderLockError(
-        #[source]
-        #[from]
-        kubert::lease::Error,
+        kube_lease_manager::LeaseManagerError,
     ),
 
     #[error("Finalizer Error: {0}")]
