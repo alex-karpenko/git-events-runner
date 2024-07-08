@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.2.2] - 2024-07-08
 ### Details
 #### Fixed
 - Fix large default leader lock grace interval by @alex-karpenko in [#25](https://github.com/alex-karpenko/git-events-runner/pull/25)
@@ -69,7 +69,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
-[unreleased]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.1..HEAD
+[0.2.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.1..v0.2.2
 [0.2.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.0..v0.2.1
 [0.2.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.1.1..v0.2.0
 [0.1.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.1.0..v0.1.1
