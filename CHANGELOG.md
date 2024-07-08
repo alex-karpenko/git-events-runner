@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Details
+#### Fixed
+- Fix large default leader lock grace interval by @alex-karpenko in [#25](https://github.com/alex-karpenko/git-events-runner/pull/25)
+- Update to use kube-lease-manager instead of kubert crate by @alex-karpenko in [#28](https://github.com/alex-karpenko/git-events-runner/pull/28)
+
 ## [0.2.1] - 2024-06-24
 ### Details
 #### Added
@@ -63,6 +69,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
+[unreleased]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.1..HEAD
 [0.2.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.0..v0.2.1
 [0.2.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.1.1..v0.2.0
 [0.1.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.1.0..v0.1.1
