@@ -1193,10 +1193,9 @@ If <code>otlp.enabled</code> is <code>true</code> then <code>otlp.endpoint</code
 <ul>
 <li><code>duration</code>: leader election will be started if the current leaseholder doesn't confirm its lock during this time (in
   seconds).</li>
-<li><code>grace</code>: leaseholder re-confirms (renews) its lock each this interval (in seconds).</li>
+<li><code>grace</code>: leaseholder re-confirms (renews) its lock the grace interval (in seconds) before lock expires.</li>
 </ul>
-<p>Logically, grace should be less than duration and the difference between these two parameters should be enough to
-re-confirm lock.</p>
+<p>Logically, grace should be less than duration and the grace interval should be enough to re-confirm lock.</p>
 <h3 id="scheduleparallelism-webhooksparallelism">scheduleParallelism, webhooksParallelism<a class="headerlink" href="#scheduleparallelism-webhooksparallelism" title="Permanent link">&para;</a></h3>
 <p>Allowed values: integer from 1 to 255.</p>
 <p>These parameters set, for each type of triggers, the maximum number of parallel tasks that the controller runs to watch

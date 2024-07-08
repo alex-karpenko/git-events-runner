@@ -986,13 +986,15 @@
 
 <h1 id="roadmap">Roadmap<a class="headerlink" href="#roadmap" title="Permanent link">&para;</a></h1>
 <h2 id="in-work">In work<a class="headerlink" href="#in-work" title="Permanent link">&para;</a></h2>
+<ul>
+<li>tests: fix flapping <code>reconcile_schedule_trigger_should_set_idle_status</code> test</li>
+</ul>
 <h2 id="next-release">Next release<a class="headerlink" href="#next-release" title="Permanent link">&para;</a></h2>
 <ul>
 <li>hooks: implement hook requests rate control/throttling</li>
 <li>hooks: tls listener for webhooks</li>
 <li>gitrepo: add support for private keys with passphrase</li>
 <li>gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images <code>FROM scratch</code></li>
-<li>controller: get rid of kubert dependency</li>
 </ul>
 <h2 id="wishes">Wishes<a class="headerlink" href="#wishes" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1022,6 +1024,9 @@
 <li>jobs: reschedule jobs if config was changed</li>
 <li>jobs: stop scheduling after shutdown signal</li>
 <li>controller: metrics</li>
+<li>controller: fix error with incorrect leader lock grace period</li>
+<li>controller: get rid of kubert dependency</li>
+<li>controller: use kube-lease-manager instead of kubert</li>
 </ul>
 
 
