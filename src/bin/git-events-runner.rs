@@ -4,7 +4,6 @@ use git_events_runner::{
     config::RuntimeConfig,
     controller::{run_leader_controllers, State},
     jobs::JobsQueue,
-    leader,
     resources::{
         action::{Action, ClusterAction},
         git_repo::{ClusterGitRepo, GitRepo},
@@ -14,6 +13,7 @@ use git_events_runner::{
     web,
 };
 use kube::{Client, CustomResourceExt};
+use kube_lease_manager::LeaseManagerBuilder;
 use opentelemetry_otlp::WithExportConfig;
 use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType};
 use std::{sync::Arc, time::Duration};
@@ -51,14 +51,14 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     SecretsCache::init_cache(Duration::from_secs(cli_config.secrets_cache_time), client.clone());
 
     // create leader lease to run ScheduleTrigger controller in single instance only
-    let (mut leader_lease_channel, leader_lease_task) = leader::leader_lease_handler(
-        &identity,
-        Some(client.default_namespace().to_string()),
-        &cli_config.leader_lease_name,
-        cli_config.leader_lease_duration,
-        cli_config.leader_lease_grace,
-    )
-    .await?;
+    let lease_manager = LeaseManagerBuilder::new(client.clone(), cli_config.leader_lease_name)
+        .with_identity(identity.clone())
+        .with_namespace(client.default_namespace().to_string())
+        .with_duration(cli_config.leader_lease_duration)
+        .with_grace(cli_config.leader_lease_grace)
+        .build()
+        .await?;
+    let (mut leader_lease_channel, leader_lease_task) = lease_manager.watch().await;
 
     let mut signal_handler = SignalHandler::new().expect("unable to create signal handler");
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -100,7 +100,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     // and stop it if we lost leadership.
     while !shutdown {
         let (changed_tx, changed_rx) = watch::channel(false);
-        let is_leader = leader_lease_channel.borrow_and_update().is_current_for(&identity);
+        let is_leader = *leader_lease_channel.borrow_and_update();
         let controllers = if is_leader {
             info!(%identity, "leader lock has been acquired");
             Some(tokio::spawn(run_leader_controllers(
@@ -130,7 +130,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
                     shutdown = true;
                 },
             _ = async {
-                    while leader_lease_channel.borrow_and_update().is_current_for(&identity) == is_leader {
+                    while *leader_lease_channel.borrow_and_update() == is_leader {
                         if let Err(err) = leader_lease_channel.changed().await {
                             error!(error = %err, "processing leader lock change");
                             shutdown = true;

@@ -2,13 +2,14 @@
 
 ## In work
 
+- tests: fix flapping `reconcile_schedule_trigger_should_set_idle_status` test
+
 ## Next release
 
 - hooks: implement hook requests rate control/throttling
 - hooks: tls listener for webhooks
 - gitrepo: add support for private keys with passphrase
 - gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images `FROM scratch`
-- controller: get rid of kubert dependency
 
 ## Wishes
 
@@ -37,3 +38,5 @@
 - jobs: stop scheduling after shutdown signal
 - controller: metrics
 - controller: fix error with incorrect leader lock grace period
+- controller: get rid of kubert dependency
+- controller: use kube-lease-manager instead of kubert
