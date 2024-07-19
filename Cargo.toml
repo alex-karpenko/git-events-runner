@@ -7,7 +7,7 @@ keywords = ["kubernetes", "operator", "git", "events", "runner"]
 license = "MIT"
 name = "git-events-runner"
 repository = "https://github.com/alex-karpenko/git-events-runner"
-version = "0.2.2"
+version = "0.2.3"
 
 [[bin]]
 doc = false
@@ -20,7 +20,7 @@ name = "gitrepo-cloner"
 path = "src/bin/gitrepo-cloner.rs"
 
 [dependencies]
-anyhow = "1.0.83"
+anyhow = "1.0.86"
 axum = { version = "0.7.5", default-features = false, features = [
     "http1",
     "macros",
@@ -32,44 +32,44 @@ axum = { version = "0.7.5", default-features = false, features = [
     "json",
 ] }
 chrono = { version = "0.4.38", default-features = false, features = ["std"] }
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.5.9", features = ["derive"] }
 futures = "0.3.30"
 git2 = "0.19.0"
 globwalk = "0.9.1"
 hex = "0.4.3"
 humantime = "2.1.0"
 k8s-openapi = { version = "0.22.0", features = ["v1_27", "schemars"] }
-kube = { version = "0.92.0", features = [
+kube = { version = "0.92.1", features = [
     "runtime",
     "client",
     "derive",
     "unstable-runtime",
 ] }
-kube-lease-manager = { version = "0.1.0" }
+kube-lease-manager = { version = "0.1.5" }
 rand = "0.8.5"
-rustls = { version = "0.23.5", features = [
+rustls = { version = "0.23.11", features = [
     "std",
     "ring",
 ], default-features = false }
-rustls-native-certs = "0.7.0"
+rustls-native-certs = "0.7.1"
 rustls-pemfile = "2.1.2"
-sacs = { version = "0.6.0", features = ["async-trait"] }
-schemars = "0.8.17"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1.0.116"
-serde_yaml = "0.9.33"
+sacs = { version = "0.6.1", features = ["async-trait"] }
+schemars = "0.8.21"
+serde = { version = "1.0.204", features = ["derive"] }
+serde_json = "1.0.120"
+serde_yaml = "0.9.34"
 sha2 = "0.10.8"
-strum = { version = "0.26.2", features = ["derive"] }
-strum_macros = "0.26.2"
-thiserror = "1.0.60"
-tokio = { version = "1", features = [
+strum = { version = "0.26.3", features = ["derive"] }
+strum_macros = "0.26.4"
+thiserror = "1.0.63"
+tokio = { version = "1.38.1", features = [
     "macros",
     "rt-multi-thread",
     "fs",
     "io-util",
     "sync",
 ] }
-tonic = { version = "0.11.0" }
+tonic = { version = "0.12.1" }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 opentelemetry = { version = "0.23.0", features = ["trace", "logs"] }
@@ -81,7 +81,7 @@ opentelemetry-otlp = { version = "0.16.0", features = [
     "grpc-tonic",
 ] }
 tracing-opentelemetry = "0.24.0"
-uuid = { version = "1.8.0", features = ["v4"] }
+uuid = { version = "1.10.0", features = ["v4"] }
 prometheus = { version = "0.13.4", default-features = false }
 lazy_static = "1.5.0"
 
