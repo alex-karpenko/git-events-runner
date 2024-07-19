@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2024-07-19
+### Details
+#### Fixed
+- Update dependencies to fix security findings by @alex-karpenko in [#29](https://github.com/alex-karpenko/git-events-runner/pull/29)
+
 ## [0.2.2] - 2024-07-08
 ### Details
 #### Fixed
@@ -69,6 +74,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
+[0.2.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.2..v0.2.3
 [0.2.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.1..v0.2.2
 [0.2.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.0..v0.2.1
 [0.2.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.1.1..v0.2.0

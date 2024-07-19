@@ -3,6 +3,7 @@
 ## In work
 
 - tests: fix flapping `reconcile_schedule_trigger_should_set_idle_status` test
+- tracing: upgrade to the latest module versions
 
 ## Next release
 
