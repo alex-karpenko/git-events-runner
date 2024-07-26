@@ -1,15 +1,13 @@
-use crate::{
-    cache::ApiCache,
-    cli::CliConfig,
-    controller::Context,
-    get_trace_id,
-    resources::{
-        action::{Action, ActionExecutor, ClusterAction},
-        git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
-        random_string, CustomApiResource, Reconcilable, API_GROUP, CURRENT_API_VERSION,
-    },
-    Error, Result,
+use std::sync::LazyLock;
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+    io,
+    path::Path,
+    sync::Arc,
+    time::{Duration, SystemTime},
 };
+
 use chrono::{DateTime, Utc};
 use git2::{Oid, Repository};
 use globwalk::{FileType, GlobWalkerBuilder};
@@ -23,7 +21,6 @@ use kube::{
     },
     Api, Client, CustomResource, Resource, ResourceExt,
 };
-use lazy_static::lazy_static;
 use prometheus::{histogram_opts, opts, register, HistogramVec, IntCounterVec};
 use sacs::{
     scheduler::{CancelOpts, TaskScheduler},
@@ -33,14 +30,6 @@ use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{HashMap, HashSet},
-    future::Future,
-    io,
-    path::Path,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
 use strum_macros::{Display, EnumString};
 use tokio::{
     fs::{create_dir_all, remove_dir_all, File},
@@ -49,11 +38,22 @@ use tokio::{
 };
 use tracing::{debug, debug_span, error, info, instrument};
 
+use crate::{
+    cache::ApiCache,
+    cli::CliConfig,
+    controller::Context,
+    get_trace_id,
+    resources::{
+        action::{Action, ActionExecutor, ClusterAction},
+        git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
+        random_string, CustomApiResource, Reconcilable, API_GROUP, CURRENT_API_VERSION,
+    },
+    Error, Result,
+};
+
 const NEVER_LAST_RUN_STR: &str = "Never";
 
-lazy_static! {
-    static ref METRICS: Metrics = Metrics::default().register();
-}
+static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics::default().register());
 
 struct Metrics {
     trigger_check_duration: HistogramVec,

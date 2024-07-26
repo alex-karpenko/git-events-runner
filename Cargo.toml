@@ -2,7 +2,7 @@
 authors = ["Oleksii Karpenko <alexkarpenko@yahoo.com>"]
 description = "Kubernetes operator to run Jobs on events from Git"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.80"
 keywords = ["kubernetes", "operator", "git", "events", "runner"]
 license = "MIT"
 name = "git-events-runner"
@@ -83,8 +83,6 @@ opentelemetry-otlp = { version = "0.16.0", features = [
 tracing-opentelemetry = "0.24.0"
 uuid = { version = "1.10.0", features = ["v4"] }
 prometheus = { version = "0.13.4", default-features = false }
-lazy_static = "1.5.0"
-
 
 [dev-dependencies]
 insta = { version = "1", features = [

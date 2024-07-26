@@ -1,9 +1,6 @@
-use crate::cache::{ApiCache, SecretsCache};
-use crate::cli::CliConfig;
-use crate::config::RuntimeConfig;
-use crate::controller::State as AppState;
-use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
-use crate::{get_trace_id, Error};
+use std::sync::LazyLock;
+use std::{sync::Arc, time::Duration};
+
 use axum::routing::post;
 use axum::{
     extract::{FromRequest, Path, State},
@@ -14,14 +11,12 @@ use axum::{
 };
 use futures::Future;
 use kube::Client;
-use lazy_static::lazy_static;
 use prometheus::{histogram_opts, opts, register, Encoder, HistogramVec, IntCounterVec, TextEncoder};
 use sacs::{
     scheduler::{Scheduler, TaskScheduler},
     task::TaskId,
 };
 use serde::Serialize;
-use std::{sync::Arc, time::Duration};
 use strum::Display;
 use tokio::time::Instant;
 use tokio::{
@@ -30,9 +25,14 @@ use tokio::{
 };
 use tracing::{debug, error, info, instrument, trace, warn};
 
-lazy_static! {
-    static ref METRICS: Metrics = Metrics::default().register();
-}
+use crate::cache::{ApiCache, SecretsCache};
+use crate::cli::CliConfig;
+use crate::config::RuntimeConfig;
+use crate::controller::State as AppState;
+use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
+use crate::{get_trace_id, Error};
+
+static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics::default().register());
 
 /// State is attached to each web request
 #[derive(Clone)]
@@ -482,14 +482,16 @@ impl WebState {
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::*;
-    use crate::controller;
     use axum::extract::State;
     use axum::http::HeaderValue;
     use k8s_openapi::api::core::v1::{Namespace, Secret};
     use kube::api::{DeleteParams, PostParams};
     use kube::{Api, Resource};
     use tokio::sync::OnceCell;
+
+    use crate::controller;
+
+    use super::*;
 
     static INITIALIZED: OnceCell<()> = OnceCell::const_new();
 

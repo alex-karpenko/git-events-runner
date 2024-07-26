@@ -1,11 +1,6 @@
-use crate::{
-    cli::CliConfig,
-    resources::{
-        trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
-        CustomApiResource, Reconcilable,
-    },
-    Error, Result,
-};
+use std::sync::LazyLock;
+use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration};
+
 use chrono::{DateTime, Utc};
 use futures::{future::join_all, StreamExt};
 use k8s_openapi::NamespaceResourceScope;
@@ -20,7 +15,6 @@ use kube::{
     },
     Api, Client, Resource, ResourceExt,
 };
-use lazy_static::lazy_static;
 use prometheus::{histogram_opts, opts, register, HistogramVec, IntCounterVec};
 use sacs::{
     scheduler::{
@@ -29,16 +23,22 @@ use sacs::{
     task::TaskId,
 };
 use serde::{de::DeserializeOwned, Serialize};
-use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration};
 use tokio::{
     sync::{watch, RwLock},
     time::Instant,
 };
 use tracing::{debug, error, info, warn};
 
-lazy_static! {
-    static ref METRICS: Metrics = Metrics::default().register();
-}
+use crate::{
+    cli::CliConfig,
+    resources::{
+        trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
+        CustomApiResource, Reconcilable,
+    },
+    Error, Result,
+};
+
+static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics::default().register());
 
 struct Metrics {
     reconcile_duration: HistogramVec,
@@ -325,12 +325,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::resources::{
-        action::{Action, ClusterAction},
-        git_repo::{ClusterGitRepo, GitRepo},
-        trigger::{self, WebhookTrigger},
-    };
     use k8s_openapi::api::core::v1::Namespace;
     use kube::{
         api::{Api, DeleteParams, PostParams},
@@ -339,6 +333,14 @@ mod tests {
     use schemars::JsonSchema;
     use serde::Deserialize;
     use tokio::sync::OnceCell;
+
+    use crate::resources::{
+        action::{Action, ClusterAction},
+        git_repo::{ClusterGitRepo, GitRepo},
+        trigger::{self, WebhookTrigger},
+    };
+
+    use super::*;
 
     static TRACING_INITIALIZED: OnceCell<()> = OnceCell::const_new();
     static NAMESPACE_INITIALIZED: OnceCell<()> = OnceCell::const_new();
