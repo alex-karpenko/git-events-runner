@@ -1,10 +1,12 @@
-use crate::cli::CliConfig;
-use crate::config::RuntimeConfig;
-use crate::resources::action::{
-    ACTION_JOB_ACTION_KIND_LABEL, ACTION_JOB_ACTION_NAME_LABEL, ACTION_JOB_SOURCE_KIND_LABEL,
-    ACTION_JOB_SOURCE_NAME_LABEL, ACTION_JOB_TRIGGER_KIND_LABEL, ACTION_JOB_TRIGGER_NAME_LABEL,
+use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
+use std::sync::LazyLock;
+use std::time::{Duration, SystemTime};
+use std::{
+    fmt::Debug,
+    sync::{Arc, OnceLock},
 };
-use crate::{Error, Result};
+
 use futures::{future::ready, StreamExt};
 use k8s_openapi::api::batch::v1::JobStatus;
 use k8s_openapi::{api::batch::v1::Job, Metadata};
@@ -15,26 +17,24 @@ use kube::{
     runtime::{reflector, watcher, WatchStreamExt},
     Api, Client,
 };
-use lazy_static::lazy_static;
 use prometheus::{histogram_opts, opts, register, Histogram, HistogramVec, IntCounterVec, IntGauge};
-use std::collections::HashMap;
-use std::sync::atomic::AtomicUsize;
-use std::time::{Duration, SystemTime};
-use std::{
-    fmt::Debug,
-    sync::{Arc, OnceLock},
-};
 use strum::Display;
 use tokio::sync::{mpsc, watch, RwLock};
 use tracing::{debug, error, info, trace, warn};
+
+use crate::cli::CliConfig;
+use crate::config::RuntimeConfig;
+use crate::resources::action::{
+    ACTION_JOB_ACTION_KIND_LABEL, ACTION_JOB_ACTION_NAME_LABEL, ACTION_JOB_SOURCE_KIND_LABEL,
+    ACTION_JOB_SOURCE_NAME_LABEL, ACTION_JOB_TRIGGER_KIND_LABEL, ACTION_JOB_TRIGGER_NAME_LABEL,
+};
+use crate::{Error, Result};
 
 const ACTION_JOB_IDENTITY_LABEL: &str = "git-events-runner.rs/controller-identity";
 
 static JOBS_QUEUE: OnceLock<Arc<JobsQueue>> = OnceLock::new();
 
-lazy_static! {
-    static ref METRICS: Metrics = Metrics::default().register();
-}
+static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics::default().register());
 
 #[derive(Clone, Debug, PartialEq, Display)]
 enum JobCompletionStatus {

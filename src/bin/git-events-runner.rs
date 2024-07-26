@@ -1,3 +1,15 @@
+use std::{sync::Arc, time::Duration};
+
+use kube::{Client, CustomResourceExt};
+use kube_lease_manager::LeaseManagerBuilder;
+use opentelemetry::trace::TracerProvider;
+use opentelemetry_otlp::WithExportConfig;
+use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType};
+use tokio::sync::{watch, RwLock};
+use tracing::{error, info, instrument};
+use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
+use uuid::Uuid;
+
 use git_events_runner::{
     cache::{ApiCacheStore, SecretsCache},
     cli::{Cli, CliConfig, CliConfigDumpOptions},
@@ -12,15 +24,6 @@ use git_events_runner::{
     signals::SignalHandler,
     web,
 };
-use kube::{Client, CustomResourceExt};
-use kube_lease_manager::LeaseManagerBuilder;
-use opentelemetry_otlp::WithExportConfig;
-use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType};
-use std::{sync::Arc, time::Duration};
-use tokio::sync::{watch, RwLock};
-use tracing::{error, info, instrument};
-use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
-use uuid::Uuid;
 
 const OPENTELEMETRY_ENDPOINT_URL_ENV_NAME: &str = "OPENTELEMETRY_ENDPOINT_URL";
 
@@ -213,9 +216,10 @@ fn setup_tracing() {
 fn get_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
     if let Ok(otlp_endpoint) = std::env::var(OPENTELEMETRY_ENDPOINT_URL_ENV_NAME) {
         let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_endpoint(otlp_endpoint);
-        let trace_config = opentelemetry_sdk::trace::config().with_resource(opentelemetry_sdk::Resource::new(vec![
-            opentelemetry::KeyValue::new("service.name", env!("CARGO_PKG_NAME")),
-        ]));
+        let trace_config =
+            opentelemetry_sdk::trace::Config::default().with_resource(opentelemetry_sdk::Resource::new(vec![
+                opentelemetry::KeyValue::new("service.name", env!("CARGO_PKG_NAME")),
+            ]));
 
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
@@ -224,7 +228,7 @@ fn get_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
             .install_batch(opentelemetry_sdk::runtime::Tokio)
             .unwrap();
 
-        Some(tracer)
+        Some(tracer.tracer(env!("CARGO_PKG_NAME")))
     } else {
         None
     }
