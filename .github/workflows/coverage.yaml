@@ -47,7 +47,7 @@ jobs:
           RUSTFLAGS: -Cinstrument-coverage
           LLVM_PROFILE_FILE: git-events-runner-%p-%m.profraw
           RUST_LOG: debug
-        run: cargo test --lib --all -- --include-ignored
+        run: cargo test --all -- --include-ignored
 
       - name: Generate coverage
         run: |

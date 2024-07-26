@@ -65,7 +65,7 @@ jobs:
         run: cargo run --bin git-events-runner crds | kubectl apply -f -
 
       - name: Run all integration tests
-        run: cargo test --lib --all -- --ignored
+        run: cargo test --all -- --ignored
 
   docker-test:
     runs-on: ubuntu-latest
