@@ -1,3 +1,5 @@
+//! Runtime configuration watcher, reloader, deserializer,
+//! and schema.
 use crate::Result;
 use futures::{future::ready, StreamExt};
 use k8s_openapi::{api::core::v1::ConfigMap, Metadata};
@@ -176,29 +178,43 @@ impl TryFrom<ConfigMap> for RuntimeConfig {
     }
 }
 
-//
 // Everything below is a runtime configuration structure definition,
 // with defaults and everything needed to deserialize the data section of CM.
 // Config watcher/reload just deserializes CM's data field into `RuntimeConfig` instance.
 //
 // ATTENTION: Don't forget to reflect any changes into Helm values.yaml, runtimeConfig section
+
+/// Root runtime config struct.
 #[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct RuntimeConfig {
+    /// Actions config section
     pub action: ActionConfig,
+    /// Triggers config section
     pub trigger: TriggerConfig,
 }
 
+/// Actions config section
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionConfig {
+    /// Maximum number of simultaneously running Jobs.
     pub max_running_jobs: usize,
+    /// Maximum TTL of the waiting job in the jobs queue
     pub job_waiting_timeout_seconds: u64,
+    /// Default name of the service account to run acton Job.
+    /// Use `default` SA if it's not specified.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_service_account: Option<String>,
+    /// Kubernetes Jobs API `activeDeadlineSeconds` value:
+    /// maximum time job can be in the running state
     pub active_deadline_seconds: i64,
+    /// Kubernetes Jobs API `ttlSecondsAfterFinished` value:
+    /// time to preserve Job state in the cluster after finishing.
     pub ttl_seconds_after_finished: i32,
+    /// Job workdir config section
     pub workdir: ActionWorkdirConfig,
+    /// Job containers config section
     pub containers: ActionContainersConfig,
 }
 
@@ -216,10 +232,13 @@ impl Default for ActionConfig {
     }
 }
 
+/// Action Job workdir config
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionWorkdirConfig {
+    /// Path inside containers to mount workdir volume to
     pub mount_path: String,
+    /// Workdir volume name
     pub volume_name: String,
 }
 
@@ -232,17 +251,23 @@ impl Default for ActionWorkdirConfig {
     }
 }
 
+/// Action Job containers configs
 #[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersConfig {
+    /// Cloner container config section
     pub cloner: ActionContainersClonerConfig,
+    /// Worker container config section
     pub worker: ActionContainersWorkerConfig,
 }
 
+/// Cloner container config
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersClonerConfig {
+    /// Cloner container name
     pub name: String,
+    /// Cloner container image
     pub image: String,
 }
 
@@ -258,11 +283,16 @@ impl Default for ActionContainersClonerConfig {
     }
 }
 
+/// Worker container config
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct ActionContainersWorkerConfig {
+    /// Worker container name
     pub name: String,
+    /// Worker container image
     pub image: String,
+    /// Prefix for automatically defined environment variables
+    /// with some additional runtime information
     pub variables_prefix: String,
 }
 
@@ -279,15 +309,19 @@ impl Default for ActionContainersWorkerConfig {
     }
 }
 
+/// Trigger config
 #[derive(Clone, Deserialize, Serialize, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct TriggerConfig {
+    /// Webhook trigger config section
     pub webhook: TriggerWebhookConfig,
 }
 
+/// Webhook trigger config
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct TriggerWebhookConfig {
+    /// Default name of the header with authentication token
     pub default_auth_header: String,
 }
 

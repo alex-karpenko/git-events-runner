@@ -1,3 +1,5 @@
+//#![deny(unsafe_code, warnings, missing_docs)]
+
 use std::{sync::Arc, time::Duration};
 
 use kube::{Client, CustomResourceExt};

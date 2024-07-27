@@ -1,3 +1,7 @@
+//! Queue of Kubernetes Jobs, implements mechanism to restrict number
+//! of simultaneously running Jobs, in order to:
+//! - eliminate cluster overloading
+//! - avoid running outdated (expired) jobs
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::LazyLock;
@@ -203,6 +207,7 @@ impl Metrics {
     }
 }
 
+/// Represents current Jobs queue state
 pub struct JobsQueue {
     client: Client,
     identity: String,
