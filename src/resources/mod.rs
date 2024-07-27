@@ -1,3 +1,4 @@
+//! Custom resources definitions
 pub mod action;
 pub mod git_repo;
 pub mod trigger;
@@ -14,10 +15,14 @@ pub(crate) trait CustomApiResource {
     fn crd_kind() -> &'static str;
 }
 
+/// Behavior of all CRDs that have external state and should be able to reconcile
 #[allow(async_fn_in_trait)]
 pub trait Reconcilable<S> {
+    /// Reconciles `self`
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
+    /// Finalizes `self`
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<ReconcileAction>;
+    /// Returns finalizer name
     fn finalizer_name(&self) -> Option<&'static str> {
         None
     }

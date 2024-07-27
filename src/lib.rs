@@ -1,3 +1,6 @@
+#![deny(unsafe_code, warnings, missing_docs)]
+//! All `git-events-runner` routines
+
 pub mod cache;
 pub mod cli;
 pub mod config;
@@ -10,10 +13,13 @@ pub mod web;
 use opentelemetry::trace::TraceId;
 use thiserror::Error;
 
+/// Convenient alias for Result with our Error type
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Error, Debug)]
+/// git-events-runner specific errors
 pub enum Error {
+    /// All errors from the Kubernetes API of `kube` crate
     #[error("Kube Error: {0}")]
     KubeError(
         #[source]
@@ -21,6 +27,7 @@ pub enum Error {
         kube::Error,
     ),
 
+    /// Errors related to leader election management
     #[error("LeaseManager Error: {0}")]
     LeaseManagerError(
         #[source]
@@ -28,6 +35,7 @@ pub enum Error {
         kube_lease_manager::LeaseManagerError,
     ),
 
+    /// Controller runtime specific error related to reconciling
     #[error("Finalizer Error: {0}")]
     FinalizerError(
         #[source]
@@ -35,6 +43,8 @@ pub enum Error {
         Box<kube::runtime::finalizer::Error<Error>>,
     ),
 
+    /// Errors related to retrieving git repo content,
+    /// or auth-related access issues
     #[error("GitRepo Access Error: {0}")]
     GitrepoAccessError(
         #[source]
@@ -42,12 +52,15 @@ pub enum Error {
         git2::Error,
     ),
 
+    /// Error during decoding of base64 content of the secrets
     #[error("GitRepo Secret Decoding Error: {0}")]
     SecretDecodingError(String),
 
+    /// Unable to deserialize runtime config due to wrong schema
     #[error("RuntimeConfig ConfigMap format Error")]
     RuntimeConfigFormatError,
 
+    /// Unable to access file during hash calculation
     #[error("Trigger file access IO error: {0}")]
     TriggerFileAccessError(
         #[source]
@@ -55,9 +68,11 @@ pub enum Error {
         std::io::Error,
     ),
 
+    /// Unable to walk thought directories during hash calculation
     #[error("Trigger dir walk error: {0}")]
     TriggerDirWalkError(String),
 
+    /// Incorrect file pattern for hash calculation
     #[error("Trigger file pattern error: {0}")]
     TriggerFilePatternError(
         #[source]
@@ -65,6 +80,7 @@ pub enum Error {
         globwalk::GlobError,
     ),
 
+    /// Error during SACS task scheduling
     #[error("Task scheduler error: {0}")]
     SchedulerError(
         #[source]
@@ -72,6 +88,7 @@ pub enum Error {
         sacs::Error,
     ),
 
+    /// Unable to deserialize runtime config due to incorrect yaml format
     #[error("Config deserialization error: {0}")]
     ConfigDeserializationError(
         #[source]
@@ -79,17 +96,13 @@ pub enum Error {
         serde_yaml::Error,
     ),
 
+    /// Unable to retrieve resource from cache when it should be present in cache
     #[error("Resource not found in cache: {0}")]
     ResourceNotFoundError(String),
 
+    /// Error related to processing of the Jobs queue
     #[error("JobsQueue error: {0}")]
     JobsQueueError(String),
-}
-
-impl Error {
-    pub fn metric_label(&self) -> String {
-        format!("{self:?}").to_lowercase()
-    }
 }
 
 ///  Fetch an opentelemetry::trace::TraceId as hex through the full tracing stack

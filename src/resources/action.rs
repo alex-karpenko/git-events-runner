@@ -1,3 +1,4 @@
+//! Action CRDs
 use super::{
     random_string,
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
@@ -25,13 +26,20 @@ use std::{
 use strum::{Display, EnumString};
 use tracing::{info, instrument};
 
+/// Job/pod label for action kind
 pub const ACTION_JOB_ACTION_KIND_LABEL: &str = "git-events-runner.rs/action-kind";
+/// Job/pod label for action name
 pub const ACTION_JOB_ACTION_NAME_LABEL: &str = "git-events-runner.rs/action-name";
+/// Job/pod label for source kind
 pub const ACTION_JOB_SOURCE_KIND_LABEL: &str = "git-events-runner.rs/source-kind";
+/// Job/pod label for source ame
 pub const ACTION_JOB_SOURCE_NAME_LABEL: &str = "git-events-runner.rs/source-name";
+/// Job/pod label for trigger kind
 pub const ACTION_JOB_TRIGGER_KIND_LABEL: &str = "git-events-runner.rs/trigger-kind";
+/// Job/pod label for trigger name
 pub const ACTION_JOB_TRIGGER_NAME_LABEL: &str = "git-events-runner.rs/trigger-name";
 
+/// Action CRD spec section
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[cfg_attr(test, derive(Default))]
 #[kube(
@@ -49,6 +57,7 @@ pub struct ActionSpec {
     action_job: ActionJob,
 }
 
+/// ClusterAction CRD spec section
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[cfg_attr(test, derive(Default))]
 #[kube(
@@ -65,6 +74,7 @@ pub struct ClusterActionSpec {
     action_job: ActionJob,
 }
 
+/// Action source override section
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionSourceOverride {
@@ -73,6 +83,7 @@ pub struct ActionSourceOverride {
     reference: TriggerGitRepoReference,
 }
 
+/// ClusterAction source override section
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ClusterActionSourceOverride {
@@ -81,14 +92,17 @@ pub struct ClusterActionSourceOverride {
     reference: TriggerGitRepoReference,
 }
 
+/// Possible kinds of trigger for ClusterAction
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, EnumString, Display, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
 pub enum TriggerClusterSourceKind {
+    /// ClusterGitRepo is allowed only
     #[default]
     ClusterGitRepo,
 }
 
+/// Action Job config section
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ActionJob {

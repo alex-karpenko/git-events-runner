@@ -1,3 +1,4 @@
+//! Triggers CRDs
 use std::sync::LazyLock;
 use std::{
     collections::{HashMap, HashSet},
@@ -111,6 +112,7 @@ impl Metrics {
     }
 }
 
+/// Schedule trigger spec section
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
     kind = "ScheduleTrigger",
@@ -129,6 +131,7 @@ pub struct ScheduleTriggerSpec {
     action: TriggerAction,
 }
 
+/// Webhook trigger spec section
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[kube(
     kind = "WebhookTrigger",
@@ -147,23 +150,31 @@ pub struct WebhookTriggerSpec {
     action: TriggerAction,
 }
 
+/// Trigger status section
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerStatus {
+    /// State: idle, running, ...
     pub(crate) state: TriggerState,
+    /// Timestamp of the last run
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) last_run: Option<String>,
+    /// Result of each source run
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub(crate) checked_sources: HashMap<String, CheckedSourceState>,
 }
 
+/// Result of checking of each source in the trigger
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckedSourceState {
+    /// Last verified commit
     #[serde(skip_serializing_if = "Option::is_none")]
     commit_hash: Option<String>,
+    /// Last verified has of the files (if present0)
     #[serde(skip_serializing_if = "Option::is_none")]
     file_hash: Option<String>,
+    /// Timestamp of the last change of the source content
     #[serde(skip_serializing_if = "Option::is_none")]
     changed: Option<String>,
 }
@@ -182,14 +193,19 @@ impl CheckedSourceState {
     }
 }
 
+/// Current state of the trigger
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub enum TriggerState {
+    /// Idle, waiting for the next run
     #[default]
     Idle,
+    /// Running right now
     Running,
+    /// Config is wrong, like incorrect URI
     WrongConfig,
 }
 
+/// Kind and list of the triggers' sources
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerSources {
@@ -200,21 +216,29 @@ pub struct TriggerSources {
     watch_on: TriggerWatchOn,
 }
 
+/// Allowed kinds of the sources
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, EnumString, Display, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
 pub enum TriggerSourceKind {
+    /// GitRepo kind
     #[default]
     GitRepo,
+    /// ClusterGitRepo kind
     ClusterGitRepo,
 }
 
+/// Trigger watching config
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerWatchOn {
+    /// `true`: run action if repo was changed only
+    /// `false`: run action every time trigger fires
     on_change_only: bool,
     #[serde(default)]
+    /// Which reference should be checked
     reference: TriggerGitRepoReference,
+    /// `gitignore`-like files specification to calculate hash
     #[serde(skip_serializing_if = "Option::is_none")]
     files: Option<Vec<String>>,
 }
@@ -240,11 +264,15 @@ impl TriggerWatchOn {
     }
 }
 
+/// Kinds of the references
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum TriggerGitRepoReference {
+    /// Use branch
     Branch(String),
+    /// Ise tag
     Tag(String),
+    /// Use particular commit hash
     Commit(String),
 }
 
@@ -262,6 +290,7 @@ impl std::fmt::Display for TriggerGitRepoReference {
 }
 
 impl TriggerGitRepoReference {
+    /// Returns tuple `(ref_type_name, ref_name)` with prefix (if specified)
     pub fn to_refname(&self, prefix: Option<&str>) -> (String, &String) {
         let prefix = prefix.unwrap_or("");
         match self {
@@ -272,10 +301,13 @@ impl TriggerGitRepoReference {
     }
 }
 
+/// Type of the schedule
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum TriggerSchedule {
+    /// Interval type
     Interval(String),
+    /// Cron schedule
     Cron(String),
 }
 
@@ -288,6 +320,7 @@ impl TriggerSchedule {
     }
 }
 
+/// Webhook trigger specific config
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerWebhook {
@@ -296,6 +329,7 @@ pub struct TriggerWebhook {
     pub(crate) auth_config: Option<TriggerWebhookAuthConfig>,
 }
 
+/// Webhook auth config
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerWebhookAuthConfig {
@@ -305,12 +339,14 @@ pub struct TriggerWebhookAuthConfig {
     pub(crate) header: Option<String>,
 }
 
+/// Current namespace secret reference
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretRef {
     pub(crate) name: String,
 }
 
+/// Reference to the action to run from the trigger
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerAction {
@@ -318,12 +354,15 @@ pub struct TriggerAction {
     name: String,
 }
 
+/// Allowed action kinds
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, EnumString, Display, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
 pub enum TriggerActionKind {
+    /// Action kind
     #[default]
     Action,
+    /// ClusterAction kind
     ClusterAction,
 }
 
@@ -332,7 +371,9 @@ pub enum TriggerActionKind {
 /// It's used by WebhookTrigger mostly.
 #[derive(Clone)]
 pub enum TriggerTaskSources {
+    /// Run check for all sources
     All,
+    /// Check this particular source only
     Single(String),
 }
 

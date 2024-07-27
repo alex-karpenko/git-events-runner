@@ -2,17 +2,17 @@
 
 ## In work
 
-- gitrepo: add support for private keys with passphrase
-- gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images `FROM scratch`
 
 ## Next release
 
+- gitrepo: add support for private keys with passphrase
+- gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images `FROM scratch`
 - hooks: implement hook requests rate control/throttling
 - hooks: tls listener for webhooks
+- refactor: looks like scheduler shouldn't be under RwLock because it's `add` method uses internal mutability
 
 ## Wishes
 
-- refactor: looks like scheduler shouldn't be under RwLock because it's `add` method uses internal mutability
 - hooks/gitrepo: rework secrets cache to watch requested secrets and update it on changes
 - cli: deploy, config, get state, remove
 - cli: configure webhook auth secrets and store them as hashes

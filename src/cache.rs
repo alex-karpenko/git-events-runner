@@ -1,3 +1,6 @@
+//! Module implements two global shared singletons to access cached resources:
+//! - custom API resources, using watch/store mechanism
+//! - secrets' values, using trivial store with expiration
 use crate::resources::{
     action::{Action, ClusterAction},
     git_repo::{ClusterGitRepo, GitRepo},
@@ -26,6 +29,7 @@ use std::{
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
 
+/// Shared singleton instance of the secret cache
 pub static SECRET_CACHE: OnceLock<SecretsCache> = OnceLock::new();
 
 static API_CACHE_STORE: ApiCacheStore = ApiCacheStore {
@@ -37,6 +41,8 @@ static API_CACHE_STORE: ApiCacheStore = ApiCacheStore {
     schedule_trigger: OnceLock::new(),
 };
 
+/// Cache store for all our APIs,
+/// contains shared [`Store`] instances
 pub struct ApiCacheStore {
     git_repo: OnceLock<Store<GitRepo>>,
     cluster_git_repo: OnceLock<Store<ClusterGitRepo>>,
@@ -47,6 +53,8 @@ pub struct ApiCacheStore {
 }
 
 impl ApiCacheStore {
+    /// Method to simultaneously watch all objects of our custom APIs.
+    /// Uses watch method of of the each API.
     pub async fn watch(client: Client) {
         tokio::join!(
             GitRepo::watch(client.clone()),
@@ -60,7 +68,10 @@ impl ApiCacheStore {
 }
 
 #[allow(async_fn_in_trait)]
+/// Shared behavior of all cache for the each our API.
+/// Implements almost all methods for default.
 pub trait ApiCache {
+    /// Returns object form the cache by name and optional namespace.
     fn get(name: &str, namespace: Option<&str>) -> Result<Arc<Self>>
     where
         Self: Sized,
@@ -84,6 +95,8 @@ pub trait ApiCache {
         }
     }
 
+    /// API level implementation of the watch method.
+    /// Initializes API cache instance and starts watching loop.
     async fn watch(client: Client)
     where
         Self: 'static + Sized + Clone + Debug + Send,
@@ -106,12 +119,16 @@ pub trait ApiCache {
         watch.await
     }
 
+    /// Returns shared Store instance of particular API type.
+    /// Required method, should be implemented for each API type.
     fn get_cache_store() -> Store<Self>
     where
         Self: Sized,
         Self: 'static + reflector::Lookup,
         Self::DynamicType: Hash + Eq;
 
+    /// Initialize shared Store instance of particular API type.
+    /// Required method, should be implemented for each API type.
     fn set_cache_store(store: Store<Self>)
     where
         Self: Sized,
@@ -263,6 +280,7 @@ impl ApiCache for ScheduleTrigger {
     }
 }
 
+/// Type to store shared secret cache.
 #[derive(Clone)]
 pub struct SecretsCache {
     expiration_timeout: Duration,
@@ -286,6 +304,9 @@ impl Debug for SecretsCache {
 }
 
 impl SecretsCache {
+    /// Returns secrets' key value.
+    /// It secret is present in the cache and isn't expired, than returns value from the cache,
+    /// or retrieve full secrets' value from the cluster if it's expired or absent and returns keys' value after that.
     pub async fn get(namespace: &str, secret_name: &str, key: &str) -> Result<String, Error> {
         #[cfg(not(test))]
         {
@@ -301,6 +322,9 @@ impl SecretsCache {
         }
     }
 
+    /// Returns secrets' key value.
+    /// It secret is present in the cache and isn't expired, than returns value from the cache,
+    /// or retrieve full secrets' value from the cluster if it's expired or absent and returns keys' value after that.
     pub async fn query_secrets_cache(namespace: &str, secret_name: &str, key: &str) -> Result<String, Error> {
         SECRET_CACHE
             .get()

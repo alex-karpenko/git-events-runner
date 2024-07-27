@@ -1,3 +1,4 @@
+//! GitRepo CRDs
 use super::CustomApiResource;
 use crate::{get_trace_id, Error, Result};
 use git2::{CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions};
@@ -16,6 +17,7 @@ use tracing::{debug, instrument, warn};
 
 const URI_VALIDATION_REGEX: &str = r#"^git@[\w.-]+:[\w.-]+/[/\w.-]+$|^ssh://([\w.-]+@)?[\w.-]+(:[\d]{1,5})?(/([/\w.-]+)?)?$|^https?://[\w.-]+(:[\d]{1,5})?(/([/%&=\?\w.-]+)?)?$"#;
 
+/// GitRepo CRD spec section
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[cfg_attr(test, derive(Default))]
 #[kube(
@@ -27,14 +29,18 @@ const URI_VALIDATION_REGEX: &str = r#"^git@[\w.-]+:[\w.-]+/[/\w.-]+$|^ssh://([\w
 )]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoSpec {
+    /// Full URI of the repo
     #[schemars(regex = "URI_VALIDATION_REGEX")]
     pub repo_uri: String,
+    /// TLS config section
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls_config: Option<TlsConfig>,
+    /// Auth config section
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_config: Option<GitAuthConfig>,
 }
 
+/// ClusterGitRepo CRD spec section
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[cfg_attr(test, derive(Default))]
 #[kube(
@@ -45,14 +51,18 @@ pub struct GitRepoSpec {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ClusterGitRepoSpec {
+    /// Full URI of the repo
     #[schemars(regex = "URI_VALIDATION_REGEX")]
     pub repo_uri: String,
+    /// TLS config section
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls_config: Option<TlsConfig>,
+    /// Auth config section
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_config: Option<GitAuthConfig>,
 }
 
+/// Repo TLS config section
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TlsConfig {
@@ -62,6 +72,7 @@ pub struct TlsConfig {
     ca_cert: Option<TlsCaConfig>,
 }
 
+/// Repo custom TLS CA config
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TlsCaConfig {
@@ -76,6 +87,7 @@ impl TlsCaConfig {
     }
 }
 
+/// Repo authentication config
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GitAuthConfig {
@@ -86,15 +98,22 @@ pub struct GitAuthConfig {
     keys: GitAuthSecretKeys,
 }
 
+/// Repos' type of the authentication
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq, Display)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub enum GitAuthType {
+    /// Basic auth using Base64 encoded login:password pair as a token
+    /// in the header: `Authorization: Basic <token>`
     Basic,
+    /// Arbitrary token in Authorization header, like
+    /// `Authorization: <token>`
     Token,
+    /// Use SSH private key to auth
     Ssh,
 }
 
+/// Keys in the secret data section for different auth parameters
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GitAuthSecretKeys {
@@ -115,6 +134,7 @@ impl Default for GitAuthSecretKeys {
     }
 }
 
+/// Reference to the secret
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretRef {
@@ -185,6 +205,7 @@ impl GitRepoGetter for ClusterGitRepo {}
 /// Getter trait to implement shared behavior: it's able to get content (clone) of repo's particular reference
 #[allow(private_bounds, async_fn_in_trait)]
 pub trait GitRepoGetter: GitRepoInternals {
+    /// Retrieve content of the particular reference of the repo into the specified path
     #[instrument("fetch repo reference", skip_all, fields(reference=ref_name,path, trace_id = %get_trace_id()))]
     async fn fetch_repo_ref(
         &self,

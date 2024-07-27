@@ -1,3 +1,7 @@
+//! Code related to web-related stuff, handles calls to:
+//! - WebhookTrigger trigger
+//! - liveness and readiness probes
+//! - metrics
 use std::sync::LazyLock;
 use std::{sync::Arc, time::Duration};
 

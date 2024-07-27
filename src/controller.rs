@@ -1,3 +1,4 @@
+//! Shared controllers' structs and behavior.
 use std::sync::LazyLock;
 use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration};
 
@@ -119,15 +120,16 @@ impl Metrics {
 /// State shared between the controllers and the web server
 #[derive(Clone)]
 pub struct State {
-    /// Diagnostics read by the web server
+    /// Event reporter state
     pub diagnostics: Arc<RwLock<Diagnostics>>,
     /// Web servers readiness
     pub ready: Arc<RwLock<bool>>,
-    /// Cli config
+    /// Config parameter, specifies folder to clone repos to during triggered inspection
     pub source_clone_folder: Arc<String>,
 }
 
 impl State {
+    /// Creates new controller state
     pub fn new(source_clone_folder: Arc<String>) -> Self {
         Self {
             diagnostics: Default::default(),
@@ -136,8 +138,12 @@ impl State {
         }
     }
 }
+
+/// Resource diagnostics state
 pub struct Diagnostics {
+    /// Time of the last published event
     pub last_event: DateTime<Utc>,
+    /// Event reporter instance
     pub reporter: Reporter,
 }
 
@@ -158,7 +164,7 @@ impl Diagnostics {
     }
 }
 
-// Context for our reconcilers.
+/// Context for our reconcilers.
 #[derive(Clone)]
 pub struct Context {
     /// Kubernetes client

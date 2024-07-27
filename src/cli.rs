@@ -1,3 +1,4 @@
+//! Cli parameters for git-events-runner binary
 use clap::Parser;
 use std::sync::OnceLock;
 use tracing::debug;
@@ -9,6 +10,7 @@ const DEFAULT_METRICS_PREFIX: &str = "git_events_runner";
 
 static CLI_CONFIG: OnceLock<CliConfig> = OnceLock::new();
 
+/// Root CLI commands
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 pub enum Cli {
@@ -20,6 +22,7 @@ pub enum Cli {
     Run(CliConfig),
 }
 
+/// Parameters for the `run` subcommand
 #[derive(Parser, Debug, Clone)]
 pub struct CliConfig {
     /// Port to listen on for webhooks
@@ -70,6 +73,7 @@ pub struct CliConfig {
     // json_log: bool,
 }
 
+/// Parameters for the `config` subcommand
 #[derive(Parser, Debug, Clone)]
 pub struct CliConfigDumpOptions {
     /// Include some templates for Helm chart
@@ -95,6 +99,7 @@ impl Cli {
 }
 
 impl CliConfig {
+    /// Returns really parsed CLI parameters or test mock with defaults
     pub fn get() -> &'static Self {
         #[cfg(not(test))]
         {
