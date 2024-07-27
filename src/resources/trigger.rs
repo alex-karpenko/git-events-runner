@@ -221,10 +221,10 @@ pub struct TriggerSources {
 #[serde(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
 pub enum TriggerSourceKind {
-    ///
+    /// GitRepo kind
     #[default]
     GitRepo,
-    ///
+    /// ClusterGitRepo kind
     ClusterGitRepo,
 }
 

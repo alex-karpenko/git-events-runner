@@ -1,5 +1,5 @@
 #![deny(unsafe_code, warnings, missing_docs)]
-//!
+//! All `git-events-runner` routines
 
 pub mod cache;
 pub mod cli;
