@@ -412,6 +412,7 @@ mod tests {
         let trigger_i = api.create(&pp, &trigger_i).await.unwrap();
         let _ = trigger_i.reconcile(ctx.clone()).await.unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await; // wait to complete first fake run
+
         // Assert status
         let output = api.get_status(trigger_i_name).await.unwrap();
         assert!(output.status.is_some());
@@ -424,6 +425,7 @@ mod tests {
         let trigger_c = api.create(&pp, &trigger_c).await.unwrap();
         let _ = trigger_c.reconcile(ctx.clone()).await.unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await; // wait to complete first fake run
+
         // Assert status
         let output = api.get_status(trigger_c_name).await.unwrap();
         assert!(output.status.is_some());
