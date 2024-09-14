@@ -233,10 +233,10 @@ pub enum TriggerSourceKind {
 #[serde(rename_all = "camelCase")]
 pub struct TriggerWatchOn {
     /// `true`: run action if repo was changed only
-    /// `false`: run action every time trigger fires
+    /// `false`: run action every time trigger fire
     on_change_only: bool,
     #[serde(default)]
-    /// Which reference should be checked
+    /// Which reference should be checked?
     reference: TriggerGitRepoReference,
     /// `gitignore`-like files specification to calculate hash
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1032,6 +1032,7 @@ mod tests {
     use super::*;
 
     impl ScheduleTrigger {
+        /// Returns ScheduleTrigger instance with Interval schedule
         pub fn test_trigger_with_interval(name: &str, ns: &str, interval: &str) -> ScheduleTrigger {
             let mut trigger = ScheduleTrigger::new(
                 name,
@@ -1046,6 +1047,7 @@ mod tests {
             trigger
         }
 
+        /// Returns ScheduleTrigger instance with Cron schedule
         pub fn test_trigger_with_cron(name: &str, ns: &str, cron: &str) -> ScheduleTrigger {
             let mut trigger = ScheduleTrigger::new(
                 name,
@@ -1062,6 +1064,7 @@ mod tests {
     }
 
     impl WebhookTrigger {
+        /// Returns WebhookTrigger instance without authentication required
         pub fn test_anonymous_webhook(
             name: &str,
             ns: &str,
@@ -1088,6 +1091,7 @@ mod tests {
             trigger
         }
 
+        /// Returns WebhookTrigger instance with authentication required
         pub fn test_secure_webhook(
             name: &str,
             ns: &str,
