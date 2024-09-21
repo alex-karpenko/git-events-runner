@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2024-09-18
+### Details
+#### Changed
+- Update dependencies by @alex-karpenko in [#30](https://github.com/alex-karpenko/git-events-runner/pull/30)
+- Improve documentation of the code by @alex-karpenko in [#32](https://github.com/alex-karpenko/git-events-runner/pull/32)
+- Update dependencies by @alex-karpenko in [#33](https://github.com/alex-karpenko/git-events-runner/pull/33)
+- Update kube to v0.95, k8s-openapi to v0.23, kube-lease-manager to v0.4 by @alex-karpenko in [#34](https://github.com/alex-karpenko/git-events-runner/pull/34)
+
+#### Fixed
+- Fix flapping test reconcile_schedule_trigger_should_set_idle_status by @alex-karpenko in [#31](https://github.com/alex-karpenko/git-events-runner/pull/31)
+
 ## [0.2.3] - 2024-07-19
 ### Details
 #### Fixed
@@ -74,6 +85,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
+[0.2.4]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.3..v0.2.4
 [0.2.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.2..v0.2.3
 [0.2.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.1..v0.2.2
 [0.2.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.0..v0.2.1
