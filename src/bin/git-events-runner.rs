@@ -24,7 +24,7 @@ use git_events_runner::{
         trigger::{ScheduleTrigger, WebhookTrigger},
     },
     signals::SignalHandler,
-    web,
+    web::{self, RequestRateLimitsConfig},
 };
 
 const OPENTELEMETRY_ENDPOINT_URL_ENV_NAME: &str = "OPENTELEMETRY_ENDPOINT_URL";
@@ -89,12 +89,18 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
             .parallelism(WorkerParallelism::Limited(cli_config.webhooks_parallelism as usize))
             .build();
         let scheduler = Arc::new(RwLock::new(scheduler));
+        let request_rate_limits = RequestRateLimitsConfig {
+            global: cli_config.hooks_rrl_global,
+            trigger: cli_config.hooks_rrl_trigger,
+            source: cli_config.hooks_rrl_source,
+        };
         web::build_hooks_web(
             client.clone(),
             shutdown_rx.clone(),
             scheduler,
             cli_config.webhooks_port,
             cli_config.source_clone_folder.clone(),
+            request_rate_limits,
         )
         .await
     };

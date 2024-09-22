@@ -45,6 +45,30 @@ for changes in the sources.
 > This is a way to restrict controller only from running of huge number of simultaneous source verification tasks.
 > So there is no way (at least now) to restrict number of action jobs.
 
+### webhooksRateLimits
+
+This section defines Webhooks requests rate limits.
+By default, the controller doesn't restrict the rate of the webhook requests,
+but rate limiting is a good approach to prevent request flood in some environments,
+especially if you're not responsible for configuration of the calling side.
+
+Limits' values are defined as `number-of-requests/period-in-seconds`, for example, "1/10" or "20/60".
+But at the same time, the number of requests defines the size of the "burst bucket"
+— the number of requests that will be accepted before the rate limiter starts request throttling.
+So two equal limits like "1/10" and "10/100" have slightly different meaning:
+
+- 1/10 means that the controller accepts one request and blocks all others during 10 seconds;
+- 10/100 means that the controller accepts the first 10 requests and starts blocking all others for 10 seconds, and
+  returns one "free seat" into the burst bucket every 10 seconds.
+
+There are three types of limits:
+
+* `global` - limits total webhooks request rate regardless of the trigger of source;
+* `trigger` - per trigger limit which restricts rate for each webhook trigger separately, it can't exceed global
+  value;
+* `source` - per trigger source restriction, it works as previous one but uses each source of each trigger as a rate
+  limiting object.
+
 ### secretsCacheTime
 
 This parameter specifies the maximum number of seconds to hold values in the cache of secrets.
@@ -156,9 +180,15 @@ Options:
       --leader-lease-duration <LEADER_LEASE_DURATION>
           Leader lease duration, seconds [default: 30]
       --leader-lease-grace <LEADER_LEASE_GRACE>
-          Leader lease grace interval, seconds [default: 20]
+          Leader lease grace interval, seconds [default: 5]
       --metrics-prefix <METRICS_PREFIX>
           Name of the ConfigMap with dynamic controller config [default: git_events_runner]
+      --hooks-rrl-global <HOOKS_RRL_GLOBAL>
+          Global webhooks requests rate limit (burst limit/seconds)
+      --hooks-rrl-trigger <HOOKS_RRL_TRIGGER>
+          Requests rate limit (burst limit/seconds) per webhook trigger
+      --hooks-rrl-source <HOOKS_RRL_SOURCE>
+          Requests rate limit (burst limit/seconds) per webhook source
   -h, --help
           Print help
 ```

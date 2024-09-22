@@ -14,4 +14,7 @@ CliConfig {
     leader_lease_duration: 30,
     leader_lease_grace: 5,
     metrics_prefix: "git_events_runner",
+    hooks_rrl_global: None,
+    hooks_rrl_trigger: None,
+    hooks_rrl_source: None,
 }

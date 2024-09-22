@@ -5,7 +5,6 @@
 
 ## Next release
 
-- gitrepo: add support for private keys with passphrase
 - gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images `FROM scratch`
 - hooks: implement hook requests rate control/throttling
 - hooks: tls listener for webhooks
