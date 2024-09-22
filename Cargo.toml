@@ -7,7 +7,7 @@ keywords = ["kubernetes", "operator", "git", "events", "runner"]
 license = "MIT"
 name = "git-events-runner"
 repository = "https://github.com/alex-karpenko/git-events-runner"
-version = "0.2.4"
+version = "0.3.0"
 
 [[bin]]
 doc = false
