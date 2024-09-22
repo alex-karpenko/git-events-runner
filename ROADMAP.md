@@ -6,7 +6,6 @@
 ## Next release
 
 - gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images `FROM scratch`
-- hooks: implement hook requests rate control/throttling
 - hooks: tls listener for webhooks
 - refactor: looks like scheduler shouldn't be under RwLock because it's `add` method uses internal mutability
 
@@ -40,3 +39,4 @@
 - controller: use kube-lease-manager instead of kubert
 - tracing: upgrade to the latest module versions
 - tests: fix flapping `reconcile_schedule_trigger_should_set_idle_status` test
+- hooks: implement hook requests rate control/throttling
