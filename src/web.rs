@@ -208,10 +208,26 @@ impl KeyExtractor for RequestsRateLimiter {
     }
 
     fn extract<T>(&self, req: &Request<T>) -> Result<Self::Key, GovernorError> {
+        self.extract_path_key(req.uri().path())
+    }
+
+    fn key_name(&self, key: &Self::Key) -> Option<String> {
+        match self {
+            RequestsRateLimiter::Global => None,
+            RequestsRateLimiter::Trigger | RequestsRateLimiter::Source => Some(key.to_string()),
+        }
+    }
+}
+
+impl RequestsRateLimiter {
+    fn extract_path_key(&self, path: &str) -> Result<RateLimiterKey, GovernorError> {
         match self {
             RequestsRateLimiter::Global => Ok(RateLimiterKey::default()),
             RequestsRateLimiter::Trigger => {
-                let splitted_path: Vec<&str> = req.uri().path().split("/").collect();
+                let splitted_path: Vec<&str> = path.split("/").collect();
+                if splitted_path.len() < 3 || splitted_path[1].is_empty() || splitted_path[2].is_empty() {
+                    return Err(GovernorError::UnableToExtractKey);
+                }
                 Ok(RateLimiterKey {
                     ns: Some(String::from(splitted_path[1])),
                     trigger: Some(String::from(splitted_path[2])),
@@ -219,8 +235,10 @@ impl KeyExtractor for RequestsRateLimiter {
                 })
             }
             RequestsRateLimiter::Source => {
-                let splitted_path: Vec<&str> = req.uri().path().split("/").collect();
-                if splitted_path.len() == 4 {
+                let splitted_path: Vec<&str> = path.split("/").collect();
+                if splitted_path.len() >= 4
+                    && !(splitted_path[1].is_empty() || splitted_path[2].is_empty() || splitted_path[3].is_empty())
+                {
                     Ok(RateLimiterKey {
                         ns: Some(String::from(splitted_path[1])),
                         trigger: Some(String::from(splitted_path[2])),
@@ -228,6 +246,9 @@ impl KeyExtractor for RequestsRateLimiter {
                         strip_source: false,
                     })
                 } else {
+                    if splitted_path.len() < 3 || splitted_path[1].is_empty() || splitted_path[2].is_empty() {
+                        return Err(GovernorError::UnableToExtractKey);
+                    }
                     Ok(RateLimiterKey {
                         ns: Some(String::from(splitted_path[1])),
                         trigger: Some(String::from(splitted_path[2])),
@@ -236,13 +257,6 @@ impl KeyExtractor for RequestsRateLimiter {
                     })
                 }
             }
-        }
-    }
-
-    fn key_name(&self, key: &Self::Key) -> Option<String> {
-        match self {
-            RequestsRateLimiter::Global => None,
-            RequestsRateLimiter::Trigger | RequestsRateLimiter::Source => Some(key.to_string()),
         }
     }
 }
@@ -1120,5 +1134,174 @@ mod tests {
                 strip_source: false
             }
         );
+    }
+
+    #[test]
+    fn rate_limiter_path_extractor_global() {
+        let rrl = RequestsRateLimiter::Global;
+        assert_eq!(rrl.extract_path_key("/").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/b").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/b/").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/b/c").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/b/c/").unwrap(), RateLimiterKey::default());
+    }
+
+    #[test]
+    fn rate_limiter_path_extractor_trigger() {
+        let rrl = RequestsRateLimiter::Trigger;
+        assert!(matches!(
+            rrl.extract_path_key(""),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("//"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("///"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("////"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/a"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/a/"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert_eq!(
+            rrl.extract_path_key("/a/b").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c/").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+    }
+
+    #[test]
+    fn rate_limiter_path_extractor_source() {
+        let rrl = RequestsRateLimiter::Source;
+        assert!(matches!(
+            rrl.extract_path_key(""),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("//"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("///"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("////"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/a"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/a/"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+
+        let key = rrl.extract_path_key("/a/b").unwrap();
+        assert_eq!(key.ns, Some("a".into()));
+        assert_eq!(key.trigger, Some("b".into()));
+        assert!(key.source.is_some());
+        assert!(key.strip_source);
+
+        let key = rrl.extract_path_key("/a/b/").unwrap();
+        assert_eq!(key.ns, Some("a".into()));
+        assert_eq!(key.trigger, Some("b".into()));
+        assert!(key.source.is_some());
+        assert!(key.strip_source);
+
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: Some("c".into()),
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c/").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: Some("c".into()),
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c//").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: Some("c".into()),
+                strip_source: false
+            }
+        );
+
+        assert!(matches!(
+            rrl.extract_path_key("/a//b/c"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
     }
 }
