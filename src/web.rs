@@ -1108,4 +1108,17 @@ mod tests {
             "test-ns/test-trigger/"
         );
     }
+
+    #[test]
+    fn ensure_default_rate_limiter_key_is_all_nones() {
+        assert_eq!(
+            RateLimiterKey::default(),
+            RateLimiterKey {
+                ns: None,
+                trigger: None,
+                source: None,
+                strip_source: false
+            }
+        );
+    }
 }
