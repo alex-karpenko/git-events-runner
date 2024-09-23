@@ -2,7 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.4] - 2024-09-18
+## [Unreleased]
+### Details
+#### Added
+- Implement web-hooks requests rate limiting
+
+## [0.2.4] - 2024-09-21
 ### Details
 #### Changed
 - Update dependencies by @alex-karpenko in [#30](https://github.com/alex-karpenko/git-events-runner/pull/30)
@@ -85,6 +90,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
+[unreleased]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.4..HEAD
 [0.2.4]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.3..v0.2.4
 [0.2.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.2..v0.2.3
 [0.2.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.1..v0.2.2
