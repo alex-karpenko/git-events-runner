@@ -220,6 +220,7 @@ impl KeyExtractor for RequestsRateLimiter {
 }
 
 impl RequestsRateLimiter {
+    #[allow(clippy::result_large_err)]
     fn extract_path_key(&self, path: &str) -> Result<RateLimiterKey, GovernorError> {
         match self {
             RequestsRateLimiter::Global => Ok(RateLimiterKey::default()),
