@@ -3,6 +3,8 @@ use clap::Parser;
 use std::sync::OnceLock;
 use tracing::debug;
 
+use crate::web::RequestsRateLimitParams;
+
 const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
 const DEFAULT_CONFIG_MAP_NAME: &str = "git-events-runner-config";
 const DEFAULT_LEADER_LOCK_LEASE_NAME: &str = "git-events-runner-leader-lock";
@@ -68,9 +70,21 @@ pub struct CliConfig {
     /// Name of the ConfigMap with dynamic controller config
     #[arg(long, default_value = DEFAULT_METRICS_PREFIX)]
     pub metrics_prefix: String,
-    // /// Write logs in JSON format
-    // #[arg(short, long)]
-    // json_log: bool,
+
+    /// Global webhooks requests rate limit (burst limit/seconds)
+    #[arg(long, value_parser=Cli::rrl_parser)]
+    pub hooks_rrl_global: Option<RequestsRateLimitParams>,
+
+    /// Requests rate limit (burst limit/seconds) per webhook trigger
+    #[arg(long, value_parser=Cli::rrl_parser)]
+    pub hooks_rrl_trigger: Option<RequestsRateLimitParams>,
+
+    /// Requests rate limit (burst limit/seconds) per webhook source
+    #[arg(long, value_parser=Cli::rrl_parser)]
+    pub hooks_rrl_source: Option<RequestsRateLimitParams>,
+    /* /// Write logs in JSON format
+    #[arg(short, long)]
+    json_log: bool, */
 }
 
 /// Parameters for the `config` subcommand
@@ -95,6 +109,11 @@ impl Cli {
         } else {
             cli
         }
+    }
+
+    /// Parse RRL params using original try_from(&str)
+    fn rrl_parser(s: &str) -> Result<RequestsRateLimitParams, String> {
+        RequestsRateLimitParams::try_from(s).map_err(|e| e.to_string())
     }
 }
 
