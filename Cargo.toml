@@ -31,6 +31,7 @@ axum = { version = "0.7.5", default-features = false, features = [
     "tower-log",
     "json",
 ] }
+axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 chrono = { version = "0.4.38", default-features = false, features = ["std"] }
 clap = { version = "4.5.17", features = ["derive"] }
 futures = "0.3.30"
@@ -49,7 +50,8 @@ kube-lease-manager = { version = "0.4.0" }
 rand = "0.8.5"
 rustls = { version = "0.23.13", features = [
     "std",
-    "ring",
+    "tls12",
+    "aws-lc-rs",
 ], default-features = false }
 rustls-native-certs = "0.8.0"
 rustls-pemfile = "2.1.3"

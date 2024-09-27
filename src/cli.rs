@@ -1,9 +1,13 @@
 //! Cli parameters for git-events-runner binary
+use anyhow::Context;
+use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
+use k8s_openapi::api::core::v1::Secret;
+use kube::{Api, Client};
 use std::sync::OnceLock;
 use tracing::debug;
 
-use crate::web::RequestsRateLimitParams;
+use crate::{web::RequestsRateLimitParams, Error};
 
 const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
 const DEFAULT_CONFIG_MAP_NAME: &str = "git-events-runner-config";
@@ -15,6 +19,7 @@ static CLI_CONFIG: OnceLock<CliConfig> = OnceLock::new();
 /// Root CLI commands
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
+#[allow(clippy::large_enum_variant)]
 pub enum Cli {
     /// Print CRD definitions to stdout
     Crds,
@@ -82,6 +87,22 @@ pub struct CliConfig {
     /// Requests rate limit (burst limit/seconds) per webhook source
     #[arg(long, value_parser=Cli::rrl_parser)]
     pub hooks_rrl_source: Option<RequestsRateLimitParams>,
+
+    /// Path to TLS certificate file
+    #[arg(long, requires = "tls_key", conflicts_with_all=["tls_secret_name", "tls_secret_namespace"])]
+    pub tls_cert: Option<String>,
+
+    /// Path to TLS key file
+    #[arg(long, requires = "tls_cert", conflicts_with_all=["tls_secret_name", "tls_secret_namespace"])]
+    pub tls_key: Option<String>,
+
+    /// Secret name with TLS certificate and key
+    #[arg(long, conflicts_with_all = ["tls_cert", "tls_key"])]
+    pub tls_secret_name: Option<String>,
+
+    /// Namespace of the  TLS secret
+    #[arg(long, requires = "tls_secret_name", conflicts_with_all = ["tls_cert", "tls_key"])]
+    pub tls_secret_namespace: Option<String>,
     /* /// Write logs in JSON format
     #[arg(short, long)]
     json_log: bool, */
@@ -128,6 +149,60 @@ impl CliConfig {
         #[cfg(test)]
         {
             CLI_CONFIG.get_or_init(|| CliConfig::parse_from::<_, &String>(&[]))
+        }
+    }
+
+    /// Returns ready to use RustlsConfig instance if TLS config options were provided,
+    /// or None if no config
+    pub async fn build_tls_config(&self, client: Client) -> anyhow::Result<Option<RustlsConfig>> {
+        match (
+            self.tls_cert.as_ref(),
+            self.tls_key.as_ref(),
+            self.tls_secret_name.as_ref(),
+        ) {
+            (Some(cert), Some(key), _) => {
+                let config = RustlsConfig::from_pem_file(cert, key)
+                    .await
+                    .context(format!("Unable to apply TLS config with cert={cert} and key={key}"))?;
+                Ok(Some(config))
+            }
+            (_, _, Some(secret_name)) => {
+                let secret_api: Api<Secret> = if let Some(namespace) = self.tls_secret_namespace.as_ref() {
+                    Api::namespaced(client, namespace)
+                } else {
+                    Api::default_namespaced(client)
+                };
+                let secret = secret_api
+                    .get(secret_name)
+                    .await
+                    .context(format!("Unable to get TLS secret {secret_name}"))?;
+                let secret_data = secret.data.ok_or_else(|| {
+                    Error::SecretDecodingError(format!("no `data` part in the secret `{}`", secret_name))
+                })?;
+                let cert = secret_data
+                    .get("tls.crt")
+                    .ok_or_else(|| {
+                        Error::SecretDecodingError(format!("no `tls.crt` key in the secret `{}`", secret_name))
+                    })?
+                    .to_owned();
+                let cert = String::from_utf8(cert.0)
+                    .context("TLS cert is not a valid UTF-8 string")?
+                    .into_bytes();
+
+                let key = secret_data
+                    .get("tls.key")
+                    .ok_or_else(|| {
+                        Error::SecretDecodingError(format!("no `tls.key` key in the secret `{}`", secret_name))
+                    })?
+                    .to_owned();
+                let key = String::from_utf8(key.0)
+                    .context("TLS key is not a valid UTF-8 string")?
+                    .into_bytes();
+
+                let config = RustlsConfig::from_pem(cert, key).await?;
+                Ok(Some(config))
+            }
+            (_, _, _) => Ok(None),
         }
     }
 }

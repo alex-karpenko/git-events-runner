@@ -6,6 +6,7 @@ use git_events_runner::resources::{
     trigger::{get_latest_commit, TriggerGitRepoReference, TriggerSourceKind},
 };
 use kube::{Api, Client};
+use rustls::crypto::aws_lc_rs;
 use tracing::debug;
 
 #[derive(Parser)]
@@ -49,6 +50,9 @@ struct ReferenceValue {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
     let cli = Cli::parse();
 
     if cli.debug {
