@@ -2,17 +2,14 @@
 //! - WebhookTrigger trigger
 //! - liveness and readiness probes
 //! - metrics
-use std::sync::LazyLock;
-use std::{sync::Arc, time::Duration};
-
-use axum::routing::post;
 use axum::{
     extract::{FromRequest, Path, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Request, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
+use axum_server::tls_rustls::RustlsConfig;
 use futures::Future;
 use kube::Client;
 use prometheus::{histogram_opts, opts, register, Encoder, HistogramVec, IntCounterVec, TextEncoder};
@@ -21,13 +18,22 @@ use sacs::{
     task::TaskId,
 };
 use serde::Serialize;
+use std::{
+    fmt::Display,
+    net::SocketAddr,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 use strum::Display;
-use tokio::time::Instant;
 use tokio::{
     net::TcpListener,
+    select,
     sync::{watch, RwLock},
+    time::Instant,
 };
+use tower_governor::{governor::GovernorConfigBuilder, key_extractor::KeyExtractor, GovernorError, GovernorLayer};
 use tracing::{debug, error, info, instrument, trace, warn};
+use uuid::Uuid;
 
 use crate::cache::{ApiCache, SecretsCache};
 use crate::cli::CliConfig;
@@ -86,6 +92,196 @@ enum WebError {
     SchedulerError { msg: String },
     #[strum(to_string = "Unknown: {msg}")]
     UnknownError { msg: String },
+}
+
+/// Represents parameter for requests rate limiter
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RequestsRateLimitParams {
+    /// Size of the burst bucket
+    burst: u32,
+    /// Period to replenish single bucket item
+    period: Duration,
+}
+
+/// Represents a set of request rate limits parameters to apply to the hooks-web
+#[derive(Debug)]
+pub struct RequestRateLimitsConfig {
+    /// Global RRL
+    pub global: Option<RequestsRateLimitParams>,
+    /// Per trigger RRL
+    pub trigger: Option<RequestsRateLimitParams>,
+    /// Per triggers' source rrl
+    pub source: Option<RequestsRateLimitParams>,
+}
+
+impl TryFrom<&str> for RequestsRateLimitParams {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let splitted: Vec<String> = value.split("/").map(String::from).collect();
+        if splitted.len() != 2 {
+            return Err(Error::InvalidRequestRateLimit(value.into()));
+        }
+        let burst = splitted[0]
+            .parse::<u32>()
+            .map_err(|_| Error::InvalidRequestRateLimit(value.into()))?;
+        let period = splitted[1]
+            .parse::<u64>()
+            .map_err(|_| Error::InvalidRequestRateLimit(value.into()))?;
+
+        if burst == 0 || period == 0 {
+            return Err(Error::InvalidRequestRateLimit(value.into()));
+        }
+
+        Ok(Self {
+            burst,
+            period: Duration::from_secs_f64(period as f64 / burst as f64),
+        })
+    }
+}
+
+impl RequestRateLimitsConfig {
+    fn add_rrl_layer(&self, router: Router) -> Router {
+        let router = if let Some(rrl) = &self.global {
+            RequestsRateLimiter::Global.add_rrl_layer(rrl.burst, rrl.period, router)
+        } else {
+            router
+        };
+
+        let router = if let Some(rrl) = &self.trigger {
+            RequestsRateLimiter::Trigger.add_rrl_layer(rrl.burst, rrl.period, router)
+        } else {
+            router
+        };
+
+        if let Some(rrl) = &self.source {
+            RequestsRateLimiter::Source.add_rrl_layer(rrl.burst, rrl.period, router)
+        } else {
+            router
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum RequestsRateLimiter {
+    Global,
+    Trigger,
+    Source,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+struct RateLimiterKey {
+    ns: Option<String>,
+    trigger: Option<String>,
+    source: Option<String>,
+    strip_source: bool,
+}
+
+impl Display for RateLimiterKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut key = String::new();
+        if let Some(ns) = &self.ns {
+            key.push_str(ns);
+            key.push('/');
+        }
+        if let Some(trigger) = &self.trigger {
+            key.push_str(trigger);
+            key.push('/');
+        }
+        if !self.strip_source {
+            if let Some(source) = &self.source {
+                key.push_str(source);
+            }
+        }
+        write!(f, "{}", key)
+    }
+}
+
+impl KeyExtractor for RequestsRateLimiter {
+    type Key = RateLimiterKey;
+
+    fn name(&self) -> &'static str {
+        match self {
+            RequestsRateLimiter::Global => "global",
+            RequestsRateLimiter::Trigger => "trigger",
+            RequestsRateLimiter::Source => "trigger source",
+        }
+    }
+
+    fn extract<T>(&self, req: &Request<T>) -> Result<Self::Key, GovernorError> {
+        self.extract_path_key(req.uri().path())
+    }
+
+    fn key_name(&self, key: &Self::Key) -> Option<String> {
+        match self {
+            RequestsRateLimiter::Global => None,
+            RequestsRateLimiter::Trigger | RequestsRateLimiter::Source => Some(key.to_string()),
+        }
+    }
+}
+
+impl RequestsRateLimiter {
+    #[allow(clippy::result_large_err)]
+    fn extract_path_key(&self, path: &str) -> Result<RateLimiterKey, GovernorError> {
+        match self {
+            RequestsRateLimiter::Global => Ok(RateLimiterKey::default()),
+            RequestsRateLimiter::Trigger => {
+                let splitted_path: Vec<&str> = path.split("/").collect();
+                if splitted_path.len() < 3 || splitted_path[1].is_empty() || splitted_path[2].is_empty() {
+                    return Err(GovernorError::UnableToExtractKey);
+                }
+                Ok(RateLimiterKey {
+                    ns: Some(String::from(splitted_path[1])),
+                    trigger: Some(String::from(splitted_path[2])),
+                    ..Default::default()
+                })
+            }
+            RequestsRateLimiter::Source => {
+                let splitted_path: Vec<&str> = path.split("/").collect();
+                if splitted_path.len() >= 4
+                    && !(splitted_path[1].is_empty() || splitted_path[2].is_empty() || splitted_path[3].is_empty())
+                {
+                    Ok(RateLimiterKey {
+                        ns: Some(String::from(splitted_path[1])),
+                        trigger: Some(String::from(splitted_path[2])),
+                        source: Some(String::from(splitted_path[3])),
+                        strip_source: false,
+                    })
+                } else {
+                    if splitted_path.len() < 3 || splitted_path[1].is_empty() || splitted_path[2].is_empty() {
+                        return Err(GovernorError::UnableToExtractKey);
+                    }
+                    Ok(RateLimiterKey {
+                        ns: Some(String::from(splitted_path[1])),
+                        trigger: Some(String::from(splitted_path[2])),
+                        source: Some(String::from(Uuid::new_v4())),
+                        strip_source: true,
+                    })
+                }
+            }
+        }
+    }
+}
+
+impl RequestsRateLimiter {
+    fn add_rrl_layer(&self, burst: u32, period: Duration, router: Router) -> Router {
+        let self_type = match self {
+            RequestsRateLimiter::Global => RequestsRateLimiter::Global,
+            RequestsRateLimiter::Trigger => RequestsRateLimiter::Trigger,
+            RequestsRateLimiter::Source => RequestsRateLimiter::Source,
+        };
+
+        let config = Arc::new(
+            GovernorConfigBuilder::default()
+                .key_extractor(self_type)
+                .burst_size(burst)
+                .period(period)
+                .finish()
+                .unwrap(),
+        );
+
+        router.layer(GovernorLayer { config })
+    }
 }
 
 struct Metrics {
@@ -185,6 +381,8 @@ pub async fn build_hooks_web(
     scheduler: Arc<RwLock<Scheduler>>,
     port: u16,
     source_clone_folder: String,
+    request_rate_limits: RequestRateLimitsConfig,
+    tls_config: Option<RustlsConfig>,
 ) -> impl Future<Output = ()> {
     let state = WebState {
         scheduler: scheduler.clone(),
@@ -192,21 +390,41 @@ pub async fn build_hooks_web(
         source_clone_folder,
     };
 
-    let listen_to = format!("0.0.0.0:{port}");
+    let handle = axum_server::Handle::new();
+    let handle_in_web_future = handle.clone();
     let app = Router::new()
         .route("/:namespace/:trigger", post(handle_post_trigger_webhook))
         .route("/:namespace/:trigger/:source", post(handle_post_source_webhook))
         .with_state(state);
-    let listener = TcpListener::bind(listen_to.clone())
-        .await
-        .expect("unable to create Webhooks listener");
-    let web = axum::serve(listener, app).with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
+    let app = request_rate_limits.add_rrl_layer(app);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+
+    let web = async move {
+        if let Some(tls_config) = tls_config {
+            axum_server::bind_rustls(addr, tls_config)
+                .handle(handle_in_web_future)
+                .serve(app.into_make_service())
+                .await
+        } else {
+            axum_server::bind(addr)
+                .handle(handle_in_web_future)
+                .serve(app.into_make_service())
+                .await
+        }
+    };
 
     async move {
-        info!(address = %listen_to, "starting Hooks web server");
-        if let Err(err) = web.await {
-            error!(error = %err, "running Webhooks server");
-        }
+        info!(address = %format!("0.0.0.0:{port}"), "starting Hooks web server");
+        select! {
+            _ = shutdown.changed() => {
+                handle.graceful_shutdown(None)
+            },
+            res = web => {
+                if let Err(err) = res {
+                    error!(error = %err, "running Webhooks server");
+                }
+            }
+        };
 
         // To shut down task scheduler, we have to extract it from shared reference (Arc), but
         // sometimes the controller works few milliseconds longer than expected,
@@ -321,7 +539,9 @@ async fn handle_post_source_webhook(
             let task = trigger.create_trigger_task(
                 state.client.clone(),
                 sacs::task::TaskSchedule::Once,
-                TriggerTaskSources::Single(source.clone()), // by specifying `single source` we restrict scope of the task.
+                // by specifying `single source`
+                // we restrict the scope of the task.
+                TriggerTaskSources::Single(source.clone()),
                 state.source_clone_folder,
             );
             let scheduler = state.scheduler.write().await;
@@ -484,16 +704,15 @@ impl WebState {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use axum::extract::State;
-    use axum::http::HeaderValue;
+    use crate::{controller, tests};
+    use axum::{extract::State, http::HeaderValue};
     use k8s_openapi::api::core::v1::{Namespace, Secret};
-    use kube::api::{DeleteParams, PostParams};
-    use kube::{Api, Resource};
+    use kube::{
+        api::{DeleteParams, PostParams},
+        Api, Resource,
+    };
+    use std::collections::BTreeMap;
     use tokio::sync::OnceCell;
-
-    use crate::controller;
 
     use super::*;
 
@@ -506,6 +725,7 @@ mod tests {
     async fn init() -> WebState {
         INITIALIZED
             .get_or_init(|| async {
+                tests::init_crypto_provider().await;
                 let client = Client::try_default().await.unwrap();
                 create_namespace(client.clone()).await;
                 create_secret(client.clone()).await;
@@ -729,7 +949,7 @@ mod tests {
         let trigger = WebhookTrigger::test_anonymous_webhook(trigger_name, NAMESPACE, vec![source_name.into()], true);
         let _trigger = api.create(&pp, &trigger).await.unwrap();
 
-        // Test single sources request with wrong source
+        // Test single sources request with a wrong source
         let res = handle_post_source_webhook(
             State(state.clone()),
             Path((NAMESPACE.into(), trigger_name.into(), "wrong-source-name".into())),
@@ -798,7 +1018,7 @@ mod tests {
             WebhookTrigger::test_secure_webhook(trigger_name, NAMESPACE, vec![source_name.into()], true, SECRET_NAME);
         let _trigger = api.create(&pp, &trigger).await.unwrap();
 
-        // Test all sources request with wrong header
+        // Test all sources request with a wrong header
         let mut headers = HeaderMap::new();
         headers.append("xxx-auth-token", HeaderValue::from_static(SECRET_TOKEN));
 
@@ -828,5 +1048,281 @@ mod tests {
 
         // Clean up
         let _result = api.delete(trigger_name, &dp).await.unwrap();
+    }
+
+    #[test]
+    fn requests_rate_limit_valid() {
+        assert_eq!(
+            RequestsRateLimitParams::try_from("1/1").unwrap(),
+            RequestsRateLimitParams {
+                burst: 1,
+                period: Duration::from_secs(1)
+            }
+        );
+
+        assert_eq!(
+            RequestsRateLimitParams::try_from("1/10").unwrap(),
+            RequestsRateLimitParams {
+                burst: 1,
+                period: Duration::from_secs(10)
+            }
+        );
+
+        assert_eq!(
+            RequestsRateLimitParams::try_from("5/1").unwrap(),
+            RequestsRateLimitParams {
+                burst: 5,
+                period: Duration::from_millis(200)
+            }
+        );
+    }
+
+    #[test]
+    fn requests_rate_limit_invalid() {
+        let tests = ["", "/", "1", "1/", "/1", "1/0", "0/1", "0/0", "q", "q/w"];
+
+        for t in tests {
+            assert!(
+                matches!(
+                    RequestsRateLimitParams::try_from(t),
+                    Err(Error::InvalidRequestRateLimit(_))
+                ),
+                "Unexpected result for string '{t}'"
+            );
+        }
+    }
+
+    #[test]
+    fn rate_limit_key_to_string() {
+        assert_eq!(RateLimiterKey::default().to_string(), "");
+        assert_eq!(
+            RateLimiterKey {
+                ns: Some("test-ns".into()),
+                ..Default::default()
+            }
+            .to_string(),
+            "test-ns/"
+        );
+        assert_eq!(
+            RateLimiterKey {
+                ns: Some("test-ns".into()),
+                trigger: Some("test-trigger".into()),
+                ..Default::default()
+            }
+            .to_string(),
+            "test-ns/test-trigger/"
+        );
+        assert_eq!(
+            RateLimiterKey {
+                ns: Some("test-ns".into()),
+                trigger: Some("test-trigger".into()),
+                strip_source: true,
+                ..Default::default()
+            }
+            .to_string(),
+            "test-ns/test-trigger/"
+        );
+        assert_eq!(
+            RateLimiterKey {
+                ns: Some("test-ns".into()),
+                trigger: Some("test-trigger".into()),
+                source: Some("test-source".into()),
+                strip_source: false,
+            }
+            .to_string(),
+            "test-ns/test-trigger/test-source"
+        );
+        assert_eq!(
+            RateLimiterKey {
+                ns: Some("test-ns".into()),
+                trigger: Some("test-trigger".into()),
+                source: Some("test-source".into()),
+                strip_source: true,
+            }
+            .to_string(),
+            "test-ns/test-trigger/"
+        );
+    }
+
+    #[test]
+    fn ensure_default_rate_limiter_key_is_all_nones() {
+        assert_eq!(
+            RateLimiterKey::default(),
+            RateLimiterKey {
+                ns: None,
+                trigger: None,
+                source: None,
+                strip_source: false
+            }
+        );
+    }
+
+    #[test]
+    fn rate_limiter_path_extractor_global() {
+        let rrl = RequestsRateLimiter::Global;
+        assert_eq!(rrl.extract_path_key("/").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/b").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/b/").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/b/c").unwrap(), RateLimiterKey::default());
+        assert_eq!(rrl.extract_path_key("/a/b/c/").unwrap(), RateLimiterKey::default());
+    }
+
+    #[test]
+    fn rate_limiter_path_extractor_trigger() {
+        let rrl = RequestsRateLimiter::Trigger;
+        assert!(matches!(
+            rrl.extract_path_key(""),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("//"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("///"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("////"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/a"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/a/"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert_eq!(
+            rrl.extract_path_key("/a/b").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c/").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: None,
+                strip_source: false
+            }
+        );
+    }
+
+    #[test]
+    fn rate_limiter_path_extractor_source() {
+        let rrl = RequestsRateLimiter::Source;
+        assert!(matches!(
+            rrl.extract_path_key(""),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("//"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("///"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("////"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/a"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+        assert!(matches!(
+            rrl.extract_path_key("/a/"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
+
+        let key = rrl.extract_path_key("/a/b").unwrap();
+        assert_eq!(key.ns, Some("a".into()));
+        assert_eq!(key.trigger, Some("b".into()));
+        assert!(key.source.is_some());
+        assert!(key.strip_source);
+
+        let key = rrl.extract_path_key("/a/b/").unwrap();
+        assert_eq!(key.ns, Some("a".into()));
+        assert_eq!(key.trigger, Some("b".into()));
+        assert!(key.source.is_some());
+        assert!(key.strip_source);
+
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: Some("c".into()),
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c/").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: Some("c".into()),
+                strip_source: false
+            }
+        );
+        assert_eq!(
+            rrl.extract_path_key("/a/b/c//").unwrap(),
+            RateLimiterKey {
+                ns: Some("a".into()),
+                trigger: Some("b".into()),
+                source: Some("c".into()),
+                strip_source: false
+            }
+        );
+
+        assert!(matches!(
+            rrl.extract_path_key("/a//b/c"),
+            Err(GovernorError::UnableToExtractKey)
+        ));
     }
 }

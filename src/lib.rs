@@ -52,7 +52,7 @@ pub enum Error {
         git2::Error,
     ),
 
-    /// Error during decoding of base64 content of the secrets
+    /// Error during decoding of the secrets' base64 content
     #[error("GitRepo Secret Decoding Error: {0}")]
     SecretDecodingError(String),
 
@@ -60,7 +60,7 @@ pub enum Error {
     #[error("RuntimeConfig ConfigMap format Error")]
     RuntimeConfigFormatError,
 
-    /// Unable to access file during hash calculation
+    /// Unable to access a file during hash calculation
     #[error("Trigger file access IO error: {0}")]
     TriggerFileAccessError(
         #[source]
@@ -96,13 +96,17 @@ pub enum Error {
         serde_yaml::Error,
     ),
 
-    /// Unable to retrieve resource from cache when it should be present in cache
+    /// Unable to retrieve a resource from cache when it should be present in cache
     #[error("Resource not found in cache: {0}")]
     ResourceNotFoundError(String),
 
     /// Error related to processing of the Jobs queue
     #[error("JobsQueue error: {0}")]
     JobsQueueError(String),
+
+    /// Unable to parse request rate limit string
+    #[error("Incorrect request rate limit parameter: {0}")]
+    InvalidRequestRateLimit(String),
 }
 
 ///  Fetch an opentelemetry::trace::TraceId as hex through the full tracing stack
@@ -111,4 +115,22 @@ pub fn get_trace_id() -> TraceId {
     use tracing_opentelemetry::OpenTelemetrySpanExt as _; // tracing::Span to opentelemetry::Context
 
     tracing::Span::current().context().span().span_context().trace_id()
+}
+
+#[cfg(test)]
+mod tests {
+    use rustls::crypto::aws_lc_rs;
+    use tokio::sync::OnceCell;
+
+    static CRYPTO_PROVIDER_INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    pub async fn init_crypto_provider() {
+        CRYPTO_PROVIDER_INITIALIZED
+            .get_or_init(|| async {
+                aws_lc_rs::default_provider()
+                    .install_default()
+                    .expect("Failed to install rustls crypto provider");
+            })
+            .await;
+    }
 }

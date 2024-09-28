@@ -1,12 +1,12 @@
 //#![deny(unsafe_code, warnings, missing_docs)]
 
-use std::{sync::Arc, time::Duration};
-
 use kube::{Client, CustomResourceExt};
 use kube_lease_manager::LeaseManagerBuilder;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
+use rustls::crypto::aws_lc_rs;
 use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{watch, RwLock};
 use tracing::{error, info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
@@ -24,7 +24,7 @@ use git_events_runner::{
         trigger::{ScheduleTrigger, WebhookTrigger},
     },
     signals::SignalHandler,
-    web,
+    web::{self, RequestRateLimitsConfig},
 };
 
 const OPENTELEMETRY_ENDPOINT_URL_ENV_NAME: &str = "OPENTELEMETRY_ENDPOINT_URL";
@@ -32,6 +32,9 @@ const OPENTELEMETRY_ENDPOINT_URL_ENV_NAME: &str = "OPENTELEMETRY_ENDPOINT_URL";
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     setup_tracing();
+    aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
 
     match Cli::new() {
         Cli::Crds => generate_crds(),
@@ -43,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
 #[instrument("controller", skip_all)]
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     let client = Client::try_default().await?;
+    let tls_config = cli_config.build_tls_config(client.clone()).await?;
     let identity = Uuid::new_v4().to_string();
 
     // detached runtime configuration task
@@ -89,12 +93,20 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
             .parallelism(WorkerParallelism::Limited(cli_config.webhooks_parallelism as usize))
             .build();
         let scheduler = Arc::new(RwLock::new(scheduler));
+        let request_rate_limits = RequestRateLimitsConfig {
+            global: cli_config.hooks_rrl_global,
+            trigger: cli_config.hooks_rrl_trigger,
+            source: cli_config.hooks_rrl_source,
+        };
+
         web::build_hooks_web(
             client.clone(),
             shutdown_rx.clone(),
             scheduler,
             cli_config.webhooks_port,
             cli_config.source_clone_folder.clone(),
+            request_rate_limits,
+            tls_config,
         )
         .await
     };

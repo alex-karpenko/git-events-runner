@@ -45,6 +45,56 @@ for changes in the sources.
 > This is a way to restrict controller only from running of huge number of simultaneous source verification tasks.
 > So there is no way (at least now) to restrict number of action jobs.
 
+### webhooksRateLimits
+
+This section defines Webhooks requests rate limits.
+By default, the controller doesn't restrict the rate of the webhook requests,
+but rate limiting is a good approach to prevent request flood in some environments,
+especially if you're not responsible for configuration of the calling side.
+
+Limits' values are defined as `number-of-requests/period-in-seconds`, for example, "1/10" or "20/60".
+But at the same time, the number of requests defines the size of the "burst bucket"
+— the number of requests that will be accepted before the rate limiter starts request throttling.
+So two equal limits like "1/10" and "10/100" have slightly different meaning:
+
+- 1/10 means that the controller accepts one request and blocks all others during 10 seconds;
+- 10/100 means that the controller accepts the first 10 requests and starts blocking all others for 10 seconds, and
+  returns one "free seat" into the burst bucket every 10 seconds.
+
+There are three types of limits:
+
+* `global` - limits total webhooks request rate regardless of the trigger of source;
+* `trigger` - per trigger limit which restricts rate for each webhook trigger separately, it can't exceed global
+  value;
+* `source` - per trigger source restriction, it works as previous one but uses each source of each trigger as a rate
+  limiting object.
+
+### webhooksTls
+
+This section defines optional TLS config for webhooks server.
+If it's omitted (default), webhooks listener works without TLS.
+
+To force webhooks server to use TLS transport, we have to provide a valid server certificate and its private key in PEM
+format.
+There are two possible ways to do this:
+
+- provide files with certificate and key (or mount Secret volume inside a Pod);
+- use existing Secret of the `kubernetes.io/tls` type.
+
+TLS configuration may be provided using the following config parameters:
+
+- `certPath`: path to the file with certificate in PEM format;
+- `keyPath`: path to the file with certificate private key in PEM format;
+- `secretName`: name of the TLS secret to load certificate and key from;
+- `secretNamespace`: namespace where certificate secret is located.
+
+If you specified one of the `certPath` or `keyPath`, the second option becomes mandatory because certificate doesn't work
+without a key and vise versa.
+
+`certPath/keyPath` and `secretName/secretNamespace` are mutually exclusive.
+is optional, if it's not specified default namespace will be used: if controller is running inside Kubernetes cluster
+(usual way) the default is controllers' namespace, otherwise namespace `default` will be used.
+
 ### secretsCacheTime
 
 This parameter specifies the maximum number of seconds to hold values in the cache of secrets.
@@ -83,7 +133,7 @@ Defines triggers defaults:
 This section defines lots of defaults of action jobs.
 
 | Parameter name                    | Default value                                                                  | Description                                                                                                                                |
-|-----------------------------------|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| --------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | ttlSecondsAfterFinished           | 7200                                                                           | Default time to leave of Job after finishing. After this time Jobs will be removed from the cluster with its Pod. Useful fo debug purpose. |
 | activeDeadlineSeconds             | 3600                                                                           | Default time limit to run Job. After this time incomplete Job will be terminated.                                                          |
 | maxRunningJobs                    | 16                                                                             | Maximum number of simultaneously running Jobs, per controller replica. Jobs that can't be running will be queued and waiting.              |
@@ -156,9 +206,23 @@ Options:
       --leader-lease-duration <LEADER_LEASE_DURATION>
           Leader lease duration, seconds [default: 30]
       --leader-lease-grace <LEADER_LEASE_GRACE>
-          Leader lease grace interval, seconds [default: 20]
+          Leader lease grace interval, seconds [default: 5]
       --metrics-prefix <METRICS_PREFIX>
           Name of the ConfigMap with dynamic controller config [default: git_events_runner]
+      --hooks-rrl-global <HOOKS_RRL_GLOBAL>
+          Global webhooks requests rate limit (burst limit/seconds)
+      --hooks-rrl-trigger <HOOKS_RRL_TRIGGER>
+          Requests rate limit (burst limit/seconds) per webhook trigger
+      --hooks-rrl-source <HOOKS_RRL_SOURCE>
+          Requests rate limit (burst limit/seconds) per webhook source
+      --tls-cert-path <TLS_CERT>
+          Path to TLS certificate file
+      --tls-key-path <TLS_KEY>
+          Path to TLS key file
+      --tls-secret-name <TLS_SECRET_NAME>
+          Secret name with TLS certificate and key
+      --tls-secret-namespace <TLS_SECRET_NAMESPACE>
+          Namespace of the  TLS secret
   -h, --help
           Print help
 ```
