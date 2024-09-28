@@ -639,6 +639,24 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#webhooksratelimits" class="md-nav__link">
+    <span class="md-ellipsis">
+      webhooksRateLimits
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#webhookstls" class="md-nav__link">
+    <span class="md-ellipsis">
+      webhooksTls
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#secretscachetime" class="md-nav__link">
     <span class="md-ellipsis">
       secretsCacheTime
@@ -1070,6 +1088,24 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#webhooksratelimits" class="md-nav__link">
+    <span class="md-ellipsis">
+      webhooksRateLimits
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#webhookstls" class="md-nav__link">
+    <span class="md-ellipsis">
+      webhooksTls
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#secretscachetime" class="md-nav__link">
     <span class="md-ellipsis">
       secretsCacheTime
@@ -1205,6 +1241,50 @@ for changes in the sources.</p>
 This is a way to restrict controller only from running of huge number of simultaneous source verification tasks.
 So there is no way (at least now) to restrict number of action jobs.</p>
 </blockquote>
+<h3 id="webhooksratelimits">webhooksRateLimits<a class="headerlink" href="#webhooksratelimits" title="Permanent link">&para;</a></h3>
+<p>This section defines Webhooks requests rate limits.
+By default, the controller doesn't restrict the rate of the webhook requests,
+but rate limiting is a good approach to prevent request flood in some environments,
+especially if you're not responsible for configuration of the calling side.</p>
+<p>Limits' values are defined as <code>number-of-requests/period-in-seconds</code>, for example, "1/10" or "20/60".
+But at the same time, the number of requests defines the size of the "burst bucket"
+— the number of requests that will be accepted before the rate limiter starts request throttling.
+So two equal limits like "1/10" and "10/100" have slightly different meaning:</p>
+<ul>
+<li>1/10 means that the controller accepts one request and blocks all others during 10 seconds;</li>
+<li>10/100 means that the controller accepts the first 10 requests and starts blocking all others for 10 seconds, and
+  returns one "free seat" into the burst bucket every 10 seconds.</li>
+</ul>
+<p>There are three types of limits:</p>
+<ul>
+<li><code>global</code> - limits total webhooks request rate regardless of the trigger of source;</li>
+<li><code>trigger</code> - per trigger limit which restricts rate for each webhook trigger separately, it can't exceed global
+  value;</li>
+<li><code>source</code> - per trigger source restriction, it works as previous one but uses each source of each trigger as a rate
+  limiting object.</li>
+</ul>
+<h3 id="webhookstls">webhooksTls<a class="headerlink" href="#webhookstls" title="Permanent link">&para;</a></h3>
+<p>This section defines optional TLS config for webhooks server.
+If it's omitted (default), webhooks listener works without TLS.</p>
+<p>To force webhooks server to use TLS transport, we have to provide a valid server certificate and its private key in PEM
+format.
+There are two possible ways to do this:</p>
+<ul>
+<li>provide files with certificate and key (or mount Secret volume inside a Pod);</li>
+<li>use existing Secret of the <code>kubernetes.io/tls</code> type.</li>
+</ul>
+<p>TLS configuration may be provided using the following config parameters:</p>
+<ul>
+<li><code>certPath</code>: path to the file with certificate in PEM format;</li>
+<li><code>keyPath</code>: path to the file with certificate private key in PEM format;</li>
+<li><code>secretName</code>: name of the TLS secret to load certificate and key from;</li>
+<li><code>secretNamespace</code>: namespace where certificate secret is located.</li>
+</ul>
+<p>If you specified one of the <code>certPath</code> or <code>keyPath</code>, the second option becomes mandatory because certificate doesn't work
+without a key and vise versa.</p>
+<p><code>certPath/keyPath</code> and <code>secretName/secretNamespace</code> are mutually exclusive.
+is optional, if it's not specified default namespace will be used: if controller is running inside Kubernetes cluster
+(usual way) the default is controllers' namespace, otherwise namespace <code>default</code> will be used.</p>
 <h3 id="secretscachetime">secretsCacheTime<a class="headerlink" href="#secretscachetime" title="Permanent link">&para;</a></h3>
 <p>This parameter specifies the maximum number of seconds to hold values in the cache of secrets.</p>
 <p>Controller resolves content of the secrets each time it needs secret value (for example, WebhookTrigger can use auth
@@ -1356,9 +1436,23 @@ Options:
 <span class="w">      </span>--leader-lease-duration<span class="w"> </span>&lt;LEADER_LEASE_DURATION&gt;
 <span class="w">          </span>Leader<span class="w"> </span>lease<span class="w"> </span>duration,<span class="w"> </span>seconds<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">30</span><span class="o">]</span>
 <span class="w">      </span>--leader-lease-grace<span class="w"> </span>&lt;LEADER_LEASE_GRACE&gt;
-<span class="w">          </span>Leader<span class="w"> </span>lease<span class="w"> </span>grace<span class="w"> </span>interval,<span class="w"> </span>seconds<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">20</span><span class="o">]</span>
+<span class="w">          </span>Leader<span class="w"> </span>lease<span class="w"> </span>grace<span class="w"> </span>interval,<span class="w"> </span>seconds<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">5</span><span class="o">]</span>
 <span class="w">      </span>--metrics-prefix<span class="w"> </span>&lt;METRICS_PREFIX&gt;
 <span class="w">          </span>Name<span class="w"> </span>of<span class="w"> </span>the<span class="w"> </span>ConfigMap<span class="w"> </span>with<span class="w"> </span>dynamic<span class="w"> </span>controller<span class="w"> </span>config<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span>git_events_runner<span class="o">]</span>
+<span class="w">      </span>--hooks-rrl-global<span class="w"> </span>&lt;HOOKS_RRL_GLOBAL&gt;
+<span class="w">          </span>Global<span class="w"> </span>webhooks<span class="w"> </span>requests<span class="w"> </span>rate<span class="w"> </span>limit<span class="w"> </span><span class="o">(</span>burst<span class="w"> </span>limit/seconds<span class="o">)</span>
+<span class="w">      </span>--hooks-rrl-trigger<span class="w"> </span>&lt;HOOKS_RRL_TRIGGER&gt;
+<span class="w">          </span>Requests<span class="w"> </span>rate<span class="w"> </span>limit<span class="w"> </span><span class="o">(</span>burst<span class="w"> </span>limit/seconds<span class="o">)</span><span class="w"> </span>per<span class="w"> </span>webhook<span class="w"> </span>trigger
+<span class="w">      </span>--hooks-rrl-source<span class="w"> </span>&lt;HOOKS_RRL_SOURCE&gt;
+<span class="w">          </span>Requests<span class="w"> </span>rate<span class="w"> </span>limit<span class="w"> </span><span class="o">(</span>burst<span class="w"> </span>limit/seconds<span class="o">)</span><span class="w"> </span>per<span class="w"> </span>webhook<span class="w"> </span><span class="nb">source</span>
+<span class="w">      </span>--tls-cert-path<span class="w"> </span>&lt;TLS_CERT&gt;
+<span class="w">          </span>Path<span class="w"> </span>to<span class="w"> </span>TLS<span class="w"> </span>certificate<span class="w"> </span>file
+<span class="w">      </span>--tls-key-path<span class="w"> </span>&lt;TLS_KEY&gt;
+<span class="w">          </span>Path<span class="w"> </span>to<span class="w"> </span>TLS<span class="w"> </span>key<span class="w"> </span>file
+<span class="w">      </span>--tls-secret-name<span class="w"> </span>&lt;TLS_SECRET_NAME&gt;
+<span class="w">          </span>Secret<span class="w"> </span>name<span class="w"> </span>with<span class="w"> </span>TLS<span class="w"> </span>certificate<span class="w"> </span>and<span class="w"> </span>key
+<span class="w">      </span>--tls-secret-namespace<span class="w"> </span>&lt;TLS_SECRET_NAMESPACE&gt;
+<span class="w">          </span>Namespace<span class="w"> </span>of<span class="w"> </span>the<span class="w">  </span>TLS<span class="w"> </span>secret
 <span class="w">  </span>-h,<span class="w"> </span>--help
 <span class="w">          </span>Print<span class="w"> </span><span class="nb">help</span>
 </code></pre></div>

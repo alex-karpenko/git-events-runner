@@ -988,19 +988,16 @@
 <h2 id="in-work">In work<a class="headerlink" href="#in-work" title="Permanent link">&para;</a></h2>
 <h2 id="next-release">Next release<a class="headerlink" href="#next-release" title="Permanent link">&para;</a></h2>
 <ul>
-<li>gitrepo: add support for private keys with passphrase</li>
-<li>gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images <code>FROM scratch</code></li>
-<li>hooks: implement hook requests rate control/throttling</li>
-<li>hooks: tls listener for webhooks</li>
-<li>refactor: looks like scheduler shouldn't be under RwLock because it's <code>add</code> method uses internal mutability</li>
-</ul>
-<h2 id="wishes">Wishes<a class="headerlink" href="#wishes" title="Permanent link">&para;</a></h2>
-<ul>
-<li>hooks/gitrepo: rework secrets cache to watch requested secrets and update it on changes</li>
 <li>cli: deploy, config, get state, remove</li>
 <li>cli: configure webhook auth secrets and store them as hashes</li>
 <li>chart: update to specify container registry and use docker.io by default.</li>
 <li>tests: improve tests</li>
+</ul>
+<h2 id="wishes">Wishes<a class="headerlink" href="#wishes" title="Permanent link">&para;</a></h2>
+<ul>
+<li>gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images <code>FROM scratch</code></li>
+<li>refactor: looks like scheduler shouldn't be under RwLock because it's <code>add</code> method uses internal mutability</li>
+<li>hooks/gitrepo: rework secrets cache to watch requested secrets and update it on changes</li>
 </ul>
 <h2 id="done">Done<a class="headerlink" href="#done" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1026,6 +1023,8 @@
 <li>controller: use kube-lease-manager instead of kubert</li>
 <li>tracing: upgrade to the latest module versions</li>
 <li>tests: fix flapping <code>reconcile_schedule_trigger_should_set_idle_status</code> test</li>
+<li>hooks: implement hook requests rate control/throttling</li>
+<li>hooks: tls listener for webhooks</li>
 </ul>
 
 
