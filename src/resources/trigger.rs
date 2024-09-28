@@ -1027,9 +1027,23 @@ mod tests {
     use insta::assert_yaml_snapshot;
     use k8s_openapi::api::core::v1::Namespace;
     use kube::api::{DeleteParams, PostParams};
-    use tokio::io::AsyncWriteExt;
+    use tokio::{io::AsyncWriteExt, sync::OnceCell};
+
+    use crate::tests;
 
     use super::*;
+
+    static INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    async fn init() {
+        INITIALIZED
+            .get_or_init(|| async {
+                tests::init_crypto_provider().await;
+                let client = Client::try_default().await.unwrap();
+                create_namespace(client).await;
+            })
+            .await;
+    }
 
     impl ScheduleTrigger {
         /// Returns ScheduleTrigger instance with Interval schedule
@@ -1127,8 +1141,7 @@ mod tests {
     const TEST_NAMESPACE: &str = "triggers-test";
 
     /// Unattended namespace creation
-    async fn create_namespace() {
-        let client = Client::try_default().await.unwrap();
+    async fn create_namespace(client: Client) {
         let api = Api::<Namespace>::all(client);
         let pp = PostParams::default();
 
@@ -1140,7 +1153,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn update_trigger_status_state() {
-        create_namespace().await;
+        init().await;
 
         let name = "update-trigger-status-state";
         let client = Client::try_default().await.unwrap();
@@ -1178,7 +1191,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn update_trigger_status_last_run() {
-        create_namespace().await;
+        init().await;
 
         let name = "update-trigger-status-last-run";
         let client = Client::try_default().await.unwrap();
@@ -1221,7 +1234,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn update_trigger_status_sources() {
-        create_namespace().await;
+        init().await;
 
         let name = "update-trigger-status-sources";
         let client = Client::try_default().await.unwrap();
@@ -1376,7 +1389,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn update_trigger_status_everything() {
-        create_namespace().await;
+        init().await;
 
         let name = "update-trigger-status-everything";
         let client = Client::try_default().await.unwrap();

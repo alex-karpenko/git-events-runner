@@ -704,16 +704,15 @@ impl WebState {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use axum::extract::State;
-    use axum::http::HeaderValue;
+    use crate::{controller, tests};
+    use axum::{extract::State, http::HeaderValue};
     use k8s_openapi::api::core::v1::{Namespace, Secret};
-    use kube::api::{DeleteParams, PostParams};
-    use kube::{Api, Resource};
+    use kube::{
+        api::{DeleteParams, PostParams},
+        Api, Resource,
+    };
+    use std::collections::BTreeMap;
     use tokio::sync::OnceCell;
-
-    use crate::controller;
 
     use super::*;
 
@@ -726,6 +725,7 @@ mod tests {
     async fn init() -> WebState {
         INITIALIZED
             .get_or_init(|| async {
+                tests::init_crypto_provider().await;
                 let client = Client::try_default().await.unwrap();
                 create_namespace(client.clone()).await;
                 create_secret(client.clone()).await;

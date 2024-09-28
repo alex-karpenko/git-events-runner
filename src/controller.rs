@@ -370,7 +370,10 @@ mod tests {
     async fn init() {
         TRACING_INITIALIZED.get_or_init(|| async { init_tracing().await }).await;
         NAMESPACE_INITIALIZED
-            .get_or_init(|| async { create_namespace().await })
+            .get_or_init(|| async {
+                crate::tests::init_crypto_provider().await;
+                create_namespace().await
+            })
             .await;
     }
 

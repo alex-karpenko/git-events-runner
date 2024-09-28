@@ -423,21 +423,34 @@ impl SecretsCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests;
     use insta::assert_debug_snapshot;
     use k8s_openapi::api::core::v1::Namespace;
     use kube::{
         api::{DeleteParams, PostParams},
         Resource,
     };
+    use tokio::sync::OnceCell;
 
     const TEST_SECRET_NAME: &str = "test-secrets-cache-data";
     const TEST_SECRET_KEY: &str = "token";
     const TEST_SECRET_TOKEN: &str = "1234567890";
     const NAMESPACE: &str = "secret-cache-test";
 
+    static INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    async fn init() {
+        INITIALIZED
+            .get_or_init(|| async {
+                tests::init_crypto_provider().await;
+                let client = Client::try_default().await.unwrap();
+                create_namespace(client).await;
+            })
+            .await;
+    }
+
     /// Unattended namespace creation
-    async fn create_namespace() {
-        let client = Client::try_default().await.unwrap();
+    async fn create_namespace(client: Client) {
         let api = Api::<Namespace>::all(client);
         let pp = PostParams::default();
 
@@ -449,7 +462,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn secrets_cache() {
-        create_namespace().await;
+        init().await;
         let pp = PostParams::default();
         let dp = DeleteParams::default();
         let expire_time = Duration::from_secs(1);
