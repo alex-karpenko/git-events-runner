@@ -258,6 +258,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "uses k8s current-context"]
     async fn tls_config_nothing() {
         tests::init_crypto_provider().await;
 
