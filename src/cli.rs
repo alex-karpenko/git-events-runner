@@ -88,24 +88,21 @@ pub struct CliConfig {
     #[arg(long, value_parser=Cli::rrl_parser)]
     pub hooks_rrl_source: Option<RequestsRateLimitParams>,
 
-    /// Path to TLS certificate file
-    #[arg(long, requires = "tls_key", conflicts_with_all=["tls_secret_name", "tls_secret_namespace"])]
-    pub tls_cert: Option<String>,
+    /// Path to the TLS certificate file
+    #[arg(long, requires = "tls_key_path", conflicts_with_all=["tls_secret_name", "tls_secret_namespace"])]
+    pub tls_cert_path: Option<String>,
 
-    /// Path to TLS key file
-    #[arg(long, requires = "tls_cert", conflicts_with_all=["tls_secret_name", "tls_secret_namespace"])]
-    pub tls_key: Option<String>,
+    /// Path to the TLS key file
+    #[arg(long, requires = "tls_cert_path", conflicts_with_all=["tls_secret_name", "tls_secret_namespace"])]
+    pub tls_key_path: Option<String>,
 
-    /// Secret name with TLS certificate and key
-    #[arg(long, conflicts_with_all = ["tls_cert", "tls_key"])]
+    /// Name of the Secret with TLS certificate and key
+    #[arg(long, conflicts_with_all = ["tls_cert_path", "tls_key_path"])]
     pub tls_secret_name: Option<String>,
 
-    /// Namespace of the  TLS secret
-    #[arg(long, requires = "tls_secret_name", conflicts_with_all = ["tls_cert", "tls_key"])]
+    /// Namespace of the TLS secret
+    #[arg(long, requires = "tls_secret_name", conflicts_with_all = ["tls_cert_path", "tls_key_path"])]
     pub tls_secret_namespace: Option<String>,
-    /* /// Write logs in JSON format
-    #[arg(short, long)]
-    json_log: bool, */
 }
 
 /// Parameters for the `config` subcommand
@@ -156,8 +153,8 @@ impl CliConfig {
     /// or None if no config
     pub async fn build_tls_config(&self, client: Client) -> anyhow::Result<Option<RustlsConfig>> {
         match (
-            self.tls_cert.as_ref(),
-            self.tls_key.as_ref(),
+            self.tls_cert_path.as_ref(),
+            self.tls_key_path.as_ref(),
             self.tls_secret_name.as_ref(),
         ) {
             (Some(cert), Some(key), _) => {
@@ -277,8 +274,13 @@ mod tests {
         let cert_path = format!("{out_dir}/{SERVER_CERT_BUNDLE}");
         let key_path = format!("{out_dir}/{SERVER_PRIVATE_KEY}");
 
-        let cli =
-            CliConfig::parse_from::<_, &str>(["run", "--tls-cert", cert_path.as_str(), "--tls-key", key_path.as_str()]);
+        let cli = CliConfig::parse_from::<_, &str>([
+            "run",
+            "--tls-cert-path",
+            cert_path.as_str(),
+            "--tls-key-path",
+            key_path.as_str(),
+        ]);
         let client = Client::try_default().await.unwrap();
         let config = cli.build_tls_config(client).await.unwrap();
         assert!(config.is_some());

@@ -17,8 +17,8 @@ CliConfig {
     hooks_rrl_global: None,
     hooks_rrl_trigger: None,
     hooks_rrl_source: None,
-    tls_cert: None,
-    tls_key: None,
+    tls_cert_path: None,
+    tls_key_path: None,
     tls_secret_name: None,
     tls_secret_namespace: None,
 }
