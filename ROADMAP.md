@@ -5,17 +5,16 @@
 
 ## Next release
 
-- gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images `FROM scratch`
-- hooks: tls listener for webhooks
-- refactor: looks like scheduler shouldn't be under RwLock because it's `add` method uses internal mutability
-
-## Wishes
-
-- hooks/gitrepo: rework secrets cache to watch requested secrets and update it on changes
 - cli: deploy, config, get state, remove
 - cli: configure webhook auth secrets and store them as hashes
 - chart: update to specify container registry and use docker.io by default.
 - tests: improve tests
+
+## Wishes
+
+- gitrepo: use the Mozilla CA bundle instead of system one and build controller/cloner images `FROM scratch`
+- refactor: looks like scheduler shouldn't be under RwLock because it's `add` method uses internal mutability
+- hooks/gitrepo: rework secrets cache to watch requested secrets and update it on changes
 
 ## Done
 
@@ -40,3 +39,4 @@
 - tracing: upgrade to the latest module versions
 - tests: fix flapping `reconcile_schedule_trigger_should_set_idle_status` test
 - hooks: implement hook requests rate control/throttling
+- hooks: tls listener for webhooks

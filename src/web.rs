@@ -2,15 +2,14 @@
 //! - WebhookTrigger trigger
 //! - liveness and readiness probes
 //! - metrics
-use axum::http::Request;
-use axum::routing::post;
 use axum::{
     extract::{FromRequest, Path, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Request, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
+use axum_server::tls_rustls::RustlsConfig;
 use futures::Future;
 use kube::Client;
 use prometheus::{histogram_opts, opts, register, Encoder, HistogramVec, IntCounterVec, TextEncoder};
@@ -19,18 +18,20 @@ use sacs::{
     task::TaskId,
 };
 use serde::Serialize;
-use std::fmt::Display;
-use std::sync::LazyLock;
-use std::{sync::Arc, time::Duration};
+use std::{
+    fmt::Display,
+    net::SocketAddr,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 use strum::Display;
-use tokio::time::Instant;
 use tokio::{
     net::TcpListener,
+    select,
     sync::{watch, RwLock},
+    time::Instant,
 };
-use tower_governor::governor::GovernorConfigBuilder;
-use tower_governor::key_extractor::KeyExtractor;
-use tower_governor::{GovernorError, GovernorLayer};
+use tower_governor::{governor::GovernorConfigBuilder, key_extractor::KeyExtractor, GovernorError, GovernorLayer};
 use tracing::{debug, error, info, instrument, trace, warn};
 use uuid::Uuid;
 
@@ -381,6 +382,7 @@ pub async fn build_hooks_web(
     port: u16,
     source_clone_folder: String,
     request_rate_limits: RequestRateLimitsConfig,
+    tls_config: Option<RustlsConfig>,
 ) -> impl Future<Output = ()> {
     let state = WebState {
         scheduler: scheduler.clone(),
@@ -388,23 +390,41 @@ pub async fn build_hooks_web(
         source_clone_folder,
     };
 
-    let listen_to = format!("0.0.0.0:{port}");
+    let handle = axum_server::Handle::new();
+    let handle_in_web_future = handle.clone();
     let app = Router::new()
         .route("/:namespace/:trigger", post(handle_post_trigger_webhook))
         .route("/:namespace/:trigger/:source", post(handle_post_source_webhook))
         .with_state(state);
     let app = request_rate_limits.add_rrl_layer(app);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
-    let listener = TcpListener::bind(listen_to.clone())
-        .await
-        .expect("unable to create Webhooks listener");
-    let web = axum::serve(listener, app).with_graceful_shutdown(async move { shutdown.changed().await.unwrap_or(()) });
+    let web = async move {
+        if let Some(tls_config) = tls_config {
+            axum_server::bind_rustls(addr, tls_config)
+                .handle(handle_in_web_future)
+                .serve(app.into_make_service())
+                .await
+        } else {
+            axum_server::bind(addr)
+                .handle(handle_in_web_future)
+                .serve(app.into_make_service())
+                .await
+        }
+    };
 
     async move {
-        info!(address = %listen_to, "starting Hooks web server");
-        if let Err(err) = web.await {
-            error!(error = %err, "running Webhooks server");
-        }
+        info!(address = %format!("0.0.0.0:{port}"), "starting Hooks web server");
+        select! {
+            _ = shutdown.changed() => {
+                handle.graceful_shutdown(None)
+            },
+            res = web => {
+                if let Err(err) = res {
+                    error!(error = %err, "running Webhooks server");
+                }
+            }
+        };
 
         // To shut down task scheduler, we have to extract it from shared reference (Arc), but
         // sometimes the controller works few milliseconds longer than expected,
@@ -684,16 +704,15 @@ impl WebState {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use axum::extract::State;
-    use axum::http::HeaderValue;
+    use crate::{controller, tests};
+    use axum::{extract::State, http::HeaderValue};
     use k8s_openapi::api::core::v1::{Namespace, Secret};
-    use kube::api::{DeleteParams, PostParams};
-    use kube::{Api, Resource};
+    use kube::{
+        api::{DeleteParams, PostParams},
+        Api, Resource,
+    };
+    use std::collections::BTreeMap;
     use tokio::sync::OnceCell;
-
-    use crate::controller;
 
     use super::*;
 
@@ -706,6 +725,7 @@ mod tests {
     async fn init() -> WebState {
         INITIALIZED
             .get_or_init(|| async {
+                tests::init_crypto_provider().await;
                 let client = Client::try_default().await.unwrap();
                 create_namespace(client.clone()).await;
                 create_secret(client.clone()).await;

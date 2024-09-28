@@ -526,6 +526,9 @@ mod tests {
         api::{DeleteParams, PostParams},
         Api, Client,
     };
+    use tokio::sync::OnceCell;
+
+    use crate::tests;
 
     use super::*;
 
@@ -536,6 +539,18 @@ mod tests {
     const TEST_SOURCE_COMMIT: &str = "e03087d8f722a423bc13fd31542fb9545da784dd";
     const TEST_TRIGGER_KIND: &str = "ScheduleTrigger";
     const TEST_TRIGGER_NAME: &str = "test-schedule-trigger-name";
+
+    static INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    async fn init() {
+        INITIALIZED
+            .get_or_init(|| async {
+                tests::init_crypto_provider().await;
+                let client = Client::try_default().await.unwrap();
+                create_namespace(client).await;
+            })
+            .await;
+    }
 
     fn default_action(name: impl Into<String>, namespace: impl Into<String>) -> Action {
         Action {
@@ -661,8 +676,7 @@ mod tests {
     }
 
     /// Unattended namespace creation
-    async fn create_namespace() {
-        let client = Client::try_default().await.unwrap();
+    async fn create_namespace(client: Client) {
         let api = Api::<Namespace>::all(client);
         let pp = PostParams::default();
 
@@ -682,7 +696,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn default_action_job() {
-        create_namespace().await;
+        init().await;
         let client = Client::try_default().await.unwrap();
         let api = Api::<Action>::namespaced(client, TEST_ACTION_NAMESPACE);
         let pp = PostParams::default();
@@ -733,7 +747,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn customized_action_job() {
-        create_namespace().await;
+        init().await;
         let client = Client::try_default().await.unwrap();
         let api = Api::<Action>::namespaced(client, TEST_ACTION_NAMESPACE);
         let pp = PostParams::default();
@@ -784,7 +798,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn default_cluster_action_job() {
-        create_namespace().await;
+        init().await;
         let client = Client::try_default().await.unwrap();
         let api = Api::<ClusterAction>::all(client);
         let pp = PostParams::default();
@@ -834,7 +848,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses k8s current-context"]
     async fn customized_cluster_action_job() {
-        create_namespace().await;
+        init().await;
         let client = Client::try_default().await.unwrap();
         let api = Api::<ClusterAction>::all(client);
         let pp = PostParams::default();

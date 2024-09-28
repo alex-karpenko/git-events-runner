@@ -1,9 +1,13 @@
 //! Cli parameters for git-events-runner binary
+use anyhow::Context;
+use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
+use k8s_openapi::api::core::v1::Secret;
+use kube::{Api, Client};
 use std::sync::OnceLock;
 use tracing::debug;
 
-use crate::web::RequestsRateLimitParams;
+use crate::{web::RequestsRateLimitParams, Error};
 
 const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
 const DEFAULT_CONFIG_MAP_NAME: &str = "git-events-runner-config";
@@ -15,6 +19,7 @@ static CLI_CONFIG: OnceLock<CliConfig> = OnceLock::new();
 /// Root CLI commands
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
+#[allow(clippy::large_enum_variant)]
 pub enum Cli {
     /// Print CRD definitions to stdout
     Crds,
@@ -82,9 +87,22 @@ pub struct CliConfig {
     /// Requests rate limit (burst limit/seconds) per webhook source
     #[arg(long, value_parser=Cli::rrl_parser)]
     pub hooks_rrl_source: Option<RequestsRateLimitParams>,
-    /* /// Write logs in JSON format
-    #[arg(short, long)]
-    json_log: bool, */
+
+    /// Path to the TLS certificate file
+    #[arg(long, requires = "tls_key_path", conflicts_with_all=["tls_secret_name", "tls_secret_namespace"])]
+    pub tls_cert_path: Option<String>,
+
+    /// Path to the TLS key file
+    #[arg(long, requires = "tls_cert_path", conflicts_with_all=["tls_secret_name", "tls_secret_namespace"])]
+    pub tls_key_path: Option<String>,
+
+    /// Name of the Secret with TLS certificate and key
+    #[arg(long, conflicts_with_all = ["tls_cert_path", "tls_key_path"])]
+    pub tls_secret_name: Option<String>,
+
+    /// Namespace of the TLS secret
+    #[arg(long, requires = "tls_secret_name", conflicts_with_all = ["tls_cert_path", "tls_key_path"])]
+    pub tls_secret_namespace: Option<String>,
 }
 
 /// Parameters for the `config` subcommand
@@ -130,17 +148,203 @@ impl CliConfig {
             CLI_CONFIG.get_or_init(|| CliConfig::parse_from::<_, &String>(&[]))
         }
     }
+
+    /// Returns ready to use RustlsConfig instance if TLS config options were provided,
+    /// or None if no config
+    pub async fn build_tls_config(&self, client: Client) -> anyhow::Result<Option<RustlsConfig>> {
+        match (
+            self.tls_cert_path.as_ref(),
+            self.tls_key_path.as_ref(),
+            self.tls_secret_name.as_ref(),
+        ) {
+            (Some(cert), Some(key), _) => {
+                let config = RustlsConfig::from_pem_file(cert, key)
+                    .await
+                    .context(format!("Unable to apply TLS config with cert={cert} and key={key}"))?;
+                Ok(Some(config))
+            }
+            (_, _, Some(secret_name)) => {
+                let secret_api: Api<Secret> = if let Some(namespace) = self.tls_secret_namespace.as_ref() {
+                    Api::namespaced(client, namespace)
+                } else {
+                    Api::default_namespaced(client)
+                };
+                let secret = secret_api
+                    .get(secret_name)
+                    .await
+                    .context(format!("Unable to get TLS secret {secret_name}"))?;
+                let secret_data = secret.data.ok_or_else(|| {
+                    Error::SecretDecodingError(format!("no `data` part in the secret `{}`", secret_name))
+                })?;
+                let cert = secret_data
+                    .get("tls.crt")
+                    .ok_or_else(|| {
+                        Error::SecretDecodingError(format!("no `tls.crt` key in the secret `{}`", secret_name))
+                    })?
+                    .to_owned();
+                let cert = String::from_utf8(cert.0)
+                    .context("TLS cert is not a valid UTF-8 string")?
+                    .into_bytes();
+
+                let key = secret_data
+                    .get("tls.key")
+                    .ok_or_else(|| {
+                        Error::SecretDecodingError(format!("no `tls.key` key in the secret `{}`", secret_name))
+                    })?
+                    .to_owned();
+                let key = String::from_utf8(key.0)
+                    .context("TLS key is not a valid UTF-8 string")?
+                    .into_bytes();
+
+                let config = RustlsConfig::from_pem(cert, key).await?;
+                Ok(Some(config))
+            }
+            (_, _, _) => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::BTreeMap, env};
+
     use insta::assert_debug_snapshot;
+    use k8s_openapi::{api::core::v1::Namespace, ByteString};
+    use kube::{
+        api::{DeleteParams, ObjectMeta, PostParams},
+        Resource as _,
+    };
+    use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
+
+    use crate::tests;
 
     use super::*;
+
+    // const TEST_SECRET_NAME: &str = "test-tls-certificates";
+    const NAMESPACE: &str = "secret-tls-test";
+    const TEST_CERTIFICATES_SECRET_NAME: &str = "test-tls-certificates";
+    const SERVER_CERT_BUNDLE: &str = "/end.crt";
+    const SERVER_PRIVATE_KEY: &str = "/test-server.key";
+
+    static INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    async fn init() {
+        INITIALIZED
+            .get_or_init(|| async {
+                tests::init_crypto_provider().await;
+                let client = Client::try_default().await.unwrap();
+                create_namespace(client).await;
+            })
+            .await;
+    }
+
+    /// Unattended namespace creation
+    async fn create_namespace(client: Client) {
+        let api = Api::<Namespace>::all(client);
+        let pp = PostParams::default();
+
+        let mut data = Namespace::default();
+        data.meta_mut().name = Some(String::from(NAMESPACE));
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
 
     #[test]
     fn default_cli_consistency() {
         let cli = CliConfig::parse_from::<_, &str>([]);
         assert_debug_snapshot!(cli);
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn tls_config_nothing() {
+        tests::init_crypto_provider().await;
+
+        let cli = CliConfig::parse_from::<_, &str>([]);
+        let client = Client::try_default().await.unwrap();
+        let config = cli.build_tls_config(client).await.unwrap();
+        assert!(config.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn tls_config_cert_key() {
+        init().await;
+
+        let out_dir = env::var("OUT_DIR").unwrap();
+        let cert_path = format!("{out_dir}/{SERVER_CERT_BUNDLE}");
+        let key_path = format!("{out_dir}/{SERVER_PRIVATE_KEY}");
+
+        let cli = CliConfig::parse_from::<_, &str>([
+            "run",
+            "--tls-cert-path",
+            cert_path.as_str(),
+            "--tls-key-path",
+            key_path.as_str(),
+        ]);
+        let client = Client::try_default().await.unwrap();
+        let config = cli.build_tls_config(client).await.unwrap();
+        assert!(config.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore = "uses k8s current-context"]
+    async fn tls_config_secret() {
+        init().await;
+
+        let out_dir = env::var("OUT_DIR").unwrap();
+        let cert_path = format!("{out_dir}/{SERVER_CERT_BUNDLE}");
+        let key_path = format!("{out_dir}/{SERVER_PRIVATE_KEY}");
+
+        let cli = CliConfig::parse_from::<_, &str>([
+            "run",
+            "--tls-secret-name",
+            TEST_CERTIFICATES_SECRET_NAME,
+            "--tls-secret-namespace",
+            NAMESPACE,
+        ]);
+        let client = Client::try_default().await.unwrap();
+        let secret_api: Api<Secret> = Api::namespaced(client.clone(), NAMESPACE);
+
+        // Delete possible leftovers from the previous run
+        let _ = secret_api
+            .delete(TEST_CERTIFICATES_SECRET_NAME, &DeleteParams::default())
+            .await;
+
+        let mut cert = vec![];
+        let mut key = vec![];
+        File::open(cert_path)
+            .await
+            .unwrap()
+            .read_to_end(&mut cert)
+            .await
+            .unwrap();
+        File::open(key_path).await.unwrap().read_to_end(&mut key).await.unwrap();
+
+        let cert: ByteString = ByteString(cert);
+        let key: ByteString = ByteString(key);
+
+        let secret = Secret {
+            type_: Some("kubernetes.io/tls".to_string()),
+            metadata: ObjectMeta {
+                name: Some(TEST_CERTIFICATES_SECRET_NAME.to_string()),
+                namespace: Some(NAMESPACE.to_string()),
+                ..ObjectMeta::default()
+            },
+            data: Some(BTreeMap::from([
+                ("tls.crt".to_string(), cert),
+                ("tls.key".to_string(), key),
+            ])),
+            ..Secret::default()
+        };
+
+        secret_api.create(&PostParams::default(), &secret).await.unwrap();
+
+        let config = cli.build_tls_config(client).await.unwrap();
+        assert!(config.is_some());
+
+        secret_api
+            .delete(TEST_CERTIFICATES_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
     }
 }
