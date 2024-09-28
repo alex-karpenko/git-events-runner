@@ -9,7 +9,20 @@ confidence-threshold = 0.93
 exceptions = [
     { allow = [
         "ISC",
+        "OpenSSL",
+    ], name = "aws-lc-sys" },
+    { allow = [
+        "ISC",
+    ], name = "aws-lc-rs" },
+    { allow = [
+        "ISC",
+    ], name = "forwarded-header-value" },
+    { allow = [
+        "ISC",
     ], name = "untrusted" },
+    { allow = [
+        "ISC",
+    ], name = "libloading" },
     { allow = [
         "ISC",
     ], name = "rustls-webpki" },
@@ -22,6 +35,9 @@ exceptions = [
     { allow = [
         "BSD-3-Clause",
     ], name = "subtle" },
+    { allow = [
+        "BSD-3-Clause",
+    ], name = "bindgen" },
     { allow = [
         "Unicode-DFS-2016",
     ], name = "unicode-ident" },
