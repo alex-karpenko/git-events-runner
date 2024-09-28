@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 ### Details
 #### Added
 - Implement web-hooks requests rate limiting
+- Implement TLS listener for webhooks
 
 ## [0.2.4] - 2024-09-21
 ### Details
