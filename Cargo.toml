@@ -21,7 +21,7 @@ path = "src/bin/gitrepo-cloner.rs"
 
 [dependencies]
 anyhow = "1.0.89"
-axum = { version = "0.7.5", default-features = false, features = [
+axum = { version = "0.7.7", default-features = false, features = [
     "http1",
     "macros",
     "matched-path",
@@ -96,3 +96,6 @@ insta = { version = "1.40.0", features = [
     "yaml",
 ] }
 tempfile = "3.12.0"
+
+[build-dependencies]
+anyhow = "1.0.89"

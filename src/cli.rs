@@ -209,13 +209,137 @@ impl CliConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::BTreeMap, env};
+
     use insta::assert_debug_snapshot;
+    use k8s_openapi::{api::core::v1::Namespace, ByteString};
+    use kube::{
+        api::{DeleteParams, ObjectMeta, PostParams},
+        Resource as _,
+    };
+    use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
+
+    use crate::tests;
 
     use super::*;
+
+    // const TEST_SECRET_NAME: &str = "test-tls-certificates";
+    const NAMESPACE: &str = "secret-tls-test";
+    const TEST_CERTIFICATES_SECRET_NAME: &str = "test-tls-certificates";
+    const SERVER_CERT_BUNDLE: &str = "/end.crt";
+    const SERVER_PRIVATE_KEY: &str = "/test-server.key";
+
+    static INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
+    async fn init() {
+        INITIALIZED
+            .get_or_init(|| async {
+                tests::init_crypto_provider().await;
+                let client = Client::try_default().await.unwrap();
+                create_namespace(client).await;
+            })
+            .await;
+    }
+
+    /// Unattended namespace creation
+    async fn create_namespace(client: Client) {
+        let api = Api::<Namespace>::all(client);
+        let pp = PostParams::default();
+
+        let mut data = Namespace::default();
+        data.meta_mut().name = Some(String::from(NAMESPACE));
+        api.create(&pp, &data).await.unwrap_or_default();
+    }
 
     #[test]
     fn default_cli_consistency() {
         let cli = CliConfig::parse_from::<_, &str>([]);
         assert_debug_snapshot!(cli);
+    }
+
+    #[tokio::test]
+    async fn tls_config_nothing() {
+        init().await;
+
+        let cli = CliConfig::parse_from::<_, &str>([]);
+        let client = Client::try_default().await.unwrap();
+        let config = cli.build_tls_config(client).await.unwrap();
+        assert!(config.is_none());
+    }
+
+    #[tokio::test]
+    async fn tls_config_cert_key() {
+        init().await;
+
+        let out_dir = env::var("OUT_DIR").unwrap();
+        let cert_path = format!("{out_dir}/{SERVER_CERT_BUNDLE}");
+        let key_path = format!("{out_dir}/{SERVER_PRIVATE_KEY}");
+
+        let cli =
+            CliConfig::parse_from::<_, &str>(["run", "--tls-cert", cert_path.as_str(), "--tls-key", key_path.as_str()]);
+        let client = Client::try_default().await.unwrap();
+        let config = cli.build_tls_config(client).await.unwrap();
+        assert!(config.is_some());
+    }
+
+    #[tokio::test]
+    async fn tls_config_secret() {
+        init().await;
+
+        let out_dir = env::var("OUT_DIR").unwrap();
+        let cert_path = format!("{out_dir}/{SERVER_CERT_BUNDLE}");
+        let key_path = format!("{out_dir}/{SERVER_PRIVATE_KEY}");
+
+        let cli = CliConfig::parse_from::<_, &str>([
+            "run",
+            "--tls-secret-name",
+            TEST_CERTIFICATES_SECRET_NAME,
+            "--tls-secret-namespace",
+            NAMESPACE,
+        ]);
+        let client = Client::try_default().await.unwrap();
+        let secret_api: Api<Secret> = Api::namespaced(client.clone(), NAMESPACE);
+
+        // Delete possible leftovers from the previous run
+        let _ = secret_api
+            .delete(TEST_CERTIFICATES_SECRET_NAME, &DeleteParams::default())
+            .await;
+
+        let mut cert = vec![];
+        let mut key = vec![];
+        File::open(cert_path)
+            .await
+            .unwrap()
+            .read_to_end(&mut cert)
+            .await
+            .unwrap();
+        File::open(key_path).await.unwrap().read_to_end(&mut key).await.unwrap();
+
+        let cert: ByteString = ByteString(cert);
+        let key: ByteString = ByteString(key);
+
+        let secret = Secret {
+            type_: Some("kubernetes.io/tls".to_string()),
+            metadata: ObjectMeta {
+                name: Some(TEST_CERTIFICATES_SECRET_NAME.to_string()),
+                namespace: Some(NAMESPACE.to_string()),
+                ..ObjectMeta::default()
+            },
+            data: Some(BTreeMap::from([
+                ("tls.crt".to_string(), cert),
+                ("tls.key".to_string(), key),
+            ])),
+            ..Secret::default()
+        };
+
+        secret_api.create(&PostParams::default(), &secret).await.unwrap();
+
+        let config = cli.build_tls_config(client).await.unwrap();
+        assert!(config.is_some());
+
+        secret_api
+            .delete(TEST_CERTIFICATES_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
     }
 }
