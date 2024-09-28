@@ -2,11 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2024-09-28
 ### Details
 #### Added
-- Implement web-hooks requests rate limiting
-- Implement TLS listener for webhooks
+- Implement web-hooks requests rate limiting by @alex-karpenko in [#35](https://github.com/alex-karpenko/git-events-runner/pull/35)
+- Implement TLS listener for webhooks by @alex-karpenko in [#36](https://github.com/alex-karpenko/git-events-runner/pull/36)
 
 ## [0.2.4] - 2024-09-21
 ### Details
@@ -91,7 +91,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
-[unreleased]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.4..HEAD
+[0.3.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.4..v0.3.0
 [0.2.4]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.3..v0.2.4
 [0.2.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.2..v0.2.3
 [0.2.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.1..v0.2.2
