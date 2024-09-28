@@ -259,7 +259,7 @@ mod tests {
 
     #[tokio::test]
     async fn tls_config_nothing() {
-        init().await;
+        tests::init_crypto_provider().await;
 
         let cli = CliConfig::parse_from::<_, &str>([]);
         let client = Client::try_default().await.unwrap();
@@ -268,6 +268,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "uses k8s current-context"]
     async fn tls_config_cert_key() {
         init().await;
 
@@ -283,6 +284,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "uses k8s current-context"]
     async fn tls_config_secret() {
         init().await;
 
