@@ -9,7 +9,7 @@ use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, Worker
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{watch, RwLock};
 use tracing::{error, info, instrument};
-use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
+use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Layer, Registry};
 use uuid::Uuid;
 
 use git_events_runner::{
@@ -31,7 +31,6 @@ const OPENTELEMETRY_ENDPOINT_URL_ENV_NAME: &str = "OPENTELEMETRY_ENDPOINT_URL";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    setup_tracing();
     aws_lc_rs::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
@@ -45,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
 
 #[instrument("controller", skip_all)]
 async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
+    setup_tracing(cli_config.json_logs);
     let client = Client::try_default().await?;
     let tls_config = cli_config.build_tls_config(client.clone()).await?;
     let identity = Uuid::new_v4().to_string();
@@ -210,13 +210,12 @@ fn generate_config_yaml(options: CliConfigDumpOptions) -> anyhow::Result<()> {
 }
 
 /// Creates global logger, tracer and set requested log level and format
-fn setup_tracing() {
+fn setup_tracing(json_logs: bool) {
     let env_filter = EnvFilter::try_from_default_env()
         .or(EnvFilter::try_new("info"))
         .unwrap();
 
-    let logger = tracing_subscriber::fmt::layer().compact().with_target(true);
-    let collector = Registry::default().with(env_filter).with(logger);
+    let collector = Registry::default().with(get_logger_layer(json_logs)).with(env_filter);
 
     if let Some(tracer) = get_tracer() {
         let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -224,6 +223,22 @@ fn setup_tracing() {
         tracing::subscriber::set_global_default(collector).unwrap();
     } else {
         tracing::subscriber::set_global_default(collector).unwrap();
+    }
+}
+
+fn get_logger_layer(json_logs: bool) -> impl Layer<Registry> {
+    let fmt_layer = tracing_subscriber::fmt::layer();
+
+    if json_logs {
+        fmt_layer
+            .json()
+            .with_target(true)
+            .flatten_event(true)
+            .with_span_list(false)
+            .with_current_span(false)
+            .boxed()
+    } else {
+        fmt_layer.compact().with_target(true).boxed()
     }
 }
 

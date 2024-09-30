@@ -103,6 +103,10 @@ pub struct CliConfig {
     /// Namespace of the TLS secret
     #[arg(long, requires = "tls_secret_name", conflicts_with_all = ["tls_cert_path", "tls_key_path"])]
     pub tls_secret_namespace: Option<String>,
+
+    /// Output logs in JSON format
+    #[arg(long, short = 'j')]
+    pub json_logs: bool,
 }
 
 /// Parameters for the `config` subcommand
