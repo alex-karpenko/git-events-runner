@@ -10,7 +10,6 @@ pub mod resources;
 pub mod signals;
 pub mod web;
 
-use opentelemetry::trace::TraceId;
 use thiserror::Error;
 
 /// Convenient alias for Result with our Error type
@@ -107,14 +106,6 @@ pub enum Error {
     /// Unable to parse request rate limit string
     #[error("Incorrect request rate limit parameter: {0}")]
     InvalidRequestRateLimit(String),
-}
-
-///  Fetch an opentelemetry::trace::TraceId as hex through the full tracing stack
-pub fn get_trace_id() -> TraceId {
-    use opentelemetry::trace::TraceContextExt as _; // opentelemetry::Context -> opentelemetry::trace::Span
-    use tracing_opentelemetry::OpenTelemetrySpanExt as _; // tracing::Span to opentelemetry::Context
-
-    tracing::Span::current().context().span().span_context().trace_id()
 }
 
 #[cfg(test)]

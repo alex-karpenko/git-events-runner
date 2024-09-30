@@ -172,6 +172,7 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     drop(leader_lease_channel);
     // and wait for finishing of all tasks
     let _ = tokio::join!(leader_lease_task, utils_web, hooks_web, jobs_queue);
+    opentelemetry::global::shutdown_tracer_provider();
 
     Ok(())
 }

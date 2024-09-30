@@ -40,7 +40,7 @@ use crate::cli::CliConfig;
 use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
-use crate::{get_trace_id, Error};
+use crate::Error;
 
 static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics::default().register());
 
@@ -450,7 +450,7 @@ pub async fn build_hooks_web(
     }
 }
 
-#[instrument("ready", level = "trace", skip_all, fields(trace_id = %get_trace_id()))]
+#[instrument("ready", level = "trace", skip_all)]
 async fn handle_ready(State(state): State<AppState>) -> (StatusCode, &'static str) {
     // depends on global readiness state
     let ready = *state.ready.read().await;
@@ -462,7 +462,7 @@ async fn handle_ready(State(state): State<AppState>) -> (StatusCode, &'static st
     }
 }
 
-#[instrument("metrics", level = "trace", skip_all, fields(trace_id = %get_trace_id()))]
+#[instrument("metrics", level = "trace", skip_all)]
 async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) {
     trace!("metrics requested");
 
@@ -476,7 +476,7 @@ async fn handle_metrics(State(_state): State<AppState>) -> (StatusCode, String) 
 }
 
 /// Trigger jobs for all sources of the trigger
-#[instrument("trigger webhook", skip_all, fields(namespace, trigger, trace_id = %get_trace_id()))]
+#[instrument("trigger webhook", skip_all, fields(namespace, trigger))]
 async fn handle_post_trigger_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger)): Path<(String, String)>,
@@ -517,7 +517,7 @@ async fn handle_post_trigger_webhook(
 }
 
 /// Single source trigger run
-#[instrument("source webhook", skip_all, fields(namespace, trigger, source, trace_id = %get_trace_id()))]
+#[instrument("source webhook", skip_all, fields(namespace, trigger, source))]
 async fn handle_post_source_webhook(
     State(state): State<WebState>,
     Path((namespace, trigger, source)): Path<(String, String, String)>,
