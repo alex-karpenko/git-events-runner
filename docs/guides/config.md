@@ -19,6 +19,14 @@ Allowed values: `error`, `warn`, `info`, `debug`, `trace`.
 Using this parameter, you can change log level.
 If nothing is specified the default level is `info`.
 
+### jsonLogs
+
+Allowed values: `true`, `false`.
+
+Default if `false`.
+If `true` then controller outputs logs in JSON format.
+JSON format is useful for logging systems like Grafana Loki or ElasticSearch, which expect structured logs.
+
 ### otlp
 
 This section describes OpenTelemetry configuration.
@@ -88,7 +96,8 @@ TLS configuration may be provided using the following config parameters:
 - `secretName`: name of the TLS secret to load certificate and key from;
 - `secretNamespace`: namespace where certificate secret is located.
 
-If you specified one of the `certPath` or `keyPath`, the second option becomes mandatory because certificate doesn't work
+If you specified one of the `certPath` or `keyPath`, the second option becomes mandatory because certificate doesn't
+work
 without a key and vise versa.
 
 `certPath/keyPath` and `secretName/secretNamespace` are mutually exclusive.
@@ -223,6 +232,8 @@ Options:
           Secret name with TLS certificate and key
       --tls-secret-namespace <TLS_SECRET_NAMESPACE>
           Namespace of the  TLS secret
+  -j, --json-logs
+          Output logs in JSON format
   -h, --help
           Print help
 ```
