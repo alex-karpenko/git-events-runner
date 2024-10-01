@@ -21,4 +21,5 @@ CliConfig {
     tls_key_path: None,
     tls_secret_name: None,
     tls_secret_namespace: None,
+    json_logs: false,
 }

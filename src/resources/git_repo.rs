@@ -1,6 +1,6 @@
 //! GitRepo CRDs
 use super::CustomApiResource;
-use crate::{get_trace_id, Error, Result};
+use crate::{Error, Result};
 use git2::{CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Repository, RepositoryInitOptions};
 use k8s_openapi::api::core::v1::Secret;
 use kube::{Api, Client, CustomResource};
@@ -206,7 +206,7 @@ impl GitRepoGetter for ClusterGitRepo {}
 #[allow(private_bounds, async_fn_in_trait)]
 pub trait GitRepoGetter: GitRepoInternals {
     /// Retrieve content of the particular reference of the repo into the specified path
-    #[instrument("fetch repo reference", skip_all, fields(reference=ref_name,path, trace_id = %get_trace_id()))]
+    #[instrument("fetch repo reference", skip_all, fields(reference=ref_name,path))]
     async fn fetch_repo_ref(
         &self,
         client: Client,
