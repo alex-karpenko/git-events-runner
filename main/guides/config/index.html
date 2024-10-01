@@ -612,6 +612,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#jsonlogs" class="md-nav__link">
+    <span class="md-ellipsis">
+      jsonLogs
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#otlp" class="md-nav__link">
     <span class="md-ellipsis">
       otlp
@@ -1061,6 +1070,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#jsonlogs" class="md-nav__link">
+    <span class="md-ellipsis">
+      jsonLogs
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#otlp" class="md-nav__link">
     <span class="md-ellipsis">
       otlp
@@ -1221,6 +1239,11 @@ the <a href="https://github.com/alex-karpenko/helm-charts/blob/main/charts/git-e
 <p>Allowed values: <code>error</code>, <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>.</p>
 <p>Using this parameter, you can change log level.
 If nothing is specified the default level is <code>info</code>.</p>
+<h3 id="jsonlogs">jsonLogs<a class="headerlink" href="#jsonlogs" title="Permanent link">&para;</a></h3>
+<p>Allowed values: <code>true</code>, <code>false</code>.</p>
+<p>Default if <code>false</code>.
+If <code>true</code> then controller outputs logs in JSON format.
+JSON format is useful for logging systems like Grafana Loki or ElasticSearch, which expect structured logs.</p>
 <h3 id="otlp">otlp<a class="headerlink" href="#otlp" title="Permanent link">&para;</a></h3>
 <p>This section describes OpenTelemetry configuration.
 If <code>otlp.enabled</code> is <code>true</code> then <code>otlp.endpoint</code> should point to the OpenTelemetry collector endpoint.</p>
@@ -1280,7 +1303,8 @@ There are two possible ways to do this:</p>
 <li><code>secretName</code>: name of the TLS secret to load certificate and key from;</li>
 <li><code>secretNamespace</code>: namespace where certificate secret is located.</li>
 </ul>
-<p>If you specified one of the <code>certPath</code> or <code>keyPath</code>, the second option becomes mandatory because certificate doesn't work
+<p>If you specified one of the <code>certPath</code> or <code>keyPath</code>, the second option becomes mandatory because certificate doesn't
+work
 without a key and vise versa.</p>
 <p><code>certPath/keyPath</code> and <code>secretName/secretNamespace</code> are mutually exclusive.
 is optional, if it's not specified default namespace will be used: if controller is running inside Kubernetes cluster
@@ -1453,6 +1477,8 @@ Options:
 <span class="w">          </span>Secret<span class="w"> </span>name<span class="w"> </span>with<span class="w"> </span>TLS<span class="w"> </span>certificate<span class="w"> </span>and<span class="w"> </span>key
 <span class="w">      </span>--tls-secret-namespace<span class="w"> </span>&lt;TLS_SECRET_NAMESPACE&gt;
 <span class="w">          </span>Namespace<span class="w"> </span>of<span class="w"> </span>the<span class="w">  </span>TLS<span class="w"> </span>secret
+<span class="w">  </span>-j,<span class="w"> </span>--json-logs
+<span class="w">          </span>Output<span class="w"> </span>logs<span class="w"> </span><span class="k">in</span><span class="w"> </span>JSON<span class="w"> </span>format
 <span class="w">  </span>-h,<span class="w"> </span>--help
 <span class="w">          </span>Print<span class="w"> </span><span class="nb">help</span>
 </code></pre></div>
