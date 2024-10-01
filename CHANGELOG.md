@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2024-10-01
+### Details
+#### Changed
+- Logs in JSON format by @alex-karpenko
+
 ## [0.3.0] - 2024-09-28
 ### Details
 #### Added
@@ -91,6 +96,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
+[0.3.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.0..v0.3.1
 [0.3.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.4..v0.3.0
 [0.2.4]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.3..v0.2.4
 [0.2.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.2..v0.2.3
