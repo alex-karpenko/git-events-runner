@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # 1 - files prefix
 #     may include path to destination folder
@@ -6,6 +6,10 @@
 
 prefix="${1}"
 basedir=$(dirname ${0})
+
+if [[ -z "${prefix}" ]]; then
+    prefix="tests/"
+fi
 
 openssl req -nodes -x509 -days 3650 -sha256 -batch -subj "/CN=Test RSA root CA" \
             -newkey rsa:4096 -keyout ${prefix}ca.key -out ${prefix}ca.crt
@@ -24,9 +28,15 @@ openssl x509 -req -sha256 -days 3650 -set_serial 123 -extensions v3_inter -extfi
 openssl x509 -req -sha256 -days 2000 -set_serial 456 -extensions v3_end -extfile ${basedir}/openssl.cnf \
              -CA ${prefix}inter.crt -CAkey ${prefix}inter.key -in ${prefix}end.req -out ${prefix}end.crt
 
-cat ${prefix}end.crt ${prefix}inter.crt > ${prefix}test-server.pem
-cat ${prefix}inter.crt ${prefix}ca.crt > ${prefix}ca.pem
-rm ${prefix}*.req ${prefix}ca.key ${prefix}inter.key ${prefix}end.key
+rm -rf ${prefix}tls ${prefix}gitea-runtime
+mkdir -p ${prefix}tls ${prefix}gitea-runtime ${prefix}gitea-runtime/config/ssl
 
-mkdir tests/tls
-cp ${prefix}ca.* tests/tls/
+cat ${prefix}end.crt ${prefix}inter.crt > ${prefix}tls/test-server.pem
+cat ${prefix}inter.crt ${prefix}ca.crt > ${prefix}tls/ca.pem
+cp ${prefix}end.key ${prefix}tls/test-server.key
+cp ${prefix}end.crt ${prefix}tls/
+
+rm ${prefix}*.req ${prefix}*.crt ${prefix}*.key
+
+cp -R tests/gitea/bare/ ${prefix}gitea-runtime/
+cp ${prefix}tls/test-server.* ${prefix}gitea-runtime/config/ssl
