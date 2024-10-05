@@ -110,12 +110,22 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use rustls::crypto::aws_lc_rs;
-    use tokio::sync::OnceCell;
+    pub mod containers;
 
-    static CRYPTO_PROVIDER_INITIALIZED: OnceCell<()> = OnceCell::const_new();
+    use containers::{gitea::Gitea, k3s::K3s};
+    use ctor::dtor;
+    use kube::Client;
+    use rustls::crypto::aws_lc_rs;
+    use std::{env, thread};
+    use testcontainers::ContainerAsync;
+    use tokio::{runtime::Runtime, sync::OnceCell};
+
+    static mut GIT_SERVER_CONTAINER: OnceCell<ContainerAsync<Gitea>> = OnceCell::const_new();
+    static mut K3S_CLUSTER_CONTAINER: OnceCell<ContainerAsync<K3s>> = OnceCell::const_new();
 
     pub async fn init_crypto_provider() {
+        static CRYPTO_PROVIDER_INITIALIZED: OnceCell<()> = OnceCell::const_new();
+
         CRYPTO_PROVIDER_INITIALIZED
             .get_or_init(|| async {
                 aws_lc_rs::default_provider()
@@ -123,5 +133,65 @@ mod tests {
                     .expect("Failed to install rustls crypto provider");
             })
             .await;
+    }
+
+    #[allow(dead_code)]
+    pub async fn get_test_git_hostname() -> String {
+        get_git_server().await.get_host().await.unwrap().to_string()
+    }
+
+    pub async fn get_test_kube_client() -> Client {
+        K3s::get_client(get_k3s_cluster().await).await.unwrap()
+    }
+
+    #[allow(unsafe_code)]
+    async fn get_git_server() -> &'static ContainerAsync<Gitea> {
+        unsafe {
+            GIT_SERVER_CONTAINER
+                .get_or_init(|| async {
+                    let out_dir =
+                        env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
+                    containers::run_git_server(&format!("{out_dir}/gitea-runtime"))
+                        .await
+                        .unwrap()
+                })
+                .await
+        }
+    }
+
+    #[allow(unsafe_code)]
+    async fn get_k3s_cluster() -> &'static ContainerAsync<K3s> {
+        unsafe {
+            K3S_CLUSTER_CONTAINER
+                .get_or_init(|| async {
+                    let out_dir =
+                        env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
+                    containers::run_k3s_cluster(&format!("{out_dir}/k3s-runtime"))
+                        .await
+                        .unwrap()
+                })
+                .await
+        }
+    }
+
+    #[dtor]
+    #[allow(unsafe_code)]
+    fn shutdown_test_containers() {
+        let _ = thread::spawn(move || {
+            Runtime::new().unwrap().block_on(async {
+                unsafe {
+                    if let Some(k3s) = K3S_CLUSTER_CONTAINER.take() {
+                        k3s.stop().await.unwrap();
+                        k3s.rm().await.unwrap()
+                    }
+
+                    if let Some(git) = GIT_SERVER_CONTAINER.take() {
+                        git.stop().await.unwrap();
+                        git.rm().await.unwrap()
+                    }
+                }
+            });
+        })
+        .join();
     }
 }

@@ -88,6 +88,7 @@ prometheus = { version = "0.13.4", default-features = false }
 tower_governor = { version = "0.4.2", features = ["tracing"] }
 
 [dev-dependencies]
+ctor = "0.2.8"
 insta = { version = "1.40.0", features = [
     "glob",
     "ron",
@@ -96,6 +97,7 @@ insta = { version = "1.40.0", features = [
     "yaml",
 ] }
 tempfile = "3.13.0"
+testcontainers = { version = "0.23.1", default-features = false }
 
 [build-dependencies]
 anyhow = "1.0.89"
