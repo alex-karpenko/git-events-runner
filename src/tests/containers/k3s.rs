@@ -72,7 +72,7 @@ impl K3s {
         }
     }
 
-    async fn get_kubeconfig(&self) -> io::Result<String> {
+    pub async fn get_kubeconfig(&self) -> io::Result<String> {
         let k3s_conf_file_path = self.kubeconfig_folder.source().unwrap();
         let k3s_conf_file_path = Path::new(k3s_conf_file_path).join("k3s.yaml");
         tokio::fs::read_to_string(k3s_conf_file_path).await

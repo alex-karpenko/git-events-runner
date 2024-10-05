@@ -1,6 +1,6 @@
 //#![deny(unsafe_code, warnings, missing_docs)]
 
-use kube::{Client, CustomResourceExt};
+use kube::Client;
 use kube_lease_manager::LeaseManagerBuilder;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
@@ -18,11 +18,7 @@ use git_events_runner::{
     config::RuntimeConfig,
     controller::{run_leader_controllers, State},
     jobs::JobsQueue,
-    resources::{
-        action::{Action, ClusterAction},
-        git_repo::{ClusterGitRepo, GitRepo},
-        trigger::{ScheduleTrigger, WebhookTrigger},
-    },
+    resources,
     signals::SignalHandler,
     web::{self, RequestRateLimitsConfig},
 };
@@ -38,14 +34,16 @@ async fn main() -> anyhow::Result<()> {
     match Cli::new() {
         Cli::Crds => generate_crds(),
         Cli::Config(options) => generate_config_yaml(options),
-        Cli::Run(cli_config) => run(cli_config).await,
+        Cli::Run(cli_config) => {
+            let client = Client::try_default().await?;
+            run(cli_config, client).await
+        }
     }
 }
 
 #[instrument("controller", skip_all)]
-async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
+async fn run(cli_config: CliConfig, client: Client) -> anyhow::Result<()> {
     setup_tracing(cli_config.json_logs);
-    let client = Client::try_default().await?;
     let tls_config = cli_config.build_tls_config(client.clone()).await?;
     let identity = Uuid::new_v4().to_string();
 
@@ -177,19 +175,10 @@ async fn run(cli_config: CliConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Just print put all CRD definitions
+/// Just print all CRD definitions
 fn generate_crds() -> anyhow::Result<()> {
-    let crds = vec![
-        serde_yaml::to_string(&GitRepo::crd()).unwrap(),
-        serde_yaml::to_string(&ClusterGitRepo::crd()).unwrap(),
-        serde_yaml::to_string(&ScheduleTrigger::crd()).unwrap(),
-        serde_yaml::to_string(&WebhookTrigger::crd()).unwrap(),
-        serde_yaml::to_string(&Action::crd()).unwrap(),
-        serde_yaml::to_string(&ClusterAction::crd()).unwrap(),
-    ];
-
-    for crd in crds {
-        print!("---\n{crd}");
+    for crd in resources::get_all_crds() {
+        print!("---\n{}", serde_yaml::to_string(&crd).unwrap());
     }
 
     Ok(())

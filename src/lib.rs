@@ -110,15 +110,20 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    pub mod containers;
+    mod containers;
 
+    use crate::resources::get_all_crds;
     use containers::{gitea::Gitea, k3s::K3s};
     use ctor::dtor;
-    use kube::Client;
+    use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
+    use kube::{api::PostParams, Api, Client};
     use rustls::crypto::aws_lc_rs;
     use std::{env, thread};
     use testcontainers::ContainerAsync;
-    use tokio::{runtime::Runtime, sync::OnceCell};
+    use tokio::{
+        runtime::Runtime,
+        sync::{Mutex, OnceCell},
+    };
 
     static mut GIT_SERVER_CONTAINER: OnceCell<ContainerAsync<Gitea>> = OnceCell::const_new();
     static mut K3S_CLUSTER_CONTAINER: OnceCell<ContainerAsync<K3s>> = OnceCell::const_new();
@@ -140,8 +145,9 @@ mod tests {
         get_git_server().await.get_host().await.unwrap().to_string()
     }
 
-    pub async fn get_test_kube_client() -> Client {
-        K3s::get_client(get_k3s_cluster().await).await.unwrap()
+    pub async fn get_test_kube_client() -> anyhow::Result<Client> {
+        let cluster = get_k3s_cluster().await;
+        K3s::get_client(cluster).await
     }
 
     #[allow(unsafe_code)]
@@ -164,21 +170,44 @@ mod tests {
         unsafe {
             K3S_CLUSTER_CONTAINER
                 .get_or_init(|| async {
+                    init_crypto_provider().await;
+
+                    // Put kubeconfig into target out directory
                     let out_dir =
                         env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
-                    containers::run_k3s_cluster(&format!("{out_dir}/k3s-runtime"))
+
+                    // Create k3s container
+                    let container = containers::run_k3s_cluster(&format!("{out_dir}/k3s-runtime"))
                         .await
-                        .unwrap()
+                        .unwrap();
+                    // and apply all CRDs into the cluster
+                    let client = K3s::get_client(&container).await.unwrap();
+                    create_all_crds(client).await.unwrap();
+
+                    container
                 })
                 .await
         }
     }
 
+    async fn create_all_crds(client: Client) -> anyhow::Result<()> {
+        let pp = PostParams::default();
+        let crd_api = Api::<CustomResourceDefinition>::all(client);
+        for crd in get_all_crds() {
+            crd_api.create(&pp, &crd).await?;
+        }
+
+        Ok(())
+    }
+
     #[dtor]
     #[allow(unsafe_code)]
     fn shutdown_test_containers() {
-        let _ = thread::spawn(move || {
+        static LOCK: Mutex<()> = Mutex::const_new(());
+
+        let _ = thread::spawn(|| {
             Runtime::new().unwrap().block_on(async {
+                let _guard = LOCK.lock().await;
                 unsafe {
                     if let Some(k3s) = K3S_CLUSTER_CONTAINER.take() {
                         k3s.stop().await.unwrap();

@@ -210,7 +210,8 @@ impl CliConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, env};
+    use super::*;
+    use crate::tests;
 
     use insta::assert_debug_snapshot;
     use k8s_openapi::{api::core::v1::Namespace, ByteString};
@@ -218,13 +219,9 @@ mod tests {
         api::{DeleteParams, ObjectMeta, PostParams},
         Resource as _,
     };
+    use std::{collections::BTreeMap, env};
     use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 
-    use crate::tests;
-
-    use super::*;
-
-    // const TEST_SECRET_NAME: &str = "test-tls-certificates";
     const NAMESPACE: &str = "secret-tls-test";
     const TEST_CERTIFICATES_SECRET_NAME: &str = "test-tls-certificates";
     const SERVER_CERT_BUNDLE: &str = "/test-server.pem";
@@ -233,11 +230,10 @@ mod tests {
 
     static INITIALIZED: OnceCell<()> = OnceCell::const_new();
 
-    async fn init() {
+    async fn init(client: Client) {
         INITIALIZED
             .get_or_init(|| async {
                 tests::init_crypto_provider().await;
-                let client = Client::try_default().await.unwrap();
                 create_namespace(client).await;
             })
             .await;
@@ -260,22 +256,21 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn tls_config_nothing() {
         tests::init_crypto_provider().await;
+        let client = tests::get_test_kube_client().await.unwrap();
 
         let cli = CliConfig::parse_from::<_, &str>([]);
-        let client = Client::try_default().await.unwrap();
         let config = cli.build_tls_config(client).await.unwrap();
         assert!(config.is_none());
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn tls_config_cert_key() {
-        init().await;
-
-        let client = Client::try_default().await.unwrap();
+        let client = tests::get_test_kube_client().await.unwrap();
+        init(client.clone()).await;
 
         let out_dir = env::var("OUT_DIR").unwrap();
         let cert_bundle_path = format!("{out_dir}/tls/{SERVER_CERT_BUNDLE}");
@@ -304,10 +299,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn tls_config_secret() {
-        init().await;
-        let client = Client::try_default().await.unwrap();
+        let client = tests::get_test_kube_client().await.unwrap();
+        init(client.clone()).await;
 
         let out_dir = env::var("OUT_DIR").unwrap();
         let cert_bundle_path = format!("{out_dir}/tls/{SERVER_CERT_BUNDLE}");
