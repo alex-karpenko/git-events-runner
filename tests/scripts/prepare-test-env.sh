@@ -38,5 +38,5 @@ cp ${prefix}end.crt ${prefix}tls/
 
 rm ${prefix}*.req ${prefix}*.crt ${prefix}*.key
 
-cp -R tests/gitea/bare/ ${prefix}gitea-runtime/
+cp -R tests/gitea/bare/config/ tests/gitea/bare/data/ ${prefix}gitea-runtime/
 cp ${prefix}tls/test-server.* ${prefix}gitea-runtime/config/ssl
