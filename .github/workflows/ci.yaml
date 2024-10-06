@@ -43,8 +43,8 @@ jobs:
       fail-fast: false
       matrix:
         k8s:
-          - "1.27"
-          - "latest"
+          - v1.27
+          - latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

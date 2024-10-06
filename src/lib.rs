@@ -141,17 +141,9 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    pub async fn get_test_git_hostname() -> String {
-        get_git_server()
-            .await
-            .read()
-            .await
-            .as_ref()
-            .unwrap()
-            .get_host()
-            .await
-            .unwrap()
-            .to_string()
+    pub async fn get_test_git_hostname() -> anyhow::Result<String> {
+        let host = get_git_server().await.read().await.as_ref().unwrap().get_host().await?;
+        Ok(host.to_string())
     }
 
     pub async fn get_test_kube_client() -> anyhow::Result<Client> {
