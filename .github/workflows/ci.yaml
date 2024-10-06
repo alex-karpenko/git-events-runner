@@ -20,7 +20,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      # - uses: Swatinem/rust-cache@v2
 
       - name: Build
         run: cargo build
@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      # - uses: Swatinem/rust-cache@v2
       - name: Run all integration tests
         env:
           CARGO_TEST_KUBE_VERSION: ${{ matrix.k8s }}
