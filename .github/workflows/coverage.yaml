@@ -22,6 +22,9 @@ jobs:
           rustup toolchain add nightly --component llvm-tools-preview
           rustup override set nightly
 
+      - name: Stop SSH service
+        run: sudo systemctl stop ssh
+
       - name: Test
         env:
           CI: true

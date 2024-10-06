@@ -48,7 +48,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Stop SSH service
+        run: sudo systemctl stop ssh
+
       - name: Run all integration tests
         env:
           CARGO_TEST_KUBE_VERSION: ${{ matrix.k8s }}

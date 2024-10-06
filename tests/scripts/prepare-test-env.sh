@@ -6,6 +6,7 @@
 
 prefix="${1}"
 basedir=$(dirname ${0})
+gitea_bare_dir=$(realpath ${basedir}/../gitea/bare)
 
 if [[ -z "${prefix}" ]]; then
     prefix="tests/"
@@ -38,5 +39,5 @@ cp ${prefix}end.crt ${prefix}tls/
 
 rm ${prefix}*.req ${prefix}*.crt ${prefix}*.key
 
-cp -R tests/gitea/bare/config/ tests/gitea/bare/data/ ${prefix}gitea-runtime/
+cp -R ${gitea_bare_dir}/{config/,data/} ${prefix}gitea-runtime/
 cp ${prefix}tls/test-server.* ${prefix}gitea-runtime/config/ssl
