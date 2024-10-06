@@ -34,10 +34,7 @@ jobs:
       - name: Test
         env:
           CI: true
-        run: |
-          cargo test -- --nocapture
-          d=$(find target/debug/build -name gitea-runtime)
-          ls -lR ${d}/..
+        run: cargo test -- --nocapture
 
   integration:
     runs-on: ubuntu-latest
