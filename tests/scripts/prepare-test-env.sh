@@ -41,3 +41,7 @@ rm ${prefix}*.req ${prefix}*.crt ${prefix}*.key
 
 cp -R ${gitea_bare_dir}/{config/,data/} ${prefix}gitea-runtime/
 cp ${prefix}tls/test-server.* ${prefix}gitea-runtime/config/ssl
+
+if [[ ${CI} == "true" ]]; then
+    chown -R 1000:1000 ${prefix}gitea-runtime
+fi
