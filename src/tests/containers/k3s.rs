@@ -91,13 +91,13 @@ impl K3s {
 
             versions
                 .get(&version)
-                .expect(format!("Kube version '{}' is not supported", version).as_str())
+                .unwrap_or_else(|| panic!("Kube version '{}' is not supported", version))
                 .to_owned()
         };
 
         Self {
             kubeconfig_folder: Mount::bind_mount(kubeconfig_folder, "/etc/rancher/k3s/"),
-            tag: tag,
+            tag,
         }
     }
 
