@@ -606,6 +606,7 @@ mod test {
 
         assert!(repo.is_err());
         let err = repo.err().unwrap();
+        assert_eq!(err.to_string(), "untrusted connection error");
         assert!(err.to_string().contains("untrusted connection error"));
         assert!(matches!(err, Error::GitrepoAccessError(_)));
     }
