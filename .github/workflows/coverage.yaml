@@ -35,6 +35,9 @@ jobs:
 
       - name: Generate coverage
         run: |
+          u=$(id -u)
+          g=$(id -g)
+          sudo chown -R $u:$g target/debug/
           grcov/grcov $(find . -name "git-events-runner-*.profraw" -print) \
             --branch \
             --ignore-not-existing \
