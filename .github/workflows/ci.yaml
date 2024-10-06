@@ -42,30 +42,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        k8s: [v1.27, latest]
+        k8s:
+          - "1.27"
+          - "latest"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: nolar/setup-k3d-k3s@v1
-        with:
-          version: ${{matrix.k8s}}
-          k3d-name: kube
-          # Used to avoid rate limits when fetching the releases from k3s repo.
-          # Anonymous access is limited to 60 requests / hour / worker
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          k3d-args: "--no-lb --no-rollback --k3s-arg --disable=traefik,servicelb,metrics-server@server:*"
-
-      # Real CI work starts here
-      - name: Build workspace
-        run: cargo build
-
-      # Run the integration tests
-      - name: Install CRDs
-        run: cargo run --bin git-events-runner crds | kubectl apply -f -
-
       - name: Run all integration tests
-        run: cargo test --all -- --ignored
+        env:
+          CARGO_TEST_KUBE_VERSION: ${{ matrix.k8s }}
+          CI: true
+        run: cargo test --all -- --ignored --nocapture
 
   docker-test:
     runs-on: ubuntu-latest

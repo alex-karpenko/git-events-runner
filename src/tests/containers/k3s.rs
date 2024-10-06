@@ -3,19 +3,32 @@ use kube::{
     Config,
 };
 use rustls::crypto::CryptoProvider;
-use std::{borrow::Cow, io, path::Path};
+use std::{borrow::Cow, collections::HashMap, io, path::Path};
 use testcontainers::{
     core::{ContainerPort, Mount, WaitFor},
     ContainerAsync, Image,
 };
 
 pub const K3S_IMAGE_NAME: &str = "rancher/k3s";
-pub const K3S_IMAGE_TAG: &str = "v1.31.1-k3s1";
 pub const K3S_API_PORT: ContainerPort = ContainerPort::Tcp(6443);
+
+pub const K3S_IMAGE_TAG_ENV_VAR: &str = "CARGO_TEST_K3S_IMAGE_TAG";
+pub const KUBE_VERSION_ENV_VAR: &str = "CARGO_TEST_KUBE_VERSION";
+pub const KUBE_VERSION_DEFAULT: &str = "1.31";
+
+const AVAILABLE_K3S_IMAGE_TAGS: [(&str, &str); 6] = [
+    ("1.31", "v1.31.1-k3s1"),
+    ("1.30", "v1.30.5-k3s1"),
+    ("1.29", "v1.29.9-k3s1"),
+    ("1.28", "v1.28.14-k3s1"),
+    ("1.27", "v1.27.16-k3s1"),
+    ("1.26", "v1.26.15-k3s1"),
+];
 
 #[derive(Debug, Clone)]
 pub struct K3s {
     kubeconfig_folder: Mount,
+    tag: String,
 }
 
 impl Image for K3s {
@@ -24,7 +37,7 @@ impl Image for K3s {
     }
 
     fn tag(&self) -> &str {
-        K3S_IMAGE_TAG
+        self.tag.as_str()
     }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
@@ -32,13 +45,7 @@ impl Image for K3s {
     }
 
     fn env_vars(&self) -> impl IntoIterator<Item = (impl Into<Cow<'_, str>>, impl Into<Cow<'_, str>>)> {
-        vec![
-            // (
-            //     String::from("K3S_KUBECONFIG_OUTPUT"),
-            //     String::from(self.kubeconfig_folder.target().unwrap()),
-            // ),
-            (String::from("K3S_KUBECONFIG_MODE"), String::from("644")),
-        ]
+        vec![(String::from("K3S_KUBECONFIG_MODE"), String::from("644"))]
     }
 
     fn mounts(&self) -> impl IntoIterator<Item = &Mount> {
@@ -67,8 +74,30 @@ impl Image for K3s {
 
 impl K3s {
     pub fn new(kubeconfig_folder: impl Into<String>) -> Self {
+        let tag = if let Ok(tag) = std::env::var(K3S_IMAGE_TAG_ENV_VAR) {
+            tag
+        } else {
+            let versions = AVAILABLE_K3S_IMAGE_TAGS
+                .into_iter()
+                .map(|(k, v)| (k, v.to_string()))
+                .collect::<HashMap<&str, String>>();
+            let version = std::env::var(KUBE_VERSION_ENV_VAR).unwrap_or(KUBE_VERSION_DEFAULT.to_string());
+            let version = version.strip_prefix("v").unwrap_or(&version);
+            let version = if version.is_empty() || version == "latest" {
+                KUBE_VERSION_DEFAULT
+            } else {
+                version
+            };
+
+            versions
+                .get(&version)
+                .expect(format!("Kube version '{}' is not supported", version).as_str())
+                .to_owned()
+        };
+
         Self {
             kubeconfig_folder: Mount::bind_mount(kubeconfig_folder, "/etc/rancher/k3s/"),
+            tag: tag,
         }
     }
 
