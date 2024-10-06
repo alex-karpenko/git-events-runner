@@ -412,3 +412,201 @@ async fn get_secret_strings<'a>(
 
     Ok(secrets)
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::tests;
+    use k8s_openapi::{api::core::v1::Secret, ByteString};
+    use kube::api::{Api, DeleteParams, ObjectMeta, PostParams};
+    use std::collections::{BTreeMap, HashMap};
+
+    const TEST_PUBLIC_REPO_PATH: &str = "gitea-admin/test-1.git";
+    // const TEST_PRIVATE_REPO_PATH: &str = "gitea-admin/test-2.git";
+
+    async fn ensure_secret(
+        client: Client,
+        name: String,
+        data: BTreeMap<String, String>,
+        ns: &str,
+    ) -> anyhow::Result<()> {
+        let secret_api: Api<Secret> = Api::namespaced(client, ns);
+        let secret = Secret {
+            metadata: ObjectMeta {
+                name: Some(name.clone()),
+                ..Default::default()
+            },
+            data: Some(data.into_iter().map(|(k, v)| (k, ByteString(v.into()))).collect()),
+            ..Default::default()
+        };
+
+        let _ = secret_api.delete(&name, &DeleteParams::default()).await;
+        secret_api.create(&PostParams::default(), &secret).await?;
+
+        Ok(())
+    }
+
+    fn get_test_public_git_repo_spec(uri: &String, tls: bool) -> GitRepoSpec {
+        let tls_config = if tls {
+            Some(TlsConfig {
+                no_verify_ssl: true,
+                ..Default::default()
+            })
+        } else {
+            None
+        };
+
+        GitRepoSpec {
+            repo_uri: uri.to_string(),
+            auth_config: None,
+            tls_config,
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn get_secret_strings_with_data() {
+        const TEST_SECRET_NAME: &str = "test-secret-get-secret-strings-with-data";
+        const TEST_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+        let secret_api: Api<Secret> = Api::namespaced(client.clone(), TEST_NAMESPACE);
+
+        let secret_keys = [
+            (&String::from("u"), String::from("username")),
+            (&String::from("p"), String::from("password")),
+        ];
+        let secret_keys: HashMap<&String, String> = HashMap::from(secret_keys);
+
+        let secret_data = BTreeMap::from([
+            (String::from("u"), String::from("user")),
+            (String::from("p"), String::from("pass")),
+        ]);
+
+        ensure_secret(client.clone(), TEST_SECRET_NAME.into(), secret_data, TEST_NAMESPACE)
+            .await
+            .unwrap();
+
+        let secrets = get_secret_strings(client.clone(), &TEST_SECRET_NAME.into(), secret_keys, TEST_NAMESPACE)
+            .await
+            .unwrap();
+
+        assert_eq!(secrets["username"], "user");
+        assert_eq!(secrets["password"], "pass");
+
+        secret_api
+            .delete(TEST_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn get_secret_strings_wrong_keys() {
+        const TEST_SECRET_NAME: &str = "test-secret-get-secret-strings-wrong-keys";
+        const TEST_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+        let secret_api: Api<Secret> = Api::namespaced(client.clone(), TEST_NAMESPACE);
+
+        let secret_data = BTreeMap::from([
+            (String::from("u"), String::from("user")),
+            (String::from("p"), String::from("pass")),
+        ]);
+
+        ensure_secret(client.clone(), TEST_SECRET_NAME.into(), secret_data, TEST_NAMESPACE)
+            .await
+            .unwrap();
+
+        let secret_keys = [(&String::from("qqq"), String::from("www"))];
+        let secret_keys: HashMap<&String, String> = HashMap::from(secret_keys);
+        let secrets = get_secret_strings(client, &TEST_SECRET_NAME.into(), secret_keys, TEST_NAMESPACE).await;
+
+        assert!(secrets.is_err());
+        let err = secrets.unwrap_err();
+        assert!(err.to_string().contains("no `qqq` key in the secret"));
+        assert!(matches!(err, Error::SecretDecodingError(_)));
+
+        secret_api
+            .delete(TEST_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn get_secret_strings_no_data() {
+        const TEST_SECRET_NAME: &str = "test-secret-get-secret-strings-no-data";
+        const TEST_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+        let secret_api: Api<Secret> = Api::namespaced(client.clone(), TEST_NAMESPACE);
+
+        let secret_keys = [
+            (&String::from("u"), String::from("username")),
+            (&String::from("p"), String::from("password")),
+        ];
+        let secret_keys: HashMap<&String, String> = HashMap::from(secret_keys);
+
+        ensure_secret(client.clone(), TEST_SECRET_NAME.into(), BTreeMap::new(), TEST_NAMESPACE)
+            .await
+            .unwrap();
+
+        let secrets = get_secret_strings(client.clone(), &TEST_SECRET_NAME.into(), secret_keys, TEST_NAMESPACE).await;
+
+        assert!(secrets.is_err());
+        let err = secrets.unwrap_err();
+        assert!(err.to_string().contains("no `data` part in the secret"));
+        assert!(matches!(err, Error::SecretDecodingError(_)));
+
+        secret_api
+            .delete(TEST_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn get_secret_strings_no_secret() {
+        const TEST_SECRET_NAME: &str = "test-secret-get-secret-strings-no-secret";
+        const TEST_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+
+        let secret_keys = [
+            (&String::from("u"), String::from("username")),
+            (&String::from("p"), String::from("password")),
+        ];
+        let secret_keys: HashMap<&String, String> = HashMap::from(secret_keys);
+
+        let secrets = get_secret_strings(client, &TEST_SECRET_NAME.into(), secret_keys, TEST_NAMESPACE).await;
+
+        assert!(secrets.is_err());
+        let err = secrets.unwrap_err();
+        assert!(err.to_string().contains("not found"));
+        assert!(matches!(err, Error::KubeError(_)));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn fetch_repo_ref_git_repo_https_public_no_tls() {
+        const SECRETS_NAMESPACE: &str = "default";
+
+        let repo_hostname = tests::get_test_git_hostname().await.unwrap();
+        let client = tests::get_test_kube_client().await.unwrap();
+
+        let repo_uri = format!("https://{repo_hostname}/{TEST_PUBLIC_REPO_PATH}");
+        let repo_ref: String = "main".into();
+        let path = tempfile::tempdir().unwrap();
+        let path = String::from(path.path().to_str().unwrap());
+
+        let repo = GitRepo::new("test", get_test_public_git_repo_spec(&repo_uri, false));
+        let ns = String::from(SECRETS_NAMESPACE);
+        let repo = repo.fetch_repo_ref(client, &repo_ref, &path, &ns).await;
+
+        assert!(repo.is_err());
+        let err = repo.err().unwrap();
+        assert!(err.to_string().contains("untrusted connection error"));
+        assert!(matches!(err, Error::GitrepoAccessError(_)));
+    }
+}

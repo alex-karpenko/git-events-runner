@@ -125,6 +125,8 @@ mod tests {
         sync::{Mutex, OnceCell, RwLock},
     };
 
+    const USE_EXISTING_K8S_CONTEXT: &str = "CARGO_TEST_USE_EXISTING_K8S_CONTEXT";
+
     static GIT_SERVER_CONTAINER: OnceCell<RwLock<Option<ContainerAsync<Gitea>>>> = OnceCell::const_new();
     static K3S_CLUSTER_CONTAINER: OnceCell<RwLock<Option<ContainerAsync<K3s>>>> = OnceCell::const_new();
 
@@ -147,6 +149,12 @@ mod tests {
     }
 
     pub async fn get_test_kube_client() -> anyhow::Result<Client> {
+        if std::env::var(USE_EXISTING_K8S_CONTEXT).is_ok() {
+            init_crypto_provider().await;
+            let client = Client::try_default().await?;
+            return Ok(client);
+        }
+
         let guard = get_k3s_cluster().await.read().await;
         let cluster = guard.as_ref().unwrap();
         K3s::get_client(cluster).await
