@@ -122,11 +122,11 @@ mod tests {
     use testcontainers::ContainerAsync;
     use tokio::{
         runtime::Runtime,
-        sync::{Mutex, OnceCell},
+        sync::{Mutex, OnceCell, RwLock},
     };
 
-    static mut GIT_SERVER_CONTAINER: OnceCell<ContainerAsync<Gitea>> = OnceCell::const_new();
-    static mut K3S_CLUSTER_CONTAINER: OnceCell<ContainerAsync<K3s>> = OnceCell::const_new();
+    static GIT_SERVER_CONTAINER: OnceCell<RwLock<Option<ContainerAsync<Gitea>>>> = OnceCell::const_new();
+    static K3S_CLUSTER_CONTAINER: OnceCell<RwLock<Option<ContainerAsync<K3s>>>> = OnceCell::const_new();
 
     pub async fn init_crypto_provider() {
         static CRYPTO_PROVIDER_INITIALIZED: OnceCell<()> = OnceCell::const_new();
@@ -142,52 +142,57 @@ mod tests {
 
     #[allow(dead_code)]
     pub async fn get_test_git_hostname() -> String {
-        get_git_server().await.get_host().await.unwrap().to_string()
+        get_git_server()
+            .await
+            .read()
+            .await
+            .as_ref()
+            .unwrap()
+            .get_host()
+            .await
+            .unwrap()
+            .to_string()
     }
 
     pub async fn get_test_kube_client() -> anyhow::Result<Client> {
-        let cluster = get_k3s_cluster().await;
+        let guard = get_k3s_cluster().await.read().await;
+        let cluster = guard.as_ref().unwrap();
         K3s::get_client(cluster).await
     }
 
-    #[allow(unsafe_code)]
-    async fn get_git_server() -> &'static ContainerAsync<Gitea> {
-        unsafe {
-            GIT_SERVER_CONTAINER
-                .get_or_init(|| async {
-                    let out_dir =
-                        env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
-                    containers::run_git_server(&format!("{out_dir}/gitea-runtime"))
-                        .await
-                        .unwrap()
-                })
-                .await
-        }
+    async fn get_git_server() -> &'static RwLock<Option<ContainerAsync<Gitea>>> {
+        GIT_SERVER_CONTAINER
+            .get_or_init(|| async {
+                let out_dir =
+                    env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
+                let container = containers::run_git_server(&format!("{out_dir}/gitea-runtime"))
+                    .await
+                    .unwrap();
+                RwLock::new(Some(container))
+            })
+            .await
     }
 
-    #[allow(unsafe_code)]
-    async fn get_k3s_cluster() -> &'static ContainerAsync<K3s> {
-        unsafe {
-            K3S_CLUSTER_CONTAINER
-                .get_or_init(|| async {
-                    init_crypto_provider().await;
+    async fn get_k3s_cluster() -> &'static RwLock<Option<ContainerAsync<K3s>>> {
+        K3S_CLUSTER_CONTAINER
+            .get_or_init(|| async {
+                init_crypto_provider().await;
 
-                    // Put kubeconfig into target out directory
-                    let out_dir =
-                        env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
+                // Put kubeconfig into target out directory
+                let out_dir =
+                    env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
 
-                    // Create k3s container
-                    let container = containers::run_k3s_cluster(&format!("{out_dir}/k3s-runtime"))
-                        .await
-                        .unwrap();
-                    // and apply all CRDs into the cluster
-                    let client = K3s::get_client(&container).await.unwrap();
-                    create_all_crds(client).await.unwrap();
+                // Create k3s container
+                let container = containers::run_k3s_cluster(&format!("{out_dir}/k3s-runtime"))
+                    .await
+                    .unwrap();
+                // and apply all CRDs into the cluster
+                let client = K3s::get_client(&container).await.unwrap();
+                create_all_crds(client).await.unwrap();
 
-                    container
-                })
-                .await
-        }
+                RwLock::new(Some(container))
+            })
+            .await
     }
 
     async fn create_all_crds(client: Client) -> anyhow::Result<()> {
@@ -208,15 +213,24 @@ mod tests {
         let _ = thread::spawn(|| {
             Runtime::new().unwrap().block_on(async {
                 let _guard = LOCK.lock().await;
-                unsafe {
-                    if let Some(k3s) = K3S_CLUSTER_CONTAINER.take() {
-                        k3s.stop().await.unwrap();
-                        k3s.rm().await.unwrap()
-                    }
 
-                    if let Some(git) = GIT_SERVER_CONTAINER.take() {
-                        git.stop().await.unwrap();
-                        git.rm().await.unwrap()
+                if let Some(k3s) = K3S_CLUSTER_CONTAINER.get() {
+                    let mut k3s = k3s.write().await;
+                    if k3s.is_some() {
+                        let old = (*k3s).take().unwrap();
+                        old.stop().await.unwrap();
+                        old.rm().await.unwrap();
+                        *k3s = None;
+                    }
+                }
+
+                if let Some(git) = GIT_SERVER_CONTAINER.get() {
+                    let mut git = git.write().await;
+                    if git.is_some() {
+                        let old = (*git).take().unwrap();
+                        old.stop().await.unwrap();
+                        old.rm().await.unwrap();
+                        *git = None;
                     }
                 }
             });
