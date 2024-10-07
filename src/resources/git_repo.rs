@@ -419,10 +419,27 @@ mod test {
     use crate::tests;
     use k8s_openapi::{api::core::v1::Secret, ByteString};
     use kube::api::{Api, DeleteParams, ObjectMeta, PostParams};
-    use std::collections::{BTreeMap, HashMap};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        env,
+    };
+    use tokio::{fs::File, io::AsyncReadExt};
 
     const TEST_PUBLIC_REPO_PATH: &str = "gitea-admin/test-1.git";
     // const TEST_PRIVATE_REPO_PATH: &str = "gitea-admin/test-2.git";
+
+    enum TestTlsConfig {
+        Ignore,
+        Verify,
+        VerifyWithCa(String, String), // Secret namespace + name
+    }
+
+    // enum TestAuthConfig {
+    //     None,
+    //     Basic(String, String), // Secret namespace + name
+    //     Token(String, String), // Secret namespace + name
+    //     Ssh(String, String),   // Secret namespace + name
+    // }
 
     async fn ensure_secret(
         client: Client,
@@ -446,14 +463,42 @@ mod test {
         Ok(())
     }
 
-    fn get_test_public_git_repo_spec(uri: &String, tls: bool) -> GitRepoSpec {
-        let tls_config = if tls {
-            Some(TlsConfig {
+    async fn get_test_public_git_repo_spec(client: Option<Client>, uri: &String, tls: TestTlsConfig) -> GitRepoSpec {
+        let tls_config = match tls {
+            TestTlsConfig::Ignore => Some(TlsConfig {
                 no_verify_ssl: true,
                 ..Default::default()
-            })
-        } else {
-            None
+            }),
+            TestTlsConfig::Verify => Some(TlsConfig {
+                no_verify_ssl: false,
+                ..Default::default()
+            }),
+            TestTlsConfig::VerifyWithCa(ns, name) => {
+                let out_dir =
+                    env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
+                let ca_path = format!("{out_dir}/tls/ca.pem");
+                let mut ca_data = String::new();
+                File::open(&ca_path)
+                    .await
+                    .unwrap()
+                    .read_to_string(&mut ca_data)
+                    .await
+                    .unwrap();
+                let data = BTreeMap::from([(String::from("ca.crt"), ca_data)]);
+
+                ensure_secret(client.unwrap(), name.clone(), data, &ns).await.unwrap();
+                Some(TlsConfig {
+                    no_verify_ssl: false,
+                    ca_cert: Some(TlsCaConfig {
+                        key: "ca.crt".into(),
+                        secret_ref: SecretRef {
+                            name,
+                            namespace: Some(ns),
+                        },
+                    }),
+                    ..Default::default()
+                })
+            }
         };
 
         GitRepoSpec {
@@ -589,7 +634,7 @@ mod test {
 
     #[tokio::test]
     #[ignore = "needs docker"]
-    async fn fetch_repo_ref_git_repo_https_public_no_tls() {
+    async fn fetch_repo_ref_git_repo_https_public_tls_verify() {
         const SECRETS_NAMESPACE: &str = "default";
 
         let repo_hostname = tests::get_test_git_hostname().await.unwrap();
@@ -599,9 +644,12 @@ mod test {
         let repo_ref: String = "main".into();
         let path = tempfile::tempdir().unwrap();
         let path = String::from(path.path().to_str().unwrap());
-
-        let repo = GitRepo::new("test", get_test_public_git_repo_spec(&repo_uri, false));
         let ns = String::from(SECRETS_NAMESPACE);
+
+        let repo = GitRepo::new(
+            "test",
+            get_test_public_git_repo_spec(Some(client.clone()), &repo_uri, TestTlsConfig::Verify).await,
+        );
         let repo = repo.fetch_repo_ref(client, &repo_ref, &path, &ns).await;
 
         assert!(repo.is_err());
@@ -611,5 +659,57 @@ mod test {
                 || err.to_string().contains("the SSL certificate is invalid")
         );
         assert!(matches!(err, Error::GitrepoAccessError(_)));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn fetch_repo_ref_git_repo_https_public_tls_ignore() {
+        const SECRETS_NAMESPACE: &str = "default";
+
+        let repo_hostname = tests::get_test_git_hostname().await.unwrap();
+        let client = tests::get_test_kube_client().await.unwrap();
+
+        let repo_uri = format!("https://{repo_hostname}/{TEST_PUBLIC_REPO_PATH}");
+        let repo_ref: String = "main".into();
+        let path = tempfile::tempdir().unwrap();
+        let path = String::from(path.path().to_str().unwrap());
+        let ns = String::from(SECRETS_NAMESPACE);
+
+        let repo = GitRepo::new(
+            "test",
+            get_test_public_git_repo_spec(Some(client.clone()), &repo_uri, TestTlsConfig::Ignore).await,
+        );
+        let repo = repo.fetch_repo_ref(client, &repo_ref, &path, &ns).await;
+
+        assert!(repo.is_ok());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn fetch_repo_ref_git_repo_https_public_tls_with_ca() {
+        const SECRETS_NAMESPACE: &str = "default";
+        const SECRET_NAME: &str = "test-secret-fetch-repo-ref-git-repo-https-public-tls-with-ca";
+
+        let repo_hostname = tests::get_test_git_hostname().await.unwrap();
+        let client = tests::get_test_kube_client().await.unwrap();
+
+        let repo_uri = format!("https://{repo_hostname}/{TEST_PUBLIC_REPO_PATH}");
+        let repo_ref: String = "main".into();
+        let path = tempfile::tempdir().unwrap();
+        let path = String::from(path.path().to_str().unwrap());
+        let ns = String::from(SECRETS_NAMESPACE);
+
+        let repo = GitRepo::new(
+            "test",
+            get_test_public_git_repo_spec(
+                Some(client.clone()),
+                &repo_uri,
+                TestTlsConfig::VerifyWithCa(ns.clone(), SECRET_NAME.into()),
+            )
+            .await,
+        );
+        let repo = repo.fetch_repo_ref(client, &repo_ref, &path, &ns).await;
+
+        assert!(repo.is_ok());
     }
 }
