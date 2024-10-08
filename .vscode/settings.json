@@ -26,6 +26,7 @@
         "Kubeconfig",
         "kubert",
         "mkdocs",
+        "nocapture",
         "noreply",
         "oleksiikarpenko",
         "openapi",
