@@ -61,6 +61,10 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let client = Client::try_default().await?;
+    git_repo_cloner(cli, client).await
+}
+
+async fn git_repo_cloner(cli: Cli, client: Client) -> anyhow::Result<()> {
     let ns = client.default_namespace().to_owned();
 
     let reference_name = String::from(&cli.reference);

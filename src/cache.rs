@@ -150,6 +150,7 @@ impl ApiCache for GitRepo {
     where
         Self: Sized + Clone,
     {
+        use crate::tests;
         use std::thread::spawn;
         use tokio::runtime::Runtime;
 
@@ -160,7 +161,7 @@ impl ApiCache for GitRepo {
             move || {
                 let rt = Runtime::new()?;
                 rt.block_on(async move {
-                    let client = Client::try_default().await.unwrap();
+                    let client = tests::get_test_kube_client().await.unwrap();
                     let api = Api::<Self>::namespaced(client, &namespace.unwrap());
                     match api.get(&name).await {
                         Ok(resource) => Ok(Arc::new(resource)),
@@ -218,6 +219,7 @@ impl ApiCache for WebhookTrigger {
     where
         Self: Sized + Clone,
     {
+        use crate::tests;
         use std::thread::spawn;
         use tokio::runtime::Runtime;
 
@@ -228,7 +230,7 @@ impl ApiCache for WebhookTrigger {
             move || {
                 let rt = Runtime::new()?;
                 rt.block_on(async move {
-                    let client = Client::try_default().await.unwrap();
+                    let client = tests::get_test_kube_client().await.unwrap();
                     let api = Api::<Self>::namespaced(client, &namespace.unwrap());
                     match api.get(&name).await {
                         Ok(resource) => Ok(Arc::new(resource)),
@@ -256,6 +258,7 @@ impl ApiCache for ScheduleTrigger {
     where
         Self: Sized + Clone,
     {
+        use crate::tests;
         use std::thread::spawn;
         use tokio::runtime::Runtime;
 
@@ -266,7 +269,7 @@ impl ApiCache for ScheduleTrigger {
             move || {
                 let rt = Runtime::new()?;
                 rt.block_on(async move {
-                    let client = Client::try_default().await.unwrap();
+                    let client = tests::get_test_kube_client().await.unwrap();
                     let api = Api::<Self>::namespaced(client, &namespace.unwrap());
                     match api.get(&name).await {
                         Ok(resource) => Ok(Arc::new(resource)),
@@ -315,7 +318,9 @@ impl SecretsCache {
 
         #[cfg(test)]
         {
-            let client = Client::try_default().await.unwrap();
+            use crate::tests;
+
+            let client = tests::get_test_kube_client().await.unwrap();
             let (_, secret_value) = Self::query_secrets_api(client, namespace, secret_name, key).await?;
 
             Ok(secret_value)
@@ -439,14 +444,16 @@ mod tests {
 
     static INITIALIZED: OnceCell<()> = OnceCell::const_new();
 
-    async fn init() {
+    async fn init() -> anyhow::Result<Client> {
         INITIALIZED
             .get_or_init(|| async {
                 tests::init_crypto_provider().await;
-                let client = Client::try_default().await.unwrap();
+                let client = tests::get_test_kube_client().await.unwrap();
                 create_namespace(client).await;
             })
             .await;
+
+        tests::get_test_kube_client().await
     }
 
     /// Unattended namespace creation
@@ -460,14 +467,12 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn secrets_cache() {
-        init().await;
+        let client = init().await.unwrap();
         let pp = PostParams::default();
         let dp = DeleteParams::default();
         let expire_time = Duration::from_secs(1);
-
-        let client = Client::try_default().await.unwrap();
         let api = Api::<Secret>::namespaced(client.clone(), NAMESPACE);
 
         // Ensure Secret isn't present

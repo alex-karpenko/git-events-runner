@@ -1032,14 +1032,16 @@ mod tests {
 
     static INITIALIZED: OnceCell<()> = OnceCell::const_new();
 
-    async fn init() {
+    async fn init() -> anyhow::Result<Client> {
         INITIALIZED
             .get_or_init(|| async {
                 tests::init_crypto_provider().await;
-                let client = Client::try_default().await.unwrap();
+                let client = tests::get_test_kube_client().await.unwrap();
                 create_namespace(client).await;
             })
             .await;
+
+        tests::get_test_kube_client().await
     }
 
     impl ScheduleTrigger {
@@ -1148,12 +1150,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn update_trigger_status_state() {
-        init().await;
+        let client = init().await.unwrap();
 
         let name = "update-trigger-status-state";
-        let client = Client::try_default().await.unwrap();
         let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
         let pp = PostParams::default();
         let dp = DeleteParams::default();
@@ -1186,12 +1187,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn update_trigger_status_last_run() {
-        init().await;
+        let client = init().await.unwrap();
 
         let name = "update-trigger-status-last-run";
-        let client = Client::try_default().await.unwrap();
         let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
         let pp = PostParams::default();
         let dp = DeleteParams::default();
@@ -1229,12 +1229,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn update_trigger_status_sources() {
-        init().await;
+        let client = init().await.unwrap();
 
         let name = "update-trigger-status-sources";
-        let client = Client::try_default().await.unwrap();
         let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
         let pp = PostParams::default();
         let dp = DeleteParams::default();
@@ -1384,12 +1383,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn update_trigger_status_everything() {
-        init().await;
+        let client = init().await.unwrap();
 
         let name = "update-trigger-status-everything";
-        let client = Client::try_default().await.unwrap();
         let api = Api::<WebhookTrigger>::namespaced(client, TEST_NAMESPACE);
         let pp = PostParams::default();
         let dp = DeleteParams::default();

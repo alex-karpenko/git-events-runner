@@ -4,9 +4,13 @@ pub mod git_repo;
 pub mod trigger;
 
 use crate::{controller::Context, Result};
-use kube::runtime::controller::Action as ReconcileAction;
+use action::{Action, ClusterAction};
+use git_repo::{ClusterGitRepo, GitRepo};
+use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
+use kube::{runtime::controller::Action as ReconcileAction, CustomResourceExt};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use std::sync::Arc;
+use trigger::{ScheduleTrigger, WebhookTrigger};
 
 const API_GROUP: &str = "git-events-runner.rs";
 const CURRENT_API_VERSION: &str = "v1alpha1";
@@ -35,6 +39,18 @@ pub(crate) fn random_string(len: usize) -> String {
         .map(char::from)
         .collect();
     rand
+}
+
+/// Return list with all CRD definitions
+pub fn get_all_crds() -> Vec<CustomResourceDefinition> {
+    vec![
+        GitRepo::crd(),
+        ClusterGitRepo::crd(),
+        ScheduleTrigger::crd(),
+        WebhookTrigger::crd(),
+        Action::crd(),
+        ClusterAction::crd(),
+    ]
 }
 
 #[cfg(test)]

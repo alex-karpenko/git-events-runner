@@ -210,7 +210,8 @@ impl CliConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, env};
+    use super::*;
+    use crate::tests;
 
     use insta::assert_debug_snapshot;
     use k8s_openapi::{api::core::v1::Namespace, ByteString};
@@ -218,25 +219,21 @@ mod tests {
         api::{DeleteParams, ObjectMeta, PostParams},
         Resource as _,
     };
+    use std::{collections::BTreeMap, env};
     use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 
-    use crate::tests;
-
-    use super::*;
-
-    // const TEST_SECRET_NAME: &str = "test-tls-certificates";
     const NAMESPACE: &str = "secret-tls-test";
     const TEST_CERTIFICATES_SECRET_NAME: &str = "test-tls-certificates";
-    const SERVER_CERT_BUNDLE: &str = "/end.crt";
+    const SERVER_CERT_BUNDLE: &str = "/test-server.pem";
+    const SERVER_END_CERT: &str = "/end.crt";
     const SERVER_PRIVATE_KEY: &str = "/test-server.key";
 
     static INITIALIZED: OnceCell<()> = OnceCell::const_new();
 
-    async fn init() {
+    async fn init(client: Client) {
         INITIALIZED
             .get_or_init(|| async {
                 tests::init_crypto_provider().await;
-                let client = Client::try_default().await.unwrap();
                 create_namespace(client).await;
             })
             .await;
@@ -259,24 +256,36 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn tls_config_nothing() {
         tests::init_crypto_provider().await;
+        let client = tests::get_test_kube_client().await.unwrap();
 
         let cli = CliConfig::parse_from::<_, &str>([]);
-        let client = Client::try_default().await.unwrap();
         let config = cli.build_tls_config(client).await.unwrap();
         assert!(config.is_none());
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn tls_config_cert_key() {
-        init().await;
+        let client = tests::get_test_kube_client().await.unwrap();
+        init(client.clone()).await;
 
         let out_dir = env::var("OUT_DIR").unwrap();
-        let cert_path = format!("{out_dir}/{SERVER_CERT_BUNDLE}");
-        let key_path = format!("{out_dir}/{SERVER_PRIVATE_KEY}");
+        let cert_bundle_path = format!("{out_dir}/tls/{SERVER_CERT_BUNDLE}");
+        let cert_path = format!("{out_dir}/tls/{SERVER_END_CERT}");
+        let key_path = format!("{out_dir}/tls/{SERVER_PRIVATE_KEY}");
+
+        let cli = CliConfig::parse_from::<_, &str>([
+            "run",
+            "--tls-cert-path",
+            cert_bundle_path.as_str(),
+            "--tls-key-path",
+            key_path.as_str(),
+        ]);
+        let config = cli.build_tls_config(client.clone()).await.unwrap();
+        assert!(config.is_some());
 
         let cli = CliConfig::parse_from::<_, &str>([
             "run",
@@ -285,19 +294,20 @@ mod tests {
             "--tls-key-path",
             key_path.as_str(),
         ]);
-        let client = Client::try_default().await.unwrap();
         let config = cli.build_tls_config(client).await.unwrap();
         assert!(config.is_some());
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn tls_config_secret() {
-        init().await;
+        let client = tests::get_test_kube_client().await.unwrap();
+        init(client.clone()).await;
 
         let out_dir = env::var("OUT_DIR").unwrap();
-        let cert_path = format!("{out_dir}/{SERVER_CERT_BUNDLE}");
-        let key_path = format!("{out_dir}/{SERVER_PRIVATE_KEY}");
+        let cert_bundle_path = format!("{out_dir}/tls/{SERVER_CERT_BUNDLE}");
+        let cert_path = format!("{out_dir}/tls/{SERVER_END_CERT}");
+        let key_path = format!("{out_dir}/tls/{SERVER_PRIVATE_KEY}");
 
         let cli = CliConfig::parse_from::<_, &str>([
             "run",
@@ -306,7 +316,6 @@ mod tests {
             "--tls-secret-namespace",
             NAMESPACE,
         ]);
-        let client = Client::try_default().await.unwrap();
         let secret_api: Api<Secret> = Api::namespaced(client.clone(), NAMESPACE);
 
         // Delete possible leftovers from the previous run
@@ -314,9 +323,10 @@ mod tests {
             .delete(TEST_CERTIFICATES_SECRET_NAME, &DeleteParams::default())
             .await;
 
+        // Test with bundle
         let mut cert = vec![];
         let mut key = vec![];
-        File::open(cert_path)
+        File::open(cert_bundle_path)
             .await
             .unwrap()
             .read_to_end(&mut cert)
@@ -326,6 +336,41 @@ mod tests {
 
         let cert: ByteString = ByteString(cert);
         let key: ByteString = ByteString(key);
+
+        let secret = Secret {
+            type_: Some("kubernetes.io/tls".to_string()),
+            metadata: ObjectMeta {
+                name: Some(TEST_CERTIFICATES_SECRET_NAME.to_string()),
+                namespace: Some(NAMESPACE.to_string()),
+                ..ObjectMeta::default()
+            },
+            data: Some(BTreeMap::from([
+                ("tls.crt".to_string(), cert),
+                ("tls.key".to_string(), key.clone()),
+            ])),
+            ..Secret::default()
+        };
+
+        secret_api.create(&PostParams::default(), &secret).await.unwrap();
+
+        let config = cli.build_tls_config(client.clone()).await.unwrap();
+        assert!(config.is_some());
+
+        secret_api
+            .delete(TEST_CERTIFICATES_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
+
+        // Test end certificate
+        let mut cert = vec![];
+        File::open(cert_path)
+            .await
+            .unwrap()
+            .read_to_end(&mut cert)
+            .await
+            .unwrap();
+
+        let cert: ByteString = ByteString(cert);
 
         let secret = Secret {
             type_: Some("kubernetes.io/tls".to_string()),

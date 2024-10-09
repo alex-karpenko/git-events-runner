@@ -541,14 +541,16 @@ mod tests {
 
     static INITIALIZED: OnceCell<()> = OnceCell::const_new();
 
-    async fn init() {
+    async fn init() -> anyhow::Result<Client> {
         INITIALIZED
             .get_or_init(|| async {
                 tests::init_crypto_provider().await;
-                let client = Client::try_default().await.unwrap();
+                let client = tests::get_test_kube_client().await.unwrap();
                 create_namespace(client).await;
             })
             .await;
+
+        tests::get_test_kube_client().await
     }
 
     fn default_action(name: impl Into<String>, namespace: impl Into<String>) -> Action {
@@ -693,10 +695,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn default_action_job() {
-        init().await;
-        let client = Client::try_default().await.unwrap();
+        let client = init().await.unwrap();
         let api = Api::<Action>::namespaced(client, TEST_ACTION_NAMESPACE);
         let pp = PostParams::default();
         let dp = DeleteParams::default();
@@ -744,10 +745,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn customized_action_job() {
-        init().await;
-        let client = Client::try_default().await.unwrap();
+        let client = init().await.unwrap();
         let api = Api::<Action>::namespaced(client, TEST_ACTION_NAMESPACE);
         let pp = PostParams::default();
         let dp = DeleteParams::default();
@@ -795,10 +795,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn default_cluster_action_job() {
-        init().await;
-        let client = Client::try_default().await.unwrap();
+        let client = init().await.unwrap();
         let api = Api::<ClusterAction>::all(client);
         let pp = PostParams::default();
         let dp = DeleteParams::default();
@@ -845,10 +844,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn customized_cluster_action_job() {
-        init().await;
-        let client = Client::try_default().await.unwrap();
+        let client = init().await.unwrap();
         let api = Api::<ClusterAction>::all(client);
         let pp = PostParams::default();
         let dp = DeleteParams::default();

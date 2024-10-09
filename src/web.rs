@@ -722,17 +722,19 @@ mod tests {
     const SECRET_NAME: &str = "webhook-triggers-auth-secret";
     const SECRET_TOKEN: &str = "0123456789";
 
-    async fn init() -> WebState {
+    async fn init_web_state() -> anyhow::Result<WebState> {
+        tests::init_crypto_provider().await;
+
         INITIALIZED
-            .get_or_init(|| async {
-                tests::init_crypto_provider().await;
-                let client = Client::try_default().await.unwrap();
+            .get_or_init(|| async move {
+                let client = tests::get_test_kube_client().await.unwrap();
                 create_namespace(client.clone()).await;
-                create_secret(client.clone()).await;
+                create_secret(client).await;
             })
             .await;
 
-        get_test_web_state().await
+        let client = tests::get_test_kube_client().await?;
+        Ok(get_test_web_state(client).await)
     }
 
     /// Unattended namespace creation
@@ -762,8 +764,7 @@ mod tests {
     }
 
     /// Create the simplest test web state
-    async fn get_test_web_state() -> WebState {
-        let client = Client::try_default().await.unwrap();
+    async fn get_test_web_state(client: Client) -> WebState {
         let scheduler = Arc::new(RwLock::new(Scheduler::default()));
 
         WebState {
@@ -804,9 +805,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn nonexistent_post_trigger_webhook() {
-        let state = init().await;
+        let state = init_web_state().await.unwrap();
 
         let res = handle_post_trigger_webhook(
             State(state),
@@ -819,9 +820,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn nonexistent_post_source_webhook() {
-        let state = init().await;
+        let state = init_web_state().await.unwrap();
 
         let res = handle_post_source_webhook(
             State(state),
@@ -838,9 +839,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn good_multi_source_trigger_webhook_all_sources() {
-        let state = init().await;
+        let state = init_web_state().await.unwrap();
 
         let trigger_name = "multi-source-trigger-all-sources";
         let source_name = "source-name";
@@ -871,9 +872,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn good_single_source_trigger_webhook_with_all_sources_request() {
-        let state = init().await;
+        let state = init_web_state().await.unwrap();
 
         let trigger_name = "single-source-trigger-all-sources-request";
         let source_name = "source-name";
@@ -901,9 +902,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn good_multi_source_trigger_webhook_single_source() {
-        let state = init().await;
+        let state = init_web_state().await.unwrap();
 
         let trigger_name = "multi-source-trigger-single-source";
         let source_name = "source-name";
@@ -934,9 +935,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn good_multi_source_trigger_webhook_wrong_single_source() {
-        let state = init().await;
+        let state = init_web_state().await.unwrap();
 
         let trigger_name = "multi-source-trigger-wrong-single-source";
         let source_name = "source-name";
@@ -964,9 +965,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn good_multi_source_trigger_webhook_with_good_auth() {
-        let state = init().await;
+        let state = init_web_state().await.unwrap();
 
         let trigger_name = "multi-source-trigger-with-good-auth";
         let source_name = "source-name";
@@ -1002,9 +1003,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn good_multi_source_trigger_webhook_with_wrong_auth() {
-        let state = init().await;
+        let state = init_web_state().await.unwrap();
 
         let trigger_name = "multi-source-trigger-with-wrong-auth";
         let source_name = "source-name";

@@ -412,3 +412,558 @@ async fn get_secret_strings<'a>(
 
     Ok(secrets)
 }
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+mod test {
+    use super::*;
+    use crate::tests;
+    use base64::{prelude::BASE64_STANDARD, Engine as _};
+    use k8s_openapi::{api::core::v1::Secret, ByteString};
+    use kube::api::{Api, DeleteParams, ObjectMeta, PostParams};
+    use rstest::*;
+    use rstest_reuse::{apply, template};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        env,
+    };
+
+    const TEST_PUBLIC_REPO_PATH: &str = "gitea-admin/test-1.git";
+    // const TEST_PRIVATE_REPO_PATH: &str = "gitea-admin/test-2.git";
+
+    async fn ensure_secret(client: Client, name: &str, data: BTreeMap<String, String>, ns: &str) -> anyhow::Result<()> {
+        let secret_api: Api<Secret> = Api::namespaced(client, ns);
+        let secret = Secret {
+            metadata: ObjectMeta {
+                name: Some(name.to_owned()),
+                ..Default::default()
+            },
+            data: Some(data.into_iter().map(|(k, v)| (k, ByteString(v.into()))).collect()),
+            ..Default::default()
+        };
+
+        let _ = secret_api.delete(name, &DeleteParams::default()).await;
+        secret_api.create(&PostParams::default(), &secret).await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn get_secret_strings_with_data() {
+        const TEST_SECRET_NAME: &str = "test-secret-get-secret-strings-with-data";
+        const TEST_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+        let secret_api: Api<Secret> = Api::namespaced(client.clone(), TEST_NAMESPACE);
+
+        let secret_keys = [
+            (&String::from("u"), String::from("username")),
+            (&String::from("p"), String::from("password")),
+        ];
+        let secret_keys: HashMap<&String, String> = HashMap::from(secret_keys);
+
+        let secret_data = BTreeMap::from([
+            (String::from("u"), String::from("user")),
+            (String::from("p"), String::from("pass")),
+        ]);
+
+        ensure_secret(client.clone(), TEST_SECRET_NAME, secret_data, TEST_NAMESPACE)
+            .await
+            .unwrap();
+
+        let secrets = get_secret_strings(client.clone(), &TEST_SECRET_NAME.into(), secret_keys, TEST_NAMESPACE)
+            .await
+            .unwrap();
+
+        assert_eq!(secrets["username"], "user");
+        assert_eq!(secrets["password"], "pass");
+
+        secret_api
+            .delete(TEST_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn get_secret_strings_wrong_keys() {
+        const TEST_SECRET_NAME: &str = "test-secret-get-secret-strings-wrong-keys";
+        const TEST_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+        let secret_api: Api<Secret> = Api::namespaced(client.clone(), TEST_NAMESPACE);
+
+        let secret_data = BTreeMap::from([
+            (String::from("u"), String::from("user")),
+            (String::from("p"), String::from("pass")),
+        ]);
+
+        ensure_secret(client.clone(), TEST_SECRET_NAME, secret_data, TEST_NAMESPACE)
+            .await
+            .unwrap();
+
+        let secret_keys = [(&String::from("qqq"), String::from("www"))];
+        let secret_keys: HashMap<&String, String> = HashMap::from(secret_keys);
+        let secrets = get_secret_strings(client, &TEST_SECRET_NAME.into(), secret_keys, TEST_NAMESPACE).await;
+
+        assert!(secrets.is_err());
+        let err = secrets.unwrap_err();
+        assert!(err.to_string().contains("no `qqq` key in the secret"));
+        assert!(matches!(err, Error::SecretDecodingError(_)));
+
+        secret_api
+            .delete(TEST_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn get_secret_strings_no_data() {
+        const TEST_SECRET_NAME: &str = "test-secret-get-secret-strings-no-data";
+        const TEST_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+        let secret_api: Api<Secret> = Api::namespaced(client.clone(), TEST_NAMESPACE);
+
+        let secret_keys = [
+            (&String::from("u"), String::from("username")),
+            (&String::from("p"), String::from("password")),
+        ];
+        let secret_keys: HashMap<&String, String> = HashMap::from(secret_keys);
+
+        ensure_secret(client.clone(), TEST_SECRET_NAME, BTreeMap::new(), TEST_NAMESPACE)
+            .await
+            .unwrap();
+
+        let secrets = get_secret_strings(client.clone(), &TEST_SECRET_NAME.into(), secret_keys, TEST_NAMESPACE).await;
+
+        assert!(secrets.is_err());
+        let err = secrets.unwrap_err();
+        assert!(err.to_string().contains("no `data` part in the secret"));
+        assert!(matches!(err, Error::SecretDecodingError(_)));
+
+        secret_api
+            .delete(TEST_SECRET_NAME, &DeleteParams::default())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn get_secret_strings_no_secret() {
+        const TEST_SECRET_NAME: &str = "test-secret-get-secret-strings-no-secret";
+        const TEST_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+
+        let secret_keys = [
+            (&String::from("u"), String::from("username")),
+            (&String::from("p"), String::from("password")),
+        ];
+        let secret_keys: HashMap<&String, String> = HashMap::from(secret_keys);
+
+        let secrets = get_secret_strings(client, &TEST_SECRET_NAME.into(), secret_keys, TEST_NAMESPACE).await;
+
+        assert!(secrets.is_err());
+        let err = secrets.unwrap_err();
+        assert!(err.to_string().contains("not found"));
+        assert!(matches!(err, Error::KubeError(_)));
+    }
+
+    /// Kind: GitRepo, ClusterGitRepo
+    ///
+    /// Visibility: public, private
+    /// Schema: https, ssh
+    /// TLS: no verify, verify, verify with CA
+    /// Auth: none, basic, ssh, token (just use "Basic b64e(username:password"))
+    /// Branch/tag: main, v1, unknown
+    /// Secret ns: default, non-exiting
+
+    enum TestTlsConfigOld {
+        Ignore,
+        Verify,
+        VerifyWithCa(String, String), // Secret namespace + name
+    }
+
+    enum TestRepoVisibility {
+        Public,
+        Private,
+    }
+
+    enum TestRepoUriSchema {
+        Https,
+        Git,
+        Ssh,
+    }
+
+    enum TestTlsConfig {
+        Ignore,
+        Verify,
+        VerifyWithCa,
+    }
+
+    enum TestAuthConfig {
+        None,
+        Basic,
+        Token,
+        Ssh,
+    }
+
+    struct TestGitRepoBuilder {
+        name: String,
+        repo_uri: String,
+        tls_config: Option<TlsConfig>,
+        auth_config: Option<GitAuthConfig>,
+    }
+
+    impl TestGitRepoBuilder {
+        async fn build(
+            client: Client,
+            name: impl Into<String>,
+            type_: TestRepoVisibility,
+            schema: TestRepoUriSchema,
+            tls: TestTlsConfig,
+            auth: TestAuthConfig,
+            ns: Option<String>,
+        ) -> Self {
+            const TEST_PUBLIC_REPO_PATH: &str = "gitea-admin/test-1.git";
+            const TEST_PRIVATE_REPO_PATH: &str = "gitea-admin/test-2.git";
+            const TEST_SECRET_PREFIX: &str = "git-repo-test-secret";
+            const TEST_GIT_USERNAME: &str = "gitea-admin";
+            const TEST_GIT_PASSWORD: &str = "gitea-admin";
+
+            let name = name.into();
+            let hostname = tests::get_test_git_hostname().await.unwrap();
+            let secrets_ns = ns.clone().unwrap_or("default".into());
+            let tls_secret_name = format!("{TEST_SECRET_PREFIX}-{name}-tls");
+            let auth_secret_name = format!("{TEST_SECRET_PREFIX}-{name}-auth");
+            let out_dir =
+                env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
+            let ca_path = format!("{out_dir}/tls/ca.pem");
+            let ssh_key_path = format!("{out_dir}/ssh/test-key-rsa");
+
+            let repo_path = match type_ {
+                TestRepoVisibility::Public => TEST_PUBLIC_REPO_PATH,
+                TestRepoVisibility::Private => TEST_PRIVATE_REPO_PATH,
+            };
+
+            let repo_uri = match schema {
+                TestRepoUriSchema::Https => format!("https://{hostname}/{}", repo_path),
+                TestRepoUriSchema::Ssh => format!("ssh://{hostname}/{}", repo_path),
+                TestRepoUriSchema::Git => format!("git@{hostname}:{}", repo_path),
+            };
+
+            let tls_config = match tls {
+                TestTlsConfig::Ignore => Some(TlsConfig {
+                    no_verify_ssl: true,
+                    ..Default::default()
+                }),
+                TestTlsConfig::Verify => Some(TlsConfig {
+                    no_verify_ssl: false,
+                    ..Default::default()
+                }),
+                TestTlsConfig::VerifyWithCa => {
+                    Self::load_files_to_secret(client.clone(), &[ca_path], &["ca.crt"], &tls_secret_name, &secrets_ns)
+                        .await
+                        .unwrap();
+                    Some(TlsConfig {
+                        no_verify_ssl: false,
+                        ca_cert: Some(TlsCaConfig {
+                            key: "ca.crt".into(),
+                            secret_ref: SecretRef {
+                                name: tls_secret_name,
+                                namespace: ns.clone(),
+                            },
+                        }),
+                    })
+                }
+            };
+
+            let auth_config = match auth {
+                TestAuthConfig::None => None,
+                TestAuthConfig::Basic => {
+                    let data = BTreeMap::from([
+                        ("username".into(), TEST_GIT_USERNAME.into()),
+                        ("password".into(), TEST_GIT_PASSWORD.into()),
+                    ]);
+                    ensure_secret(client.clone(), &auth_secret_name, data, &secrets_ns)
+                        .await
+                        .unwrap();
+                    Some(GitAuthConfig {
+                        auth_type: GitAuthType::Basic,
+                        secret_ref: SecretRef {
+                            name: auth_secret_name,
+                            namespace: ns,
+                        },
+                        keys: GitAuthSecretKeys::default(),
+                    })
+                }
+                TestAuthConfig::Token => {
+                    let basic_token = BASE64_STANDARD.encode(format!("{TEST_GIT_USERNAME}:{TEST_GIT_PASSWORD}"));
+                    let basic_token = format!("Basic {basic_token}");
+                    let data = BTreeMap::from([("token".into(), basic_token)]);
+                    ensure_secret(client.clone(), &auth_secret_name, data, &secrets_ns)
+                        .await
+                        .unwrap();
+
+                    Some(GitAuthConfig {
+                        auth_type: GitAuthType::Token,
+                        secret_ref: SecretRef {
+                            name: auth_secret_name,
+                            namespace: ns,
+                        },
+                        keys: GitAuthSecretKeys::default(),
+                    })
+                }
+                TestAuthConfig::Ssh => {
+                    Self::load_files_to_secret(
+                        client.clone(),
+                        &[ssh_key_path],
+                        &["ssh-privatekey"],
+                        &auth_secret_name,
+                        &secrets_ns,
+                    )
+                    .await
+                    .unwrap();
+                    Some(GitAuthConfig {
+                        auth_type: GitAuthType::Ssh,
+                        secret_ref: SecretRef {
+                            name: auth_secret_name,
+                            namespace: ns,
+                        },
+                        keys: GitAuthSecretKeys::default(),
+                    })
+                }
+            };
+
+            Self {
+                name,
+                repo_uri,
+                tls_config,
+                auth_config,
+            }
+        }
+
+        async fn load_files_to_secret(
+            client: Client,
+            files: &[String],
+            keys: &[&str],
+            secret_name: &str,
+            ns: &str,
+        ) -> anyhow::Result<()> {
+            let data = files
+                .iter()
+                .zip(keys.iter())
+                .map(|(file, key)| (key.to_string(), std::fs::read_to_string(file).unwrap()))
+                .collect::<BTreeMap<_, _>>();
+
+            ensure_secret(client, secret_name, data, ns).await
+        }
+    }
+
+    impl From<TestGitRepoBuilder> for GitRepo {
+        fn from(value: TestGitRepoBuilder) -> Self {
+            let spec = GitRepoSpec {
+                repo_uri: value.repo_uri,
+                auth_config: value.auth_config,
+                tls_config: value.tls_config,
+            };
+
+            GitRepo::new(value.name.as_str(), spec)
+        }
+    }
+
+    impl From<TestGitRepoBuilder> for ClusterGitRepo {
+        fn from(value: TestGitRepoBuilder) -> Self {
+            let spec = ClusterGitRepoSpec {
+                repo_uri: value.repo_uri,
+                auth_config: value.auth_config,
+                tls_config: value.tls_config,
+            };
+
+            ClusterGitRepo::new(value.name.as_str(), spec)
+        }
+    }
+
+    enum Expected {
+        Ok,
+        Err,
+    }
+
+    #[template]
+    #[rstest]
+    #[case(
+        "public-https-no-verify-main",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Https,
+        TestTlsConfig::Ignore,
+        TestAuthConfig::None,
+        "main",
+        "default",
+        Expected::Ok
+    )]
+    #[case(
+        "public-https-verify-main",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Https,
+        TestTlsConfig::Verify,
+        TestAuthConfig::None,
+        "main",
+        "default",
+        Expected::Err
+    )]
+    #[case(
+        "public-https-verify-ca-main",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Https,
+        TestTlsConfig::VerifyWithCa,
+        TestAuthConfig::None,
+        "main",
+        "default",
+        Expected::Ok
+    )]
+    #[case(
+        "private-https-verify-ca-main-anon",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Https,
+        TestTlsConfig::VerifyWithCa,
+        TestAuthConfig::None,
+        "main",
+        "default",
+        Expected::Err
+    )]
+    #[case(
+        "private-https-verify-ca-main-basic",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Https,
+        TestTlsConfig::VerifyWithCa,
+        TestAuthConfig::Basic,
+        "main",
+        "default",
+        Expected::Ok
+    )]
+    #[case(
+        "private-https-verify-ca-main-token",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Https,
+        TestTlsConfig::VerifyWithCa,
+        TestAuthConfig::Token,
+        "main",
+        "default",
+        Expected::Ok
+    )]
+    #[tokio::test]
+    #[ignore = "needs docker"]
+    async fn test_git_repo_fetch_ref_template(
+        #[case] name: impl Into<String>,
+        #[case] visibility: TestRepoVisibility,
+        #[case] schema: TestRepoUriSchema,
+        #[case] tls: TestTlsConfig,
+        #[case] auth: TestAuthConfig,
+        #[case] ref_name: impl Into<String>,
+        #[case] ns: impl Into<String>,
+        #[case] expected: Expected,
+    ) {
+    }
+
+    #[apply(test_git_repo_fetch_ref_template)]
+    async fn test_git_repo_fetch_ref(
+        #[case] name: impl Into<String>,
+        #[case] visibility: TestRepoVisibility,
+        #[case] schema: TestRepoUriSchema,
+        #[case] tls: TestTlsConfig,
+        #[case] auth: TestAuthConfig,
+        #[case] ref_name: impl Into<String>,
+        #[case] ns: impl Into<String>,
+        #[case] expected: Expected,
+    ) {
+        const SECRETS_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+        let ref_name = ref_name.into();
+        let ns = ns.into();
+        let name: String = name.into();
+
+        let repo = TestGitRepoBuilder::build(
+            client.clone(),
+            format!("git-repo-{}", name),
+            visibility,
+            schema,
+            tls,
+            auth,
+            Some(SECRETS_NAMESPACE.into()),
+        )
+        .await;
+
+        let repo: GitRepo = repo.into();
+        let path = tempfile::tempdir().unwrap();
+        let path = String::from(path.path().to_str().unwrap());
+
+        let repo = repo.fetch_repo_ref(client.clone(), &ref_name, &path, &ns).await;
+
+        if repo.is_err() {
+            eprintln!("test: {name}, err={}", repo.as_ref().err().unwrap());
+        }
+
+        match expected {
+            Expected::Ok => {
+                assert!(repo.is_ok(), "Failed test name: {}", name);
+            }
+            Expected::Err => {
+                assert!(repo.is_err(), "Failed test name: {}", name);
+            }
+        }
+    }
+
+    #[apply(test_git_repo_fetch_ref_template)]
+    async fn test_cluster_git_repo_fetch_ref(
+        #[case] name: impl Into<String>,
+        #[case] visibility: TestRepoVisibility,
+        #[case] schema: TestRepoUriSchema,
+        #[case] tls: TestTlsConfig,
+        #[case] auth: TestAuthConfig,
+        #[case] ref_name: impl Into<String>,
+        #[case] ns: impl Into<String>,
+        #[case] expected: Expected,
+    ) {
+        const SECRETS_NAMESPACE: &str = "default";
+
+        let client = tests::get_test_kube_client().await.unwrap();
+        let ref_name = ref_name.into();
+        let ns = ns.into();
+        let name: String = name.into();
+
+        let repo = TestGitRepoBuilder::build(
+            client.clone(),
+            format!("cluster-git-repo-{}", name),
+            visibility,
+            schema,
+            tls,
+            auth,
+            Some(SECRETS_NAMESPACE.into()),
+        )
+        .await;
+
+        let repo: ClusterGitRepo = repo.into();
+        let path = tempfile::tempdir().unwrap();
+        let path = String::from(path.path().to_str().unwrap());
+
+        let repo = repo.fetch_repo_ref(client.clone(), &ref_name, &path, &ns).await;
+
+        if repo.is_err() {
+            eprintln!("test: {name}, err={}", repo.as_ref().err().unwrap());
+        }
+
+        match expected {
+            Expected::Ok => {
+                assert!(repo.is_ok(), "Failed test name: {}", name);
+            }
+            Expected::Err => {
+                assert!(repo.is_err(), "Failed test name: {}", name);
+            }
+        }
+    }
+}
