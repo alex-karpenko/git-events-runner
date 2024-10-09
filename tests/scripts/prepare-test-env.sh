@@ -7,6 +7,7 @@
 prefix="${1}"
 basedir=$(dirname ${0})
 gitea_bare_dir=$(realpath ${basedir}/../gitea/bare)
+gitea_ssh_dir=$(realpath ${basedir}/../gitea/ssh)
 
 if [[ -z "${prefix}" ]]; then
     prefix="tests/"
@@ -30,7 +31,7 @@ openssl x509 -req -sha256 -days 2000 -set_serial 456 -extensions v3_end -extfile
              -CA ${prefix}inter.crt -CAkey ${prefix}inter.key -in ${prefix}end.req -out ${prefix}end.crt
 
 rm -rf ${prefix}tls ${prefix}gitea-runtime
-mkdir -p ${prefix}tls ${prefix}gitea-runtime ${prefix}gitea-runtime/config/ssl
+mkdir -p ${prefix}tls ${prefix}ssh ${prefix}gitea-runtime ${prefix}gitea-runtime/config/ssl
 
 cat ${prefix}end.crt ${prefix}inter.crt > ${prefix}tls/test-server.pem
 cat ${prefix}inter.crt ${prefix}ca.crt > ${prefix}tls/ca.pem
@@ -40,6 +41,7 @@ cp ${prefix}end.crt ${prefix}tls/
 rm ${prefix}*.req ${prefix}*.crt ${prefix}*.key
 
 cp -R ${gitea_bare_dir}/* ${prefix}gitea-runtime/
+cp ${gitea_ssh_dir}/* ${prefix}ssh/
 cp ${prefix}tls/test-server.* ${prefix}gitea-runtime/config/ssl
 
 if [[ ${CI} == "true" ]]; then
