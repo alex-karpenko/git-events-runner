@@ -202,6 +202,16 @@ impl CustomApiResource for ClusterGitRepo {
 impl GitRepoGetter for GitRepo {}
 impl GitRepoGetter for ClusterGitRepo {}
 
+/// Represents type of the URI schema
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum GitRepoUriSchema {
+    Http,
+    Https,
+    Ssh,
+    Git,
+}
+
 /// Getter trait to implement shared behavior: it's able to get content (clone) of repo's particular reference
 #[allow(private_bounds, async_fn_in_trait)]
 pub trait GitRepoGetter: GitRepoInternals {
@@ -276,85 +286,98 @@ pub trait GitRepoGetter: GitRepoInternals {
                 GitAuthType::Ssh => {
                     callbacks.credentials(move |_url, username_from_url, _allowed_types| {
                         Cred::ssh_key_from_memory(
-                            username_from_url.unwrap_or(""),
+                            username_from_url.unwrap_or("git"),
                             None,
                             auth_secrets["private_key"].clone().as_str(),
-                            None, // TODO: add support of keys with password
+                            None,
                         )
                     });
                 }
             }
         }
 
-        if let Some(tls_config) = self.tls_config() {
-            debug!(no_verify_ssl = %tls_config.no_verify_ssl, "certificate check callback");
-            if tls_config.no_verify_ssl {
-                // ignore ca verification - lets consider it as valid
+        match self.uri_schema() {
+            GitRepoUriSchema::Http => {}
+            GitRepoUriSchema::Ssh | GitRepoUriSchema::Git => {
                 callbacks.certificate_check(move |_cert, _hostname| Ok(CertificateCheckStatus::CertificateOk));
-            } else if tls_config.ca_cert.is_some() {
-                // if we have our own CA specified:
-                // create root CA store from system one and add our CA to it
-                let mut ca = tls_secrets.get("ca.crt").unwrap().as_bytes();
-                let ca = rustls_pemfile::certs(&mut ca).flatten();
-                // TODO: make system trust store global
-                let mut root_cert_store = RootCertStore::empty();
-                root_cert_store.add_parsable_certificates(
-                    rustls_native_certs::load_native_certs() // TODO: Use Mozilla bundle
-                        .expect("could not load platform certs"),
-                );
-                root_cert_store.add_parsable_certificates(ca);
-                let root_cert_store = Arc::new(root_cert_store);
-                callbacks.certificate_check(move |cert, hostname| {
-                    let cert_verifier =
-                        WebPkiServerVerifier::builder(root_cert_store.clone())
-                            .build()
-                            .map_err(|_| {
+            }
+            GitRepoUriSchema::Https => {
+                if let Some(tls_config) = self.tls_config() {
+                    debug!(no_verify_ssl = %tls_config.no_verify_ssl, "certificate check callback");
+                    if tls_config.no_verify_ssl {
+                        // ignore ca verification - lets consider it as valid
+                        callbacks.certificate_check(move |_cert, _hostname| Ok(CertificateCheckStatus::CertificateOk));
+                    } else if tls_config.ca_cert.is_some() {
+                        // if we have our own CA specified:
+                        // create root CA store from system one and add our CA to it
+                        let mut ca = tls_secrets.get("ca.crt").unwrap().as_bytes();
+                        let ca = rustls_pemfile::certs(&mut ca).flatten();
+                        // TODO: make system trust store global
+                        let mut root_cert_store = RootCertStore::empty();
+                        root_cert_store.add_parsable_certificates(
+                            rustls_native_certs::load_native_certs() // TODO: Use Mozilla bundle
+                                .expect("could not load platform certs"),
+                        );
+                        root_cert_store.add_parsable_certificates(ca);
+                        let root_cert_store = Arc::new(root_cert_store);
+                        callbacks.certificate_check(move |cert, hostname| {
+                            let cert_verifier = WebPkiServerVerifier::builder(root_cert_store.clone())
+                                .build()
+                                .map_err(|_| {
+                                    git2::Error::new(
+                                        git2::ErrorCode::Certificate,
+                                        git2::ErrorClass::Callback,
+                                        "unable to build root CA store",
+                                    )
+                                })?;
+
+                            let end_entity = {
+                                if let Some(cert) = cert.as_x509() {
+                                    CertificateDer::from(cert.data())
+                                } else {
+                                    return Err(git2::Error::new(
+                                        git2::ErrorCode::Certificate,
+                                        git2::ErrorClass::Callback,
+                                        "unable to parse x509 certificate data",
+                                    ));
+                                }
+                            };
+                            let hostname = ServerName::try_from(hostname).map_err(|_| {
                                 git2::Error::new(
                                     git2::ErrorCode::Certificate,
                                     git2::ErrorClass::Callback,
-                                    "unable to build root CA store",
+                                    "unable to get server name",
                                 )
                             })?;
 
-                    let end_entity = {
-                        if let Some(cert) = cert.as_x509() {
-                            CertificateDer::from(cert.data())
-                        } else {
-                            return Err(git2::Error::new(
-                                git2::ErrorCode::Certificate,
-                                git2::ErrorClass::Callback,
-                                "unable to parse x509 certificate data",
-                            ));
-                        }
-                    };
-                    let hostname = ServerName::try_from(hostname).map_err(|_| {
-                        git2::Error::new(
-                            git2::ErrorCode::Certificate,
-                            git2::ErrorClass::Callback,
-                            "unable to get server name",
-                        )
-                    })?;
-
-                    // verify server's c ert against just create trust store
-                    let result = cert_verifier.verify_server_cert(&end_entity, &[], &hostname, &[], UnixTime::now());
-                    match result {
-                        // if everything verified - return ok
-                        Ok(_) => Ok(CertificateCheckStatus::CertificateOk),
-                        Err(err) => {
-                            warn!(error = %err, "verifying server certificate with custom CA");
-                            // if not - pass responsibility to usual verification method
-                            Ok(CertificateCheckStatus::CertificatePassthrough)
-                        }
+                            // verify server's c ert against just create trust store
+                            let result =
+                                cert_verifier.verify_server_cert(&end_entity, &[], &hostname, &[], UnixTime::now());
+                            match result {
+                                // if everything verified - return ok
+                                Ok(_) => Ok(CertificateCheckStatus::CertificateOk),
+                                Err(err) => {
+                                    warn!(error = %err, "verifying server certificate with custom CA");
+                                    // if not - pass responsibility to usual verification method
+                                    Ok(CertificateCheckStatus::CertificatePassthrough)
+                                }
+                            }
+                        });
+                    } else {
+                        // no custom CA - let's verify cert in a usual way
+                        callbacks.certificate_check(move |_, _| Ok(CertificateCheckStatus::CertificatePassthrough));
                     }
-                });
-            } else {
-                // no custom CA - let's verify cert in a usual way
-                callbacks.certificate_check(move |_, _| Ok(CertificateCheckStatus::CertificatePassthrough));
+                }
             }
         }
 
         fetch_opt.remote_callbacks(callbacks);
-        fetch_opt.depth(1); // don't clone whole repo, just single ref we need
+        let depth = match self.uri_schema() {
+            GitRepoUriSchema::Http | GitRepoUriSchema::Https => 1,
+            GitRepoUriSchema::Ssh | GitRepoUriSchema::Git => 0,
+        };
+        fetch_opt.depth(depth);
+
         init_opts.origin_url(self.repo_uri());
 
         let repo = Repository::init_opts(path, &init_opts).map_err(Error::GitrepoAccessError)?;
@@ -366,6 +389,21 @@ pub trait GitRepoGetter: GitRepoInternals {
         }
 
         Ok(repo)
+    }
+
+    /// Parse repo URI and return its schema type
+    fn uri_schema(&self) -> GitRepoUriSchema {
+        if self.repo_uri().starts_with("http://") {
+            GitRepoUriSchema::Http
+        } else if self.repo_uri().starts_with("https://") {
+            GitRepoUriSchema::Https
+        } else if self.repo_uri().starts_with("ssh://") {
+            GitRepoUriSchema::Ssh
+        } else if self.repo_uri().starts_with("git@") {
+            GitRepoUriSchema::Git
+        } else {
+            panic!("Unknown URI schema");
+        }
     }
 }
 
@@ -428,9 +466,6 @@ mod test {
         collections::{BTreeMap, HashMap},
         env,
     };
-
-    const TEST_PUBLIC_REPO_PATH: &str = "gitea-admin/test-1.git";
-    // const TEST_PRIVATE_REPO_PATH: &str = "gitea-admin/test-2.git";
 
     async fn ensure_secret(client: Client, name: &str, data: BTreeMap<String, String>, ns: &str) -> anyhow::Result<()> {
         let secret_api: Api<Secret> = Api::namespaced(client, ns);
@@ -582,12 +617,6 @@ mod test {
     /// Branch/tag: main, v1, unknown
     /// Secret ns: default, non-exiting
 
-    enum TestTlsConfigOld {
-        Ignore,
-        Verify,
-        VerifyWithCa(String, String), // Secret namespace + name
-    }
-
     enum TestRepoVisibility {
         Public,
         Private,
@@ -600,6 +629,7 @@ mod test {
     }
 
     enum TestTlsConfig {
+        None,
         Ignore,
         Verify,
         VerifyWithCa,
@@ -612,6 +642,7 @@ mod test {
         Ssh,
     }
 
+    #[derive(Debug, Clone)]
     struct TestGitRepoBuilder {
         name: String,
         repo_uri: String,
@@ -652,11 +683,12 @@ mod test {
 
             let repo_uri = match schema {
                 TestRepoUriSchema::Https => format!("https://{hostname}/{}", repo_path),
-                TestRepoUriSchema::Ssh => format!("ssh://{hostname}/{}", repo_path),
+                TestRepoUriSchema::Ssh => format!("ssh://git@{hostname}/{}", repo_path),
                 TestRepoUriSchema::Git => format!("git@{hostname}:{}", repo_path),
             };
 
             let tls_config = match tls {
+                TestTlsConfig::None => None,
                 TestTlsConfig::Ignore => Some(TlsConfig {
                     no_verify_ssl: true,
                     ..Default::default()
@@ -788,6 +820,7 @@ mod test {
         }
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
     enum Expected {
         Ok,
         Err,
@@ -795,7 +828,7 @@ mod test {
 
     #[template]
     #[rstest]
-    #[case(
+    #[case( // 01
         "public-https-no-verify-main",
         TestRepoVisibility::Public,
         TestRepoUriSchema::Https,
@@ -805,7 +838,7 @@ mod test {
         "default",
         Expected::Ok
     )]
-    #[case(
+    #[case( // 02
         "public-https-verify-main",
         TestRepoVisibility::Public,
         TestRepoUriSchema::Https,
@@ -815,7 +848,7 @@ mod test {
         "default",
         Expected::Err
     )]
-    #[case(
+    #[case( // 03
         "public-https-verify-ca-main",
         TestRepoVisibility::Public,
         TestRepoUriSchema::Https,
@@ -825,7 +858,47 @@ mod test {
         "default",
         Expected::Ok
     )]
-    #[case(
+    #[case( // 04
+        "public-ssh-main-anon",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Ssh,
+        TestTlsConfig::None,
+        TestAuthConfig::None,
+        "main",
+        "default",
+        Expected::Err
+    )]
+    #[case( // 05
+        "public-git-main-anon",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Git,
+        TestTlsConfig::None,
+        TestAuthConfig::None,
+        "main",
+        "default",
+        Expected::Err
+    )]
+    #[case( // 06
+        "public-ssh-main-ssh",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Ssh,
+        TestTlsConfig::None,
+        TestAuthConfig::Ssh,
+        "main",
+        "default",
+        Expected::Ok
+    )]
+    #[case( // 07
+        "public-git-main-ssh",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Git,
+        TestTlsConfig::None,
+        TestAuthConfig::Ssh,
+        "main",
+        "default",
+        Expected::Ok
+    )]
+    #[case( // 08
         "private-https-verify-ca-main-anon",
         TestRepoVisibility::Private,
         TestRepoUriSchema::Https,
@@ -835,7 +908,7 @@ mod test {
         "default",
         Expected::Err
     )]
-    #[case(
+    #[case( // 09
         "private-https-verify-ca-main-basic",
         TestRepoVisibility::Private,
         TestRepoUriSchema::Https,
@@ -845,7 +918,7 @@ mod test {
         "default",
         Expected::Ok
     )]
-    #[case(
+    #[case( // 10
         "private-https-verify-ca-main-token",
         TestRepoVisibility::Private,
         TestRepoUriSchema::Https,
@@ -854,6 +927,46 @@ mod test {
         "main",
         "default",
         Expected::Ok
+    )]
+    #[case( // 11
+        "private-ssh-main-ssh",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Ssh,
+        TestTlsConfig::None,
+        TestAuthConfig::Ssh,
+        "main",
+        "default",
+        Expected::Ok
+    )]
+    #[case( // 12
+        "private-git-main-ssh",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Git,
+        TestTlsConfig::None,
+        TestAuthConfig::Ssh,
+        "main",
+        "default",
+        Expected::Ok
+    )]
+    #[case( // 13
+        "private-ssh-main-ssh-anon",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Ssh,
+        TestTlsConfig::None,
+        TestAuthConfig::None,
+        "main",
+        "default",
+        Expected::Err
+    )]
+    #[case( // 14
+        "private-git-main-ssh-anon",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Git,
+        TestTlsConfig::None,
+        TestAuthConfig::None,
+        "main",
+        "default",
+        Expected::Err
     )]
     #[tokio::test]
     #[ignore = "needs docker"]
@@ -887,7 +1000,7 @@ mod test {
         let ns = ns.into();
         let name: String = name.into();
 
-        let repo = TestGitRepoBuilder::build(
+        let repo_builder = TestGitRepoBuilder::build(
             client.clone(),
             format!("git-repo-{}", name),
             visibility,
@@ -898,14 +1011,17 @@ mod test {
         )
         .await;
 
-        let repo: GitRepo = repo.into();
+        let repo: GitRepo = repo_builder.clone().into();
         let path = tempfile::tempdir().unwrap();
         let path = String::from(path.path().to_str().unwrap());
 
         let repo = repo.fetch_repo_ref(client.clone(), &ref_name, &path, &ns).await;
 
-        if repo.is_err() {
-            eprintln!("test: {name}, err={}", repo.as_ref().err().unwrap());
+        if (repo.is_err() && expected != Expected::Err) || (repo.is_ok() && expected != Expected::Ok) {
+            eprintln!(
+                "namespaced test: {name}, repo_builder={repo_builder:?}, err={}",
+                repo.as_ref().err().unwrap()
+            );
         }
 
         match expected {
@@ -936,7 +1052,7 @@ mod test {
         let ns = ns.into();
         let name: String = name.into();
 
-        let repo = TestGitRepoBuilder::build(
+        let repo_builder = TestGitRepoBuilder::build(
             client.clone(),
             format!("cluster-git-repo-{}", name),
             visibility,
@@ -947,14 +1063,17 @@ mod test {
         )
         .await;
 
-        let repo: ClusterGitRepo = repo.into();
+        let repo: ClusterGitRepo = repo_builder.clone().into();
         let path = tempfile::tempdir().unwrap();
         let path = String::from(path.path().to_str().unwrap());
 
         let repo = repo.fetch_repo_ref(client.clone(), &ref_name, &path, &ns).await;
 
-        if repo.is_err() {
-            eprintln!("test: {name}, err={}", repo.as_ref().err().unwrap());
+        if (repo.is_err() && expected != Expected::Err) || (repo.is_ok() && expected != Expected::Ok) {
+            eprintln!(
+                "cluster test: {name}, repo_builder={repo_builder:?}, err={}",
+                repo.as_ref().err().unwrap()
+            );
         }
 
         match expected {

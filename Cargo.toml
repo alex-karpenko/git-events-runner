@@ -33,7 +33,7 @@ axum = { version = "0.7.7", default-features = false, features = [
 ] }
 axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 chrono = { version = "0.4.38", default-features = false, features = ["std"] }
-clap = { version = "4.5.17", features = ["derive"] }
+clap = { version = "4.5.20", features = ["derive"] }
 futures = "0.3.30"
 git2 = "0.19.0"
 globwalk = "0.9.1"
