@@ -335,13 +335,11 @@ impl Default for TriggerWebhookConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, time::Duration};
-
-    use crate::tests;
-
     use super::*;
+    use crate::tests;
     use insta::assert_snapshot;
     use kube::api::{DeleteParams, ObjectMeta, PostParams};
+    use std::{collections::BTreeMap, time::Duration};
 
     const TEST_CM_NAME: &str = "test-runtime-config";
 
@@ -352,11 +350,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn runtime_config() {
         tests::init_crypto_provider().await;
-
-        let client = Client::try_default().await.unwrap();
+        let client = tests::get_test_kube_client().await.unwrap();
         let api = Api::<ConfigMap>::default_namespaced(client.clone());
         let pp = PostParams::default();
         let dp = DeleteParams::default();

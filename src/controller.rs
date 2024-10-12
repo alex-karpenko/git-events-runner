@@ -331,6 +331,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{
+        resources::{
+            action::{Action, ClusterAction},
+            git_repo::{ClusterGitRepo, GitRepo},
+            trigger::{self, WebhookTrigger},
+        },
+        tests,
+    };
     use k8s_openapi::api::core::v1::Namespace;
     use kube::{
         api::{Api, DeleteParams, PostParams},
@@ -339,14 +348,6 @@ mod tests {
     use schemars::JsonSchema;
     use serde::Deserialize;
     use tokio::sync::OnceCell;
-
-    use crate::resources::{
-        action::{Action, ClusterAction},
-        git_repo::{ClusterGitRepo, GitRepo},
-        trigger::{self, WebhookTrigger},
-    };
-
-    use super::*;
 
     static TRACING_INITIALIZED: OnceCell<()> = OnceCell::const_new();
     static NAMESPACE_INITIALIZED: OnceCell<()> = OnceCell::const_new();
@@ -367,14 +368,17 @@ mod tests {
         }
     }
 
-    async fn init() {
+    async fn init() -> anyhow::Result<Client> {
         TRACING_INITIALIZED.get_or_init(|| async { init_tracing().await }).await;
         NAMESPACE_INITIALIZED
             .get_or_init(|| async {
-                crate::tests::init_crypto_provider().await;
-                create_namespace().await
+                tests::init_crypto_provider().await;
+                let client = tests::get_test_kube_client().await.unwrap();
+                create_namespace(client).await
             })
             .await;
+
+        tests::get_test_kube_client().await
     }
 
     async fn init_tracing() {
@@ -382,8 +386,7 @@ mod tests {
     }
 
     /// Unattended namespace creation
-    async fn create_namespace() {
-        let client = Client::try_default().await.unwrap();
+    async fn create_namespace(client: Client) {
         let api = Api::<Namespace>::all(client);
         let pp = PostParams::default();
 
@@ -394,8 +397,7 @@ mod tests {
     }
 
     /// Create the simplest test context: default client, scheduler and state
-    async fn get_test_context() -> Arc<Context> {
-        let client = Client::try_default().await.unwrap();
+    async fn get_test_context(client: Client) -> Arc<Context> {
         let state = State::new(Arc::new(String::from("/tmp/test_git_events_runner_context")));
         let scheduler = Arc::new(RwLock::new(Scheduler::default()));
         let triggers = Arc::new(RwLock::new(TriggersState::default()));
@@ -404,11 +406,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn reconcile_schedule_trigger_should_set_idle_status() {
-        init().await;
+        let client = init().await.unwrap();
 
-        let ctx = get_test_context().await;
+        let ctx = get_test_context(client).await;
         let trigger_i_name = "good-interval-trigger";
         let trigger_c_name = "good-cron-trigger";
 
@@ -458,9 +460,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn all_crds_should_be_installed() {
-        let ctx = get_test_context().await;
+        let client = init().await.unwrap();
+        let ctx = get_test_context(client).await;
 
         assert!(check_api_by_list(&Api::<ScheduleTrigger>::all(ctx.client.clone()))
             .await
@@ -481,9 +484,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "uses k8s current-context"]
+    #[ignore = "needs docker"]
     async fn fake_crd_error() {
-        let ctx = get_test_context().await;
+        let client = init().await.unwrap();
+        let ctx = get_test_context(client).await;
 
         assert!(check_api_by_list(&Api::<FakeCustomResource>::all(ctx.client.clone()))
             .await
