@@ -968,6 +968,46 @@ mod test {
         "default",
         Expected::Err
     )]
+    #[case( // 15
+        "private-git-v1-tag-ssh",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Git,
+        TestTlsConfig::None,
+        TestAuthConfig::Ssh,
+        "v1",
+        "default",
+        Expected::Ok
+    )]
+    #[case( // 16
+        "private-https-v1-tag-basic",
+        TestRepoVisibility::Private,
+        TestRepoUriSchema::Https,
+        TestTlsConfig::Ignore,
+        TestAuthConfig::Basic,
+        "v1",
+        "default",
+        Expected::Ok
+    )]
+    #[case( // 17
+        "public-git-v1-tag-ssh",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Git,
+        TestTlsConfig::None,
+        TestAuthConfig::Ssh,
+        "v1",
+        "default",
+        Expected::Ok
+    )]
+    #[case( // 18
+        "public-https-v1-tag-anon",
+        TestRepoVisibility::Public,
+        TestRepoUriSchema::Https,
+        TestTlsConfig::Ignore,
+        TestAuthConfig::None,
+        "v1",
+        "default",
+        Expected::Ok
+    )]
     #[tokio::test]
     #[ignore = "needs docker"]
     async fn test_git_repo_fetch_ref_template(
@@ -1017,11 +1057,15 @@ mod test {
 
         let repo = repo.fetch_repo_ref(client.clone(), &ref_name, &path, &ns).await;
 
-        if (repo.is_err() && expected != Expected::Err) || (repo.is_ok() && expected != Expected::Ok) {
+        if repo.is_err() && expected != Expected::Err {
             eprintln!(
                 "namespaced test: {name}, repo_builder={repo_builder:?}, err={}",
                 repo.as_ref().err().unwrap()
             );
+        }
+
+        if repo.is_ok() && expected != Expected::Ok {
+            eprintln!("namespaced test: {name}, repo_builder={repo_builder:?}, expecter Err, but got Ok",);
         }
 
         match expected {
@@ -1069,11 +1113,15 @@ mod test {
 
         let repo = repo.fetch_repo_ref(client.clone(), &ref_name, &path, &ns).await;
 
-        if (repo.is_err() && expected != Expected::Err) || (repo.is_ok() && expected != Expected::Ok) {
+        if repo.is_err() && expected != Expected::Err {
             eprintln!(
                 "cluster test: {name}, repo_builder={repo_builder:?}, err={}",
                 repo.as_ref().err().unwrap()
             );
+        }
+
+        if repo.is_ok() && expected != Expected::Ok {
+            eprintln!("cluster test: {name}, repo_builder={repo_builder:?}, expecter Err, but got Ok",);
         }
 
         match expected {
