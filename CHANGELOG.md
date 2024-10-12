@@ -2,10 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2024-10-12
+### Details
+#### Changed
+- Update dependencies - kube, kube-lease-manager by @alex-karpenko in [#41](https://github.com/alex-karpenko/git-events-runner/pull/41)
+- Improve unit tests with built-in containers support by @alex-karpenko in [#39](https://github.com/alex-karpenko/git-events-runner/pull/39)
+
+#### Fixed
+- Fix fetching of repos with SSH or Git URI schemas by @alex-karpenko in [#40](https://github.com/alex-karpenko/git-events-runner/pull/40)
+
 ## [0.3.1] - 2024-10-01
 ### Details
 #### Changed
-- Logs in JSON format by @alex-karpenko
+- Logs in JSON format by @alex-karpenko in [#38](https://github.com/alex-karpenko/git-events-runner/pull/38)
 
 ## [0.3.0] - 2024-09-28
 ### Details
@@ -96,6 +105,7 @@ All notable changes to this project will be documented in this file.
 #### Removed
 - Remove changelog updating from the release workflow by @alex-karpenko
 
+[0.3.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.1..v0.3.2
 [0.3.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.0..v0.3.1
 [0.3.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.4..v0.3.0
 [0.2.4]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.3..v0.2.4
