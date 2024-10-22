@@ -452,7 +452,6 @@ async fn get_secret_strings<'a>(
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 mod test {
     use super::*;
@@ -608,14 +607,14 @@ mod test {
         assert!(matches!(err, Error::KubeError(_)));
     }
 
-    /// Kind: GitRepo, ClusterGitRepo
-    ///
-    /// Visibility: public, private
-    /// Schema: https, ssh
-    /// TLS: no verify, verify, verify with CA
-    /// Auth: none, basic, ssh, token (just use "Basic b64e(username:password"))
-    /// Branch/tag: main, v1, unknown
-    /// Secret ns: default, non-exiting
+    // Kind: GitRepo, ClusterGitRepo
+    //
+    // Visibility: public, private
+    // Schema: https, ssh
+    // TLS: no verify, verify, verify with CA
+    // Auth: none, basic, ssh, token (just use "Basic b64e(username:password"))
+    // Branch/tag: main, v1, unknown
+    // Secret ns: default, non-exiting
 
     enum TestRepoVisibility {
         Public,
