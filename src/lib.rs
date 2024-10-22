@@ -142,7 +142,6 @@ mod tests {
             .await;
     }
 
-    #[allow(dead_code)]
     pub async fn get_test_git_hostname() -> anyhow::Result<String> {
         let host = get_git_server().await.read().await.as_ref().unwrap().get_host().await?;
         Ok(host.to_string())
@@ -206,7 +205,6 @@ mod tests {
     }
 
     #[dtor]
-    #[allow(unsafe_code)]
     fn shutdown_test_containers() {
         static LOCK: Mutex<()> = Mutex::const_new(());
 
