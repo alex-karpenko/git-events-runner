@@ -44,6 +44,9 @@ exceptions = [
     { allow = [
         "OpenSSL",
     ], name = "ring" },
+    { allow = [
+        "MPL-2.0",
+    ], name = "webpki-roots" },
 ]
 
 [[licenses.clarify]]
@@ -77,7 +80,7 @@ skip-tree = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+allow-git = ["https://github.com/alex-karpenko/testcontainers-rs-modules-community?branch=feat/add-gitea-module"]
 
 [graph]
 all-features = false
