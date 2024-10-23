@@ -781,7 +781,7 @@ mod test {
             ns: &str,
         ) -> anyhow::Result<()> {
             let data = keys
-                .into_iter()
+                .iter()
                 .map(|s| String::from(*s))
                 .zip(data.iter().map(|s| String::from(*s)))
                 .collect::<BTreeMap<_, _>>();
