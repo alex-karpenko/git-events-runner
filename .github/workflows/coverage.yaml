@@ -38,12 +38,6 @@ jobs:
           RUST_LOG: debug
         run: cargo test --all -- --include-ignored --nocapture
 
-      - name: Fix target folder permissions
-        run: |
-          u=$(id -u)
-          g=$(id -g)
-          sudo chown -R $u:$g target/debug/
-
       - name: Generate coverage
         run: |
           grcov/grcov $(find . -name "git-events-runner-*.profraw" -print) \
