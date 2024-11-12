@@ -4,7 +4,7 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 
 [licenses]
-allow = ["MIT", "Apache-2.0"]
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
 confidence-threshold = 0.93
 exceptions = [
     { allow = [
@@ -39,14 +39,14 @@ exceptions = [
         "BSD-3-Clause",
     ], name = "bindgen" },
     { allow = [
-        "Unicode-DFS-2016",
-    ], name = "unicode-ident" },
-    { allow = [
         "OpenSSL",
     ], name = "ring" },
     { allow = [
         "MPL-2.0",
     ], name = "webpki-roots" },
+    { allow = [
+        "Zlib",
+    ], name = "foldhash" },
 ]
 
 [[licenses.clarify]]
@@ -80,7 +80,7 @@ skip-tree = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/alex-karpenko/testcontainers-rs-modules-community?branch=feat/add-gitea-module"]
+allow-git = []
 
 [graph]
 all-features = false
