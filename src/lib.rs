@@ -131,6 +131,7 @@ mod tests {
     const GIT_HTTP_SERVER_PORT: u16 = 443;
     const K3S_PORT: u16 = 9443;
     const DOCKER_NETWORK_NAME: &str = "test";
+    const DISABLE_CONTAINER_DESTRUCTORS_ENV_NAME: &str = "DISABLE_CONTAINER_DESTRUCTORS";
 
     static GIT_SERVER_CONTAINER: OnceCell<RwLock<Option<ContainerAsync<Gitea>>>> = OnceCell::const_new();
     static K3S_CLUSTER_CONTAINER: OnceCell<RwLock<Option<ContainerAsync<K3s>>>> = OnceCell::const_new();
@@ -236,31 +237,33 @@ mod tests {
     fn shutdown_test_containers() {
         static LOCK: Mutex<()> = Mutex::const_new(());
 
-        let _ = thread::spawn(|| {
-            Runtime::new().unwrap().block_on(async {
-                let _guard = LOCK.lock().await;
+        if env::var(DISABLE_CONTAINER_DESTRUCTORS_ENV_NAME).is_err() {
+            let _ = thread::spawn(|| {
+                Runtime::new().unwrap().block_on(async {
+                    let _guard = LOCK.lock().await;
 
-                if let Some(k3s) = K3S_CLUSTER_CONTAINER.get() {
-                    let mut k3s = k3s.write().await;
-                    if k3s.is_some() {
-                        let old = (*k3s).take().unwrap();
-                        old.stop().await.unwrap();
-                        old.rm().await.unwrap();
-                        *k3s = None;
+                    if let Some(k3s) = K3S_CLUSTER_CONTAINER.get() {
+                        let mut k3s = k3s.write().await;
+                        if k3s.is_some() {
+                            let old = (*k3s).take().unwrap();
+                            old.stop().await.unwrap();
+                            old.rm().await.unwrap();
+                            *k3s = None;
+                        }
                     }
-                }
 
-                if let Some(git) = GIT_SERVER_CONTAINER.get() {
-                    let mut git = git.write().await;
-                    if git.is_some() {
-                        let old = (*git).take().unwrap();
-                        old.stop().await.unwrap();
-                        old.rm().await.unwrap();
-                        *git = None;
+                    if let Some(git) = GIT_SERVER_CONTAINER.get() {
+                        let mut git = git.write().await;
+                        if git.is_some() {
+                            let old = (*git).take().unwrap();
+                            old.stop().await.unwrap();
+                            old.rm().await.unwrap();
+                            *git = None;
+                        }
                     }
-                }
-            });
-        })
-        .join();
+                });
+            })
+            .join();
+        }
     }
 }
