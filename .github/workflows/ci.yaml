@@ -52,6 +52,7 @@ jobs:
         env:
           CARGO_TEST_KUBE_VERSION: ${{ matrix.k8s }}
           CI: true
+          DISABLE_CONTAINER_DESTRUCTORS: "true"
         run: cargo test --all -- --include-ignored --nocapture
 
   docker-test:
