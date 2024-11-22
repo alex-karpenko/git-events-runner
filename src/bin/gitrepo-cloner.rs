@@ -1,5 +1,5 @@
-//#![deny(unsafe_code, warnings, missing_docs)]
-
+//! Utility app to clone git repo during Action run.
+#![deny(unsafe_code, warnings, missing_docs)]
 use clap::{Args, Parser};
 use git_events_runner::resources::{
     git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},

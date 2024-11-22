@@ -113,19 +113,25 @@ mod tests {
     mod containers;
 
     use crate::resources::get_all_crds;
-    use containers::{gitea::Gitea, k3s::K3s};
+    use containers::k3s::{K3s, K3S_API_PORT};
     use ctor::dtor;
     use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
     use kube::{api::PostParams, Api, Client};
     use rustls::crypto::aws_lc_rs;
     use std::{env, thread};
-    use testcontainers::ContainerAsync;
+    use testcontainers::{runners::AsyncRunner as _, ContainerAsync, ImageExt as _};
+    use testcontainers_modules::gitea::{Gitea, GITEA_HTTP_PORT, GITEA_SSH_PORT};
     use tokio::{
         runtime::Runtime,
         sync::{Mutex, OnceCell, RwLock},
     };
 
     const USE_EXISTING_K8S_CONTEXT: &str = "CARGO_TEST_USE_EXISTING_K8S_CONTEXT";
+    const GIT_SSH_SERVER_PORT: u16 = 22;
+    const GIT_HTTP_SERVER_PORT: u16 = 443;
+    const K3S_PORT: u16 = 9443;
+    const DOCKER_NETWORK_NAME: &str = "test";
+    const DISABLE_CONTAINER_DESTRUCTORS_ENV_NAME: &str = "DISABLE_CONTAINER_DESTRUCTORS";
 
     static GIT_SERVER_CONTAINER: OnceCell<RwLock<Option<ContainerAsync<Gitea>>>> = OnceCell::const_new();
     static K3S_CLUSTER_CONTAINER: OnceCell<RwLock<Option<ContainerAsync<K3s>>>> = OnceCell::const_new();
@@ -147,6 +153,12 @@ mod tests {
         Ok(host.to_string())
     }
 
+    pub async fn get_test_git_ca() -> anyhow::Result<String> {
+        let gitea = get_git_server().await.read().await;
+        let ca = gitea.as_ref().unwrap().image().tls_ca().unwrap();
+        Ok(ca.to_string())
+    }
+
     pub async fn get_test_kube_client() -> anyhow::Result<Client> {
         if std::env::var(USE_EXISTING_K8S_CONTEXT).is_ok() {
             init_crypto_provider().await;
@@ -162,9 +174,17 @@ mod tests {
     async fn get_git_server() -> &'static RwLock<Option<ContainerAsync<Gitea>>> {
         GIT_SERVER_CONTAINER
             .get_or_init(|| async {
-                let out_dir =
-                    env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
-                let container = containers::run_git_server(&format!("{out_dir}/gitea-runtime"))
+                let public_key = include_str!("../tests/ssh/test-key-ed25519.pub");
+                let container = Gitea::default()
+                    .with_tls(true)
+                    .with_admin_account("gitea-admin", "gitea-admin", Some(public_key.to_string()))
+                    .with_repo(testcontainers_modules::gitea::GiteaRepo::Public("test-1".to_string()))
+                    .with_repo(testcontainers_modules::gitea::GiteaRepo::Private("test-2".to_string()))
+                    .with_container_name("git-server")
+                    .with_mapped_port(GIT_SSH_SERVER_PORT, GITEA_SSH_PORT)
+                    .with_mapped_port(GIT_HTTP_SERVER_PORT, GITEA_HTTP_PORT)
+                    .with_network(DOCKER_NETWORK_NAME)
+                    .start()
                     .await
                     .unwrap();
                 RwLock::new(Some(container))
@@ -182,7 +202,16 @@ mod tests {
                     env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
 
                 // Create k3s container
-                let container = containers::run_k3s_cluster(&format!("{out_dir}/k3s-runtime"))
+                let runtime_folder = format!("{out_dir}/k3s-runtime");
+                tokio::fs::create_dir_all(&runtime_folder).await.unwrap();
+
+                let container = K3s::new(runtime_folder)
+                    .with_container_name("k3s")
+                    .with_userns_mode("host")
+                    .with_privileged(true)
+                    .with_mapped_port(K3S_PORT, K3S_API_PORT)
+                    .with_network(DOCKER_NETWORK_NAME)
+                    .start()
                     .await
                     .unwrap();
                 // and apply all CRDs into the cluster
@@ -208,31 +237,33 @@ mod tests {
     fn shutdown_test_containers() {
         static LOCK: Mutex<()> = Mutex::const_new(());
 
-        let _ = thread::spawn(|| {
-            Runtime::new().unwrap().block_on(async {
-                let _guard = LOCK.lock().await;
+        if env::var(DISABLE_CONTAINER_DESTRUCTORS_ENV_NAME).is_err() {
+            let _ = thread::spawn(|| {
+                Runtime::new().unwrap().block_on(async {
+                    let _guard = LOCK.lock().await;
 
-                if let Some(k3s) = K3S_CLUSTER_CONTAINER.get() {
-                    let mut k3s = k3s.write().await;
-                    if k3s.is_some() {
-                        let old = (*k3s).take().unwrap();
-                        old.stop().await.unwrap();
-                        old.rm().await.unwrap();
-                        *k3s = None;
+                    if let Some(k3s) = K3S_CLUSTER_CONTAINER.get() {
+                        let mut k3s = k3s.write().await;
+                        if k3s.is_some() {
+                            let old = (*k3s).take().unwrap();
+                            old.stop().await.unwrap();
+                            old.rm().await.unwrap();
+                            *k3s = None;
+                        }
                     }
-                }
 
-                if let Some(git) = GIT_SERVER_CONTAINER.get() {
-                    let mut git = git.write().await;
-                    if git.is_some() {
-                        let old = (*git).take().unwrap();
-                        old.stop().await.unwrap();
-                        old.rm().await.unwrap();
-                        *git = None;
+                    if let Some(git) = GIT_SERVER_CONTAINER.get() {
+                        let mut git = git.write().await;
+                        if git.is_some() {
+                            let old = (*git).take().unwrap();
+                            old.stop().await.unwrap();
+                            old.rm().await.unwrap();
+                            *git = None;
+                        }
                     }
-                }
-            });
-        })
-        .join();
+                });
+            })
+            .join();
+        }
     }
 }

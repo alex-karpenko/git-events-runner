@@ -1,5 +1,5 @@
-//#![deny(unsafe_code, warnings, missing_docs)]
-
+//! Main controller app.
+#![deny(unsafe_code, warnings, missing_docs)]
 use kube::Client;
 use kube_lease_manager::LeaseManagerBuilder;
 use opentelemetry::trace::TracerProvider;
@@ -234,18 +234,20 @@ fn get_logger_layer(json_logs: bool) -> impl Layer<Registry> {
 /// Get OTLP tracer if endpoint env var is defined.
 fn get_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
     if let Ok(otlp_endpoint) = std::env::var(OPENTELEMETRY_ENDPOINT_URL_ENV_NAME) {
-        let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_endpoint(otlp_endpoint);
+        let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
+            .with_endpoint(otlp_endpoint)
+            .build()
+            .unwrap();
         let trace_config =
             opentelemetry_sdk::trace::Config::default().with_resource(opentelemetry_sdk::Resource::new(vec![
                 opentelemetry::KeyValue::new("service.name", env!("CARGO_PKG_NAME")),
             ]));
 
-        let tracer = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(otlp_exporter)
-            .with_trace_config(trace_config)
-            .install_batch(opentelemetry_sdk::runtime::Tokio)
-            .unwrap();
+        let tracer = opentelemetry_sdk::trace::TracerProvider::builder()
+            .with_batch_exporter(otlp_exporter, opentelemetry_sdk::runtime::Tokio)
+            .with_config(trace_config)
+            .build();
 
         Some(tracer.tracer(env!("CARGO_PKG_NAME")))
     } else {

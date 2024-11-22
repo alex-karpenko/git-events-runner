@@ -455,16 +455,13 @@ async fn get_secret_strings<'a>(
 #[allow(clippy::too_many_arguments)]
 mod test {
     use super::*;
-    use crate::tests;
+    use crate::tests::{self, get_test_git_ca};
     use base64::{prelude::BASE64_STANDARD, Engine as _};
     use k8s_openapi::{api::core::v1::Secret, ByteString};
     use kube::api::{Api, DeleteParams, ObjectMeta, PostParams};
     use rstest::*;
     use rstest_reuse::{apply, template};
-    use std::{
-        collections::{BTreeMap, HashMap},
-        env,
-    };
+    use std::collections::{BTreeMap, HashMap};
 
     async fn ensure_secret(client: Client, name: &str, data: BTreeMap<String, String>, ns: &str) -> anyhow::Result<()> {
         let secret_api: Api<Secret> = Api::namespaced(client, ns);
@@ -670,10 +667,8 @@ mod test {
             let secrets_ns = ns.clone().unwrap_or("default".into());
             let tls_secret_name = format!("{TEST_SECRET_PREFIX}-{name}-tls");
             let auth_secret_name = format!("{TEST_SECRET_PREFIX}-{name}-auth");
-            let out_dir =
-                env::var("OUT_DIR").expect("`OUT_DIR` environment variable isn`t set, use Cargo to run build");
-            let ca_path = format!("{out_dir}/tls/ca.pem");
-            let ssh_key_path = format!("{out_dir}/ssh/test-key-rsa");
+            let ssh_key = include_str!("../../tests/ssh/test-key-ed25519").to_string();
+            let ca = get_test_git_ca().await.unwrap();
 
             let repo_path = match type_ {
                 TestRepoVisibility::Public => TEST_PUBLIC_REPO_PATH,
@@ -697,7 +692,7 @@ mod test {
                     ..Default::default()
                 }),
                 TestTlsConfig::VerifyWithCa => {
-                    Self::load_files_to_secret(client.clone(), &[ca_path], &["ca.crt"], &tls_secret_name, &secrets_ns)
+                    Self::put_strings_to_secret(client.clone(), &[&ca], &["ca.crt"], &tls_secret_name, &secrets_ns)
                         .await
                         .unwrap();
                     Some(TlsConfig {
@@ -750,9 +745,9 @@ mod test {
                     })
                 }
                 TestAuthConfig::Ssh => {
-                    Self::load_files_to_secret(
+                    Self::put_strings_to_secret(
                         client.clone(),
-                        &[ssh_key_path],
+                        &[&ssh_key],
                         &["ssh-privatekey"],
                         &auth_secret_name,
                         &secrets_ns,
@@ -778,17 +773,17 @@ mod test {
             }
         }
 
-        async fn load_files_to_secret(
+        async fn put_strings_to_secret(
             client: Client,
-            files: &[String],
+            data: &[&String],
             keys: &[&str],
             secret_name: &str,
             ns: &str,
         ) -> anyhow::Result<()> {
-            let data = files
+            let data = keys
                 .iter()
-                .zip(keys.iter())
-                .map(|(file, key)| (key.to_string(), std::fs::read_to_string(file).unwrap()))
+                .map(|s| String::from(*s))
+                .zip(data.iter().map(|s| String::from(*s)))
                 .collect::<BTreeMap<_, _>>();
 
             ensure_secret(client, secret_name, data, ns).await

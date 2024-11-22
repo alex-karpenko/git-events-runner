@@ -35,14 +35,8 @@ jobs:
           CI: true
           RUSTFLAGS: -Cinstrument-coverage
           LLVM_PROFILE_FILE: git-events-runner-%p-%m.profraw
-          RUST_LOG: debug
+          DISABLE_CONTAINER_DESTRUCTORS: "true"
         run: cargo test --all -- --include-ignored --nocapture
-
-      - name: Fix target folder permissions
-        run: |
-          u=$(id -u)
-          g=$(id -g)
-          sudo chown -R $u:$g target/debug/
 
       - name: Generate coverage
         run: |
