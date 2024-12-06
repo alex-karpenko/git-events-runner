@@ -2,13 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.3] - 2024-12-06
 ### Details
 #### Changed
 - Move git unit tests to testcontainers-modules crate by @alex-karpenko in [#43](https://github.com/alex-karpenko/git-events-runner/pull/43)
 
 #### Fixed
 - Fix lint warnings by @alex-karpenko in [#42](https://github.com/alex-karpenko/git-events-runner/pull/42)
+- Update vulnerable dependencies by @alex-karpenko in [#44](https://github.com/alex-karpenko/git-events-runner/pull/44)
 
 ## [0.3.2] - 2024-10-12
 ### Details
@@ -116,7 +117,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
-[unreleased]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.2..HEAD
+[0.3.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.2..v0.3.3
 [0.3.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.1..v0.3.2
 [0.3.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.0..v0.3.1
 [0.3.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.2.4..v0.3.0
