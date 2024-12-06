@@ -239,14 +239,13 @@ fn get_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
             .with_endpoint(otlp_endpoint)
             .build()
             .unwrap();
-        let trace_config =
-            opentelemetry_sdk::trace::Config::default().with_resource(opentelemetry_sdk::Resource::new(vec![
-                opentelemetry::KeyValue::new("service.name", env!("CARGO_PKG_NAME")),
-            ]));
 
         let tracer = opentelemetry_sdk::trace::TracerProvider::builder()
             .with_batch_exporter(otlp_exporter, opentelemetry_sdk::runtime::Tokio)
-            .with_config(trace_config)
+            .with_resource(opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
+                "service.name",
+                env!("CARGO_PKG_NAME"),
+            )]))
             .build();
 
         Some(tracer.tracer(env!("CARGO_PKG_NAME")))
