@@ -486,7 +486,7 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
                 }
                 Err(_) => {
                     // Invalid schedule
-                    let recorder = &ctx.diagnostics.read().await.recorder(ctx.client.clone(), self);
+                    let recorder = &ctx.diagnostics.read().await.recorder(ctx.client.clone());
                     self.publish_trigger_validation_event(
                         recorder,
                         EventType::Warning,
@@ -594,13 +594,16 @@ impl ScheduleTrigger {
         action: &str,
     ) -> Result<()> {
         recorder
-            .publish(Event {
-                type_,
-                reason: "ValidateTrigger".into(),
-                note: Some(note.into()),
-                action: action.into(),
-                secondary: None,
-            })
+            .publish(
+                &Event {
+                    type_,
+                    reason: "ValidateTrigger".into(),
+                    note: Some(note.into()),
+                    action: action.into(),
+                    secondary: None,
+                },
+                &self.object_ref(&()),
+            )
             .await?;
 
         Ok(())

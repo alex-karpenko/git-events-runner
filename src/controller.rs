@@ -156,11 +156,8 @@ impl Default for Diagnostics {
     }
 }
 impl Diagnostics {
-    pub(crate) fn recorder<K>(&self, client: Client, res: &K) -> Recorder
-    where
-        K: Resource<DynamicType = ()>,
-    {
-        Recorder::new(client, self.reporter.clone(), res.object_ref(&()))
+    pub(crate) fn recorder(&self, client: Client) -> Recorder {
+        Recorder::new(client, self.reporter.clone())
     }
 }
 
