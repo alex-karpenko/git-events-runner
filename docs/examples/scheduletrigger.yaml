@@ -66,6 +66,8 @@ spec:
   # It uses seven items expression: seconds, minutes, hours, days (month), months, days (week), years.
   # Seconds and years can be omitted: if an expression has 5 items, it runs at second 0 every year;
   # if it has 6 items - the first item defines seconds.
+  # It's possible to prepend expression with time zone name, like "TZ=Europe/Kyiv 0 10-20 * * MON-FRI"
+  # More information about allowed cron expressions: https://github.com/alex-karpenko/cron-lite/blob/main/README.md#cron-schedule-format
   schedule:
     interval: 1m
     cron: "*/15 9-20 * * 1-5"
