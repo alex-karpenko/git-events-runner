@@ -1043,6 +1043,8 @@ Header name may be changed.</p>
 <span class="w">  </span><span class="c1"># It uses seven items expression: seconds, minutes, hours, days (month), months, days (week), years.</span>
 <span class="w">  </span><span class="c1"># Seconds and years can be omitted: if an expression has 5 items, it runs at second 0 every year;</span>
 <span class="w">  </span><span class="c1"># if it has 6 items - the first item defines seconds.</span>
+<span class="w">  </span><span class="c1"># It&#39;s possible to prepend expression with time zone name, like &quot;TZ=Europe/Kyiv 0 10-20 * * MON-FRI&quot;</span>
+<span class="w">  </span><span class="c1"># More information about allowed cron expressions: https://github.com/alex-karpenko/cron-lite/blob/main/README.md#cron-schedule-format</span>
 <span class="w">  </span><span class="nt">schedule</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1m</span>
 <span class="w">    </span><span class="nt">cron</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;*/15</span><span class="nv"> </span><span class="s">9-20</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">1-5&quot;</span>
