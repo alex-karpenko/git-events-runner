@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2025-01-04
+### Details
+#### Breaking changes
+- Increase MK8SV to 1.28 (update dependencies) by @alex-karpenko in [#46](https://github.com/alex-karpenko/git-events-runner/pull/46)
+
+#### Changed
+- More complex cron expressions (including TZ) by @alex-karpenko in [#45](https://github.com/alex-karpenko/git-events-runner/pull/45)
+
+#### Fixed
+- Update mkdocs dependencies to fix security findings by @alex-karpenko in [#47](https://github.com/alex-karpenko/git-events-runner/pull/47)
+
 ## [0.3.3] - 2024-12-06
 ### Details
 #### Changed
@@ -117,6 +128,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
+[0.4.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.3..v0.4.0
 [0.3.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.2..v0.3.3
 [0.3.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.1..v0.3.2
 [0.3.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.0..v0.3.1
