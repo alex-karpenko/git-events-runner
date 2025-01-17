@@ -46,7 +46,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Stop SSH service
-        run: sudo systemctl stop ssh
+        run: |
+          sudo systemctl stop ssh.service
+          sudo systemctl stop ssh.socket
 
       - name: Run all integration tests
         env:
