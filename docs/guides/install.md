@@ -40,7 +40,7 @@ the [Helm documentation](https://helm.sh/docs/chart_best_practices/custom_resour
 If you need to manipulate CRDs manually, pull the chart, extract it and deploy or remove CRDs as you need:
 
 ```bash
-# Extarct chart into the ./git-events-runner froler  
+# Extarct chart into the ./git-events-runner folder
 helm pull alex-karpenko/git-events-runner --untar --untardir ./
 
 # Deploy/upgrade all CRDs in the cluster

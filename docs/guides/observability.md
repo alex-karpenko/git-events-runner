@@ -2,7 +2,7 @@
 
 ## Metrics
 
-Controller exposes a set of metrics to make possible state monitoring, alerting and efficiency analyzing.   
+Controller exposes a set of metrics to make possible state monitoring, alerting and efficiency analyzing.
 All metrics have the same prefix ("namespace") which may be configured using a command line option `--metrics-prefix`
 or `controllerOptions.metricsPrefix` Helm chart parameter.
 The default prefix is `git_events_runner`.

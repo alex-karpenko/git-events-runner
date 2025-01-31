@@ -115,9 +115,9 @@ As mentioned above, `ACTION_JOB_` is just default prefix and may be configured t
 | Variable name                       | Mandatory | Description                                                                                |
 |-------------------------------------|-----------|--------------------------------------------------------------------------------------------|
 | ACTION_JOB_WORKDIR                  | Yes       | Worker container workdir (folder where source repo is cloned)                              |
-| ACTION_JOB_TRIGGER_KIND             | Yes       | Kind of the trigger (ScheduleTrigger, WebhookTrigger)                                      |     
+| ACTION_JOB_TRIGGER_KIND             | Yes       | Kind of the trigger (ScheduleTrigger, WebhookTrigger)                                      |
 | ACTION_JOB_TRIGGER_NAME             | Yes       | Name of the trigger.                                                                       |
-| ACTION_JOB_TRIGGER_SOURCE_KIND      | Yes       | Kind of the triggers' source (Gitrepo, ClusterGitRepo)                                     |     
+| ACTION_JOB_TRIGGER_SOURCE_KIND      | Yes       | Kind of the triggers' source (Gitrepo, ClusterGitRepo)                                     |
 | ACTION_JOB_TRIGGER_SOURCE_NAME      | Yes       | Name of the triggers' source.                                                              |
 | ACTION_JOB_TRIGGER_SOURCE_NAMESPACE | No        | Namespace of the triggers' source (for GitRepo only).                                      |
 | ACTION_JOB_TRIGGER_SOURCE_COMMIT    | Yes       | Commit hash which is cloned into workdir.                                                  |
@@ -129,4 +129,4 @@ As mentioned above, `ACTION_JOB_` is just default prefix and may be configured t
 | ACTION_JOB_ACTION_SOURCE_REF_TYPE   | No        | Reference type of the actions' overridden source.                                          |
 | ACTION_JOB_ACTION_SOURCE_REF_NAME   | No        | Name of the actions' overridden source.                                                    |
 
-Details about `source override` feature can be found in the [detailed documentation](../resources/actions.md). 
+Details about `source override` feature can be found in the [detailed documentation](../resources/actions.md).
