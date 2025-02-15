@@ -1127,7 +1127,7 @@ During the first time installation, these CRDs will be deployed to the cluster, 
 upgrade CRDs, reason is described in
 the <a href="https://helm.sh/docs/chart_best_practices/custom_resource_definitions/">Helm documentation</a>.</p>
 <p>If you need to manipulate CRDs manually, pull the chart, extract it and deploy or remove CRDs as you need:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Extarct chart into the ./git-events-runner froler  </span>
+<div class="highlight"><pre><span></span><code><span class="c1"># Extarct chart into the ./git-events-runner folder</span>
 helm<span class="w"> </span>pull<span class="w"> </span>alex-karpenko/git-events-runner<span class="w"> </span>--untar<span class="w"> </span>--untardir<span class="w"> </span>./
 
 <span class="c1"># Deploy/upgrade all CRDs in the cluster</span>
