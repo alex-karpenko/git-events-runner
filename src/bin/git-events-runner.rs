@@ -4,6 +4,7 @@ use kube::Client;
 use kube_lease_manager::LeaseManagerBuilder;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use rustls::crypto::aws_lc_rs;
 use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType};
 use std::{sync::Arc, time::Duration};
@@ -43,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
 
 #[instrument("controller", skip_all)]
 async fn run(cli_config: CliConfig, client: Client) -> anyhow::Result<()> {
-    setup_tracing(cli_config.json_logs);
+    let trace_provider = setup_tracing(cli_config.json_logs);
     let tls_config = cli_config.build_tls_config(client.clone()).await?;
     let identity = Uuid::new_v4().to_string();
 
@@ -170,7 +171,9 @@ async fn run(cli_config: CliConfig, client: Client) -> anyhow::Result<()> {
     drop(leader_lease_channel);
     // and wait for finishing of all tasks
     let _ = tokio::join!(leader_lease_task, utils_web, hooks_web, jobs_queue);
-    opentelemetry::global::shutdown_tracer_provider();
+    if let Some(trace_provider) = trace_provider {
+        trace_provider.shutdown()?;
+    }
 
     Ok(())
 }
@@ -199,20 +202,24 @@ fn generate_config_yaml(options: CliConfigDumpOptions) -> anyhow::Result<()> {
 }
 
 /// Creates global logger, tracer and set requested log level and format
-fn setup_tracing(json_logs: bool) {
+fn setup_tracing(json_logs: bool) -> Option<SdkTracerProvider> {
     let env_filter = EnvFilter::try_from_default_env()
         .or(EnvFilter::try_new("info"))
         .unwrap();
 
     let collector = Registry::default().with(get_logger_layer(json_logs)).with(env_filter);
 
-    if let Some(tracer) = get_tracer() {
+    let trace_provider = get_trace_provider();
+    if let Some(tracer) = trace_provider.clone() {
+        let tracer = tracer.tracer(env!("CARGO_PKG_NAME"));
         let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
         let collector = collector.with(telemetry);
         tracing::subscriber::set_global_default(collector).unwrap();
     } else {
         tracing::subscriber::set_global_default(collector).unwrap();
     }
+
+    trace_provider
 }
 
 fn get_logger_layer(json_logs: bool) -> impl Layer<Registry> {
@@ -232,7 +239,7 @@ fn get_logger_layer(json_logs: bool) -> impl Layer<Registry> {
 }
 
 /// Get OTLP tracer if endpoint env var is defined.
-fn get_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
+fn get_trace_provider() -> Option<SdkTracerProvider> {
     if let Ok(otlp_endpoint) = std::env::var(OPENTELEMETRY_ENDPOINT_URL_ENV_NAME) {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
@@ -240,15 +247,16 @@ fn get_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
             .build()
             .unwrap();
 
-        let tracer = opentelemetry_sdk::trace::TracerProvider::builder()
-            .with_batch_exporter(otlp_exporter, opentelemetry_sdk::runtime::Tokio)
-            .with_resource(opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
-                "service.name",
-                env!("CARGO_PKG_NAME"),
-            )]))
+        let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_batch_exporter(otlp_exporter)
+            .with_resource(
+                opentelemetry_sdk::Resource::builder()
+                    .with_attribute(opentelemetry::KeyValue::new("service.name", env!("CARGO_PKG_NAME")))
+                    .build(),
+            )
             .build();
 
-        Some(tracer.tracer(env!("CARGO_PKG_NAME")))
+        Some(tracer)
     } else {
         None
     }
