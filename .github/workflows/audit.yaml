@@ -1,5 +1,10 @@
 name: Security audit
 on:
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  workflow_dispatch:
   schedule:
     - cron: "15 10 * * 5"
   push:
