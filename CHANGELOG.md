@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2025-02-15
+### Details
+#### Changed
+- Update some dependencies to the latest versions by @alex-karpenko in [#51](https://github.com/alex-karpenko/git-events-runner/pull/51)
+
+#### Fixed
+- Fix failing CI integration tests by @alex-karpenko in [#48](https://github.com/alex-karpenko/git-events-runner/pull/48)
+- Update dependencies to fix security warnings by @alex-karpenko in [#50](https://github.com/alex-karpenko/git-events-runner/pull/50)
+
 ## [0.4.0] - 2025-01-04
 ### Details
 #### Breaking changes
@@ -128,6 +137,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
+[0.4.1]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.0..v0.4.1
 [0.4.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.3..v0.4.0
 [0.3.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.2..v0.3.3
 [0.3.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.3.1..v0.3.2
