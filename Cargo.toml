@@ -21,7 +21,7 @@ path = "src/bin/gitrepo-cloner.rs"
 
 [dependencies]
 anyhow = "1.0.95"
-axum = { version = "0.7.9", default-features = false, features = [
+axum = { version = "0.8.1", default-features = false, features = [
     "http1",
     "macros",
     "matched-path",
@@ -65,7 +65,7 @@ opentelemetry-otlp = { version = "0.27.0", features = ["tokio", "trace", "tonic"
 tracing-opentelemetry = "0.28.0"
 uuid = { version = "1.11.0", features = ["v4"] }
 prometheus = { version = "0.13.4", default-features = false }
-tower_governor = { version = "0.5.0", features = ["tracing"] }
+tower_governor = { version = "0.6.0", features = ["tracing"] }
 
 [dev-dependencies]
 base64 = "0.22.1"
