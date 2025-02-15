@@ -15,6 +15,7 @@ target/
 
 # Local development atrifacts
 /*.yaml
+!.pre-commit-config.yaml
 .venv/
 site/
 
