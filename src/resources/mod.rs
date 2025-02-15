@@ -8,7 +8,7 @@ use action::{Action, ClusterAction};
 use git_repo::{ClusterGitRepo, GitRepo};
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use kube::{runtime::controller::Action as ReconcileAction, CustomResourceExt};
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use std::sync::Arc;
 use trigger::{ScheduleTrigger, WebhookTrigger};
 
@@ -33,7 +33,7 @@ pub trait Reconcilable<S> {
 }
 
 pub(crate) fn random_string(len: usize) -> String {
-    let rand: String = thread_rng()
+    let rand: String = rand::rng()
         .sample_iter(&Alphanumeric)
         .take(len)
         .map(char::from)
