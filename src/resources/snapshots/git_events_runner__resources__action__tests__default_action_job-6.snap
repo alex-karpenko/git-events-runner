@@ -42,7 +42,7 @@ spec:
               value: ScheduleTrigger
             - name: ACTION_JOB_TRIGGER_NAME
               value: test-schedule-trigger-name
-          image: "ghcr.io/alex-karpenko/git-events-runner/action-worker:v0.4.1"
+          image: "ghcr.io/alex-karpenko/git-events-runner/action-worker:v0.4.2"
           name: action-worker
           volumeMounts:
             - mountPath: /action_workdir
@@ -58,7 +58,7 @@ spec:
             - /action_workdir
             - "--commit"
             - e03087d8f722a423bc13fd31542fb9545da784dd
-          image: "ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:v0.4.1"
+          image: "ghcr.io/alex-karpenko/git-events-runner/gitrepo-cloner:v0.4.2"
           name: action-cloner
           volumeMounts:
             - mountPath: /action_workdir
