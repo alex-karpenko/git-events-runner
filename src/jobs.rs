@@ -271,7 +271,7 @@ impl JobsQueue {
 
         let jobs_api: Api<Job> = Api::all(client);
         let watcher_config =
-            watcher::Config::default().labels(format!("{ACTION_JOB_IDENTITY_LABEL}={}", identity).as_str());
+            watcher::Config::default().labels(format!("{ACTION_JOB_IDENTITY_LABEL}={identity}").as_str());
 
         let jobs_stream = reflector::reflector(writer, watcher(jobs_api, watcher_config))
             .touched_objects()

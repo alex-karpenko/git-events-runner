@@ -430,19 +430,16 @@ async fn get_secret_strings<'a>(
     let secret_data_b64 = secret_ref
         .clone()
         .data
-        .ok_or_else(|| Error::SecretDecodingError(format!("no `data` part in the secret `{}`", secret_name)))?;
+        .ok_or_else(|| Error::SecretDecodingError(format!("no `data` part in the secret `{secret_name}`")))?;
 
     for (secret_key, expected_key) in secret_keys.into_iter() {
         let secret_data = secret_data_b64
             .get(secret_key)
-            .ok_or_else(|| {
-                Error::SecretDecodingError(format!("no `{}` key in the secret `{}`", secret_key, secret_name))
-            })?
+            .ok_or_else(|| Error::SecretDecodingError(format!("no `{secret_key}` key in the secret `{secret_name}`")))?
             .to_owned();
         let secret_data = String::from_utf8(secret_data.0).map_err(|_e| {
             Error::SecretDecodingError(format!(
-                "error converting string `{}` from UTF8 in the secret `{}`",
-                secret_key, secret_name
+                "error converting string `{secret_key}` from UTF8 in the secret `{secret_name}`"
             ))
         })?;
         secrets.insert(expected_key, secret_data);
@@ -676,9 +673,9 @@ mod test {
             };
 
             let repo_uri = match schema {
-                TestRepoUriSchema::Https => format!("https://{hostname}/{}", repo_path),
-                TestRepoUriSchema::Ssh => format!("ssh://git@{hostname}/{}", repo_path),
-                TestRepoUriSchema::Git => format!("git@{hostname}:{}", repo_path),
+                TestRepoUriSchema::Https => format!("https://{hostname}/{repo_path}"),
+                TestRepoUriSchema::Ssh => format!("ssh://git@{hostname}/{repo_path}"),
+                TestRepoUriSchema::Git => format!("git@{hostname}:{repo_path}"),
             };
 
             let tls_config = match tls {
@@ -1036,7 +1033,7 @@ mod test {
 
         let repo_builder = TestGitRepoBuilder::build(
             client.clone(),
-            format!("git-repo-{}", name),
+            format!("git-repo-{name}"),
             visibility,
             schema,
             tls,
@@ -1064,10 +1061,10 @@ mod test {
 
         match expected {
             Expected::Ok => {
-                assert!(repo.is_ok(), "Failed test name: {}", name);
+                assert!(repo.is_ok(), "Failed test name: {name}");
             }
             Expected::Err => {
-                assert!(repo.is_err(), "Failed test name: {}", name);
+                assert!(repo.is_err(), "Failed test name: {name}");
             }
         }
     }
@@ -1092,7 +1089,7 @@ mod test {
 
         let repo_builder = TestGitRepoBuilder::build(
             client.clone(),
-            format!("cluster-git-repo-{}", name),
+            format!("cluster-git-repo-{name}"),
             visibility,
             schema,
             tls,
@@ -1120,10 +1117,10 @@ mod test {
 
         match expected {
             Expected::Ok => {
-                assert!(repo.is_ok(), "Failed test name: {}", name);
+                assert!(repo.is_ok(), "Failed test name: {name}");
             }
             Expected::Err => {
-                assert!(repo.is_err(), "Failed test name: {}", name);
+                assert!(repo.is_err(), "Failed test name: {name}");
             }
         }
     }

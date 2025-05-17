@@ -178,12 +178,12 @@ impl CliConfig {
                     .await
                     .context(format!("Unable to get TLS secret {secret_name}"))?;
                 let secret_data = secret.data.ok_or_else(|| {
-                    Error::SecretDecodingError(format!("no `data` part in the secret `{}`", secret_name))
+                    Error::SecretDecodingError(format!("no `data` part in the secret `{secret_name}`"))
                 })?;
                 let cert = secret_data
                     .get("tls.crt")
                     .ok_or_else(|| {
-                        Error::SecretDecodingError(format!("no `tls.crt` key in the secret `{}`", secret_name))
+                        Error::SecretDecodingError(format!("no `tls.crt` key in the secret `{secret_name}`"))
                     })?
                     .to_owned();
                 let cert = String::from_utf8(cert.0)
@@ -193,7 +193,7 @@ impl CliConfig {
                 let key = secret_data
                     .get("tls.key")
                     .ok_or_else(|| {
-                        Error::SecretDecodingError(format!("no `tls.key` key in the secret `{}`", secret_name))
+                        Error::SecretDecodingError(format!("no `tls.key` key in the secret `{secret_name}`"))
                     })?
                     .to_owned();
                 let key = String::from_utf8(key.0)

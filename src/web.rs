@@ -193,7 +193,7 @@ impl Display for RateLimiterKey {
                 key.push_str(source);
             }
         }
-        write!(f, "{}", key)
+        write!(f, "{key}")
     }
 }
 
