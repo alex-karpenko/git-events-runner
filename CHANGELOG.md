@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.5] - 2025-06-21
+### Details
+#### Changed
+- Update dependencies by @alex-karpenko in [#58](https://github.com/alex-karpenko/git-events-runner/pull/58)
+
+#### Fixed
+- Fix lint warnings - use string interpolation in format strings by @alex-karpenko in [#56](https://github.com/alex-karpenko/git-events-runner/pull/56)
+
 ## [0.4.4] - 2025-04-12
 ### Details
 #### Fixed
@@ -153,6 +161,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
+[0.4.5]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.4..v0.4.5
 [0.4.4]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.3..v0.4.4
 [0.4.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.2..v0.4.3
 [0.4.2]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.1..v0.4.2
