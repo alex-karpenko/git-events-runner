@@ -181,7 +181,7 @@ async fn run(cli_config: CliConfig, client: Client) -> anyhow::Result<()> {
 /// Just print all CRD definitions
 fn generate_crds() -> anyhow::Result<()> {
     for crd in resources::get_all_crds() {
-        print!("---\n{}", serde_yaml::to_string(&crd).unwrap());
+        print!("---\n{}", serde_yaml_ng::to_string(&crd).unwrap());
     }
 
     Ok(())

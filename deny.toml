@@ -4,13 +4,9 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "Unicode-3.0", "BSD-3-Clause", "ISC", "MPL-2.0", "OpenSSL"]
+allow = ["MIT", "Apache-2.0", "Unicode-3.0", "BSD-3-Clause", "ISC", "OpenSSL", "CDLA-Permissive-2.0"]
 confidence-threshold = 0.93
-exceptions = [
-    { allow = [
-        "Zlib",
-    ], name = "foldhash" },
-]
+exceptions = [{ allow = ["Zlib"], name = "foldhash" }]
 
 [[licenses.clarify]]
 name = "ring"
