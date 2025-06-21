@@ -14,13 +14,15 @@ pub const K3S_API_PORT: ContainerPort = ContainerPort::Tcp(6443);
 
 pub const K3S_IMAGE_TAG_ENV_VAR: &str = "CARGO_TEST_K3S_IMAGE_TAG";
 pub const KUBE_VERSION_ENV_VAR: &str = "CARGO_TEST_KUBE_VERSION";
-pub const KUBE_VERSION_DEFAULT: &str = "1.31";
+pub const KUBE_VERSION_DEFAULT: &str = "1.33";
 
-const AVAILABLE_K3S_IMAGE_TAGS: [(&str, &str); 6] = [
-    ("1.31", "v1.31.1-k3s1"),
-    ("1.30", "v1.30.5-k3s1"),
-    ("1.29", "v1.29.9-k3s1"),
-    ("1.28", "v1.28.14-k3s1"),
+const AVAILABLE_K3S_IMAGE_TAGS: [(&str, &str); 8] = [
+    ("1.33", "v1.33.1-k3s1"),
+    ("1.32", "v1.32.5-k3s1"),
+    ("1.31", "v1.31.9-k3s1"),
+    ("1.30", "v1.30.13-k3s1"),
+    ("1.29", "v1.29.15-k3s1"),
+    ("1.28", "v1.28.15-k3s1"),
     ("1.27", "v1.27.16-k3s1"),
     ("1.26", "v1.26.15-k3s1"),
 ];

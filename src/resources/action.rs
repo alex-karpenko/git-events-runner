@@ -616,6 +616,8 @@ mod tests {
                         namespace_selector: None,
                         namespaces: Some(vec!["ns1".into(), "ns2".into()]),
                         topology_key: "kubernetes.io/hostname".into(),
+                        match_label_keys: None,
+                        mismatch_label_keys: None,
                     }]),
                 }),
             }),

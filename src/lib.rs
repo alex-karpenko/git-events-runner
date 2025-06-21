@@ -92,7 +92,7 @@ pub enum Error {
     ConfigDeserializationError(
         #[source]
         #[from]
-        serde_yaml::Error,
+        serde_yaml_ng::Error,
     ),
 
     /// Unable to retrieve a resource from cache when it should be present in cache

@@ -360,15 +360,17 @@ impl SecretsCache {
             if let Some(secret) = cache.get(&hash_key) {
                 // and return value if it's cached and not expired and contains key
                 let value = secret.data.get(key);
-                if secret.expires_at > SystemTime::now() && value.is_some() {
-                    let value = value.unwrap().0.clone();
-                    let value = String::from_utf8(value).map_err(|_e| {
-                        Error::SecretDecodingError(format!(
-                            "error converting string `{key}` from UTF8 in the secret `{secret_name}`"
-                        ))
-                    })?;
-                    trace!(secret = %hash_key, %key, "object found");
-                    return Ok(value);
+                if secret.expires_at > SystemTime::now() {
+                    if let Some(value) = value {
+                        let value = value.0.clone();
+                        let value = String::from_utf8(value).map_err(|_e| {
+                            Error::SecretDecodingError(format!(
+                                "error converting string `{key}` from UTF8 in the secret `{secret_name}`"
+                            ))
+                        })?;
+                        trace!(secret = %hash_key, %key, "object found");
+                        return Ok(value);
+                    }
                 } else {
                     trace!(secret = %hash_key, %key, "object expired or key doesn't exist");
                 }

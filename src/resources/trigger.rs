@@ -1518,7 +1518,7 @@ mod tests {
             }
         }
 
-        let folder: String = temp_folder.into_path().display().to_string();
+        let folder: String = temp_folder.keep().display().to_string();
         let expected_hash = hasher.finalize().to_vec();
         let calculated_hash = get_file_glob_hash(
             &folder,
