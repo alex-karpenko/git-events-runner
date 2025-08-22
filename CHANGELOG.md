@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.6] - 2025-08-22
+### Details
+#### Changed
+- Maintenance release to update dependencies by @alex-karpenko in [#60](https://github.com/alex-karpenko/git-events-runner/pull/60)
+
 ## [0.4.5] - 2025-06-21
 ### Details
 #### Changed
@@ -161,6 +166,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
+[0.4.6]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.5..v0.4.6
 [0.4.5]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.4..v0.4.5
 [0.4.4]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.3..v0.4.4
 [0.4.3]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.2..v0.4.3
