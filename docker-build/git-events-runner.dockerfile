@@ -6,6 +6,7 @@ COPY . /app
 
 ARG RUSTFLAGS='-C target-feature=+crt-static'
 
+RUN apt-get update && apt-get install -y libzstd-dev libssl-dev
 RUN cargo build --target x86_64-unknown-linux-gnu --release --bin git-events-runner
 RUN strip target/x86_64-unknown-linux-gnu/release/git-events-runner
 
