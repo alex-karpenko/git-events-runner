@@ -8,16 +8,16 @@ use opentelemetry_sdk::trace::SdkTracerProvider;
 use rustls::crypto::aws_lc_rs;
 use sacs::scheduler::{GarbageCollector, RuntimeThreads, SchedulerBuilder, WorkerParallelism, WorkerType};
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 use tracing::{error, info, instrument};
-use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Layer, Registry};
+use tracing_subscriber::{EnvFilter, Layer, Registry, layer::SubscriberExt};
 use uuid::Uuid;
 
 use git_events_runner::{
     cache::{ApiCacheStore, SecretsCache},
     cli::{Cli, CliConfig, CliConfigDumpOptions},
     config::RuntimeConfig,
-    controller::{run_leader_controllers, State},
+    controller::{State, run_leader_controllers},
     jobs::JobsQueue,
     resources,
     signals::SignalHandler,

@@ -113,14 +113,14 @@ mod tests {
     mod containers;
 
     use crate::resources::get_all_crds;
-    use containers::k3s::{K3s, K3S_API_PORT};
+    use containers::k3s::{K3S_API_PORT, K3s};
     use ctor::dtor;
     use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
-    use kube::{api::PostParams, Api, Client};
+    use kube::{Api, Client, api::PostParams};
     use rustls::crypto::aws_lc_rs;
     use std::{env, thread};
-    use testcontainers::{runners::AsyncRunner as _, ContainerAsync, ImageExt as _};
-    use testcontainers_modules::gitea::{Gitea, GITEA_HTTP_PORT, GITEA_SSH_PORT};
+    use testcontainers::{ContainerAsync, ImageExt as _, runners::AsyncRunner as _};
+    use testcontainers_modules::gitea::{GITEA_HTTP_PORT, GITEA_SSH_PORT, Gitea};
     use tokio::{
         runtime::Runtime,
         sync::{Mutex, OnceCell, RwLock},

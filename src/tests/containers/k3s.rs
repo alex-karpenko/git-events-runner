@@ -1,12 +1,12 @@
 use kube::{
-    config::{KubeConfigOptions, Kubeconfig},
     Config,
+    config::{KubeConfigOptions, Kubeconfig},
 };
 use rustls::crypto::CryptoProvider;
 use std::{borrow::Cow, collections::HashMap, io, path::Path};
 use testcontainers::{
-    core::{ContainerPort, Mount, WaitFor},
     ContainerAsync, Image,
+    core::{ContainerPort, Mount, WaitFor},
 };
 
 pub const K3S_IMAGE_NAME: &str = "rancher/k3s";

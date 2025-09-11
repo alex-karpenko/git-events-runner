@@ -1,11 +1,11 @@
 //! Runtime configuration watcher, reloader, deserializer,
 //! and schema.
 use crate::Result;
-use futures::{future::ready, StreamExt};
-use k8s_openapi::{api::core::v1::ConfigMap, Metadata};
+use futures::{StreamExt, future::ready};
+use k8s_openapi::{Metadata, api::core::v1::ConfigMap};
 use kube::{
-    runtime::{predicates, watcher, WatchStreamExt},
     Api, Client,
+    runtime::{WatchStreamExt, predicates, watcher},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};

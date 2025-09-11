@@ -3,27 +3,27 @@
 //! - eliminate cluster overloading
 //! - avoid running outdated (expired) jobs
 use std::collections::HashMap;
-use std::sync::atomic::AtomicUsize;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, SystemTime};
 use std::{
     fmt::Debug,
     sync::{Arc, OnceLock},
 };
 
-use futures::{future::ready, StreamExt};
+use futures::{StreamExt, future::ready};
 use k8s_openapi::api::batch::v1::JobStatus;
-use k8s_openapi::{api::batch::v1::Job, Metadata};
+use k8s_openapi::{Metadata, api::batch::v1::Job};
+use kube::ResourceExt;
 use kube::api::{ObjectMeta, PostParams};
 use kube::runtime::reflector::ObjectRef;
-use kube::ResourceExt;
 use kube::{
-    runtime::{reflector, watcher, WatchStreamExt},
     Api, Client,
+    runtime::{WatchStreamExt, reflector, watcher},
 };
-use prometheus::{histogram_opts, opts, register, Histogram, HistogramVec, IntCounterVec, IntGauge};
+use prometheus::{Histogram, HistogramVec, IntCounterVec, IntGauge, histogram_opts, opts, register};
 use strum::Display;
-use tokio::sync::{mpsc, watch, RwLock};
+use tokio::sync::{RwLock, mpsc, watch};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::cli::CliConfig;
