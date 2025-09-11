@@ -188,10 +188,10 @@ impl Display for RateLimiterKey {
             key.push_str(trigger);
             key.push('/');
         }
-        if !self.strip_source {
-            if let Some(source) = &self.source {
-                key.push_str(source);
-            }
+        if !self.strip_source
+            && let Some(source) = &self.source
+        {
+            key.push_str(source);
         }
         write!(f, "{key}")
     }
