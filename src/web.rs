@@ -3,16 +3,16 @@
 //! - liveness and readiness probes
 //! - metrics
 use axum::{
+    Json, Router,
     extract::{FromRequest, Path, State},
     http::{HeaderMap, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
 use futures::Future;
 use kube::Client;
-use prometheus::{histogram_opts, opts, register, Encoder, HistogramVec, IntCounterVec, TextEncoder};
+use prometheus::{Encoder, HistogramVec, IntCounterVec, TextEncoder, histogram_opts, opts, register};
 use sacs::{
     scheduler::{Scheduler, TaskScheduler},
     task::TaskId,
@@ -28,19 +28,19 @@ use strum::Display;
 use tokio::{
     net::TcpListener,
     select,
-    sync::{watch, RwLock},
+    sync::{RwLock, watch},
     time::Instant,
 };
-use tower_governor::{governor::GovernorConfigBuilder, key_extractor::KeyExtractor, GovernorError, GovernorLayer};
+use tower_governor::{GovernorError, GovernorLayer, governor::GovernorConfigBuilder, key_extractor::KeyExtractor};
 use tracing::{debug, error, info, instrument, trace, warn};
 use uuid::Uuid;
 
+use crate::Error;
 use crate::cache::{ApiCache, SecretsCache};
 use crate::cli::CliConfig;
 use crate::config::RuntimeConfig;
 use crate::controller::State as AppState;
 use crate::resources::trigger::{Trigger, TriggerTaskSources, WebhookTrigger, WebhookTriggerSpec};
-use crate::Error;
 
 static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics::default().register());
 
@@ -188,10 +188,10 @@ impl Display for RateLimiterKey {
             key.push_str(trigger);
             key.push('/');
         }
-        if !self.strip_source {
-            if let Some(source) = &self.source {
-                key.push_str(source);
-            }
+        if !self.strip_source
+            && let Some(source) = &self.source
+        {
+            key.push_str(source);
         }
         write!(f, "{key}")
     }
@@ -708,8 +708,8 @@ mod tests {
     use axum::{extract::State, http::HeaderValue};
     use k8s_openapi::api::core::v1::{Namespace, Secret};
     use kube::{
-        api::{DeleteParams, PostParams},
         Api, Resource,
+        api::{DeleteParams, PostParams},
     };
     use std::collections::BTreeMap;
     use tokio::sync::OnceCell;

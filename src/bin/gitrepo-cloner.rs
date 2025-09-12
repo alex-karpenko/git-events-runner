@@ -3,7 +3,7 @@
 use clap::{Args, Parser};
 use git_events_runner::resources::{
     git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
-    trigger::{get_latest_commit, TriggerGitRepoReference, TriggerSourceKind},
+    trigger::{TriggerGitRepoReference, TriggerSourceKind, get_latest_commit},
 };
 use kube::{Api, Client};
 use rustls::crypto::aws_lc_rs;
@@ -56,7 +56,11 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     if cli.debug {
-        std::env::set_var("RUST_LOG", "debug");
+        unsafe {
+            // This function is safe to call in a single-threaded program.
+            #![allow(unsafe_code)]
+            std::env::set_var("RUST_LOG", "debug");
+        }
     }
     tracing_subscriber::fmt::init();
 

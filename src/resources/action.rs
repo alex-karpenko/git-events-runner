@@ -1,10 +1,9 @@
 //! Action CRDs
 use super::{
-    random_string,
+    CustomApiResource, random_string,
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
-    CustomApiResource,
 };
-use crate::{config::RuntimeConfig, jobs::JobsQueue, Result};
+use crate::{Result, config::RuntimeConfig, jobs::JobsQueue};
 use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
@@ -16,7 +15,7 @@ use k8s_openapi::{
     },
     apimachinery::pkg::apis::meta::v1::OwnerReference,
 };
-use kube::{api::ObjectMeta, CustomResource, Resource, ResourceExt};
+use kube::{CustomResource, Resource, ResourceExt, api::ObjectMeta};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -522,8 +521,8 @@ mod tests {
         apimachinery::pkg::apis::meta::v1::{LabelSelector, LabelSelectorRequirement},
     };
     use kube::{
-        api::{DeleteParams, PostParams},
         Api, Client,
+        api::{DeleteParams, PostParams},
     };
     use tokio::sync::OnceCell;
 

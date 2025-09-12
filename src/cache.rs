@@ -8,13 +8,13 @@ use crate::resources::{
 };
 use crate::{Error, Result};
 use core::hash::Hash;
-use futures::future::ready;
 use futures::StreamExt;
-use k8s_openapi::{api::core::v1::Secret, ByteString};
+use futures::future::ready;
+use k8s_openapi::{ByteString, api::core::v1::Secret};
 use kube::runtime::WatchStreamExt;
 use kube::{
-    runtime::reflector::{self, Store},
     Api, Client,
+    runtime::reflector::{self, Store},
 };
 use serde::Deserialize;
 use std::{
@@ -434,8 +434,8 @@ mod tests {
     use insta::assert_debug_snapshot;
     use k8s_openapi::api::core::v1::Namespace;
     use kube::{
-        api::{DeleteParams, PostParams},
         Resource,
+        api::{DeleteParams, PostParams},
     };
     use tokio::sync::OnceCell;
 

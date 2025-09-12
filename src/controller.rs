@@ -3,40 +3,40 @@ use std::sync::LazyLock;
 use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
-use futures::{future::join_all, StreamExt};
+use futures::{StreamExt, future::join_all};
 use k8s_openapi::NamespaceResourceScope;
 use kube::{
+    Api, Client, Resource, ResourceExt,
     api::ListParams,
     runtime::{
+        Controller,
         controller::{self, Action as ReconcileAction},
         events::{Recorder, Reporter},
-        finalizer::{finalizer, Event as Finalizer},
+        finalizer::{Event as Finalizer, finalizer},
         watcher::Config,
-        Controller,
     },
-    Api, Client, Resource, ResourceExt,
 };
-use prometheus::{histogram_opts, opts, register, HistogramVec, IntCounterVec};
+use prometheus::{HistogramVec, IntCounterVec, histogram_opts, opts, register};
 use sacs::{
     scheduler::{
         GarbageCollector, RuntimeThreads, Scheduler, SchedulerBuilder, TaskScheduler, WorkerParallelism, WorkerType,
     },
     task::TaskId,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio::{
-    sync::{watch, RwLock},
+    sync::{RwLock, watch},
     time::Instant,
 };
 use tracing::{debug, error, info, warn};
 
 use crate::{
+    Error, Result,
     cli::CliConfig,
     resources::{
-        trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
         CustomApiResource, Reconcilable,
+        trigger::{ScheduleTrigger, ScheduleTriggerSpec, TriggerSchedule},
     },
-    Error, Result,
 };
 
 static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics::default().register());
@@ -339,8 +339,8 @@ mod tests {
     };
     use k8s_openapi::api::core::v1::Namespace;
     use kube::{
-        api::{Api, DeleteParams, PostParams},
         Client, CustomResource,
+        api::{Api, DeleteParams, PostParams},
     };
     use schemars::JsonSchema;
     use serde::Deserialize;
@@ -462,22 +462,32 @@ mod tests {
         let client = init().await.unwrap();
         let ctx = get_test_context(client).await;
 
-        assert!(check_api_by_list(&Api::<ScheduleTrigger>::all(ctx.client.clone()))
-            .await
-            .is_ok());
-        assert!(check_api_by_list(&Api::<WebhookTrigger>::all(ctx.client.clone()))
-            .await
-            .is_ok());
+        assert!(
+            check_api_by_list(&Api::<ScheduleTrigger>::all(ctx.client.clone()))
+                .await
+                .is_ok()
+        );
+        assert!(
+            check_api_by_list(&Api::<WebhookTrigger>::all(ctx.client.clone()))
+                .await
+                .is_ok()
+        );
         assert!(check_api_by_list(&Api::<Action>::all(ctx.client.clone())).await.is_ok());
-        assert!(check_api_by_list(&Api::<ClusterAction>::all(ctx.client.clone()))
-            .await
-            .is_ok());
-        assert!(check_api_by_list(&Api::<GitRepo>::all(ctx.client.clone()))
-            .await
-            .is_ok());
-        assert!(check_api_by_list(&Api::<ClusterGitRepo>::all(ctx.client.clone()))
-            .await
-            .is_ok());
+        assert!(
+            check_api_by_list(&Api::<ClusterAction>::all(ctx.client.clone()))
+                .await
+                .is_ok()
+        );
+        assert!(
+            check_api_by_list(&Api::<GitRepo>::all(ctx.client.clone()))
+                .await
+                .is_ok()
+        );
+        assert!(
+            check_api_by_list(&Api::<ClusterGitRepo>::all(ctx.client.clone()))
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -486,8 +496,10 @@ mod tests {
         let client = init().await.unwrap();
         let ctx = get_test_context(client).await;
 
-        assert!(check_api_by_list(&Api::<FakeCustomResource>::all(ctx.client.clone()))
-            .await
-            .is_err());
+        assert!(
+            check_api_by_list(&Api::<FakeCustomResource>::all(ctx.client.clone()))
+                .await
+                .is_err()
+        );
     }
 }

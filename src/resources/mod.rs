@@ -3,12 +3,12 @@ pub mod action;
 pub mod git_repo;
 pub mod trigger;
 
-use crate::{controller::Context, Result};
+use crate::{Result, controller::Context};
 use action::{Action, ClusterAction};
 use git_repo::{ClusterGitRepo, GitRepo};
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
-use kube::{runtime::controller::Action as ReconcileAction, CustomResourceExt};
-use rand::{distr::Alphanumeric, Rng};
+use kube::{CustomResourceExt, runtime::controller::Action as ReconcileAction};
+use rand::{Rng, distr::Alphanumeric};
 use std::sync::Arc;
 use trigger::{ScheduleTrigger, WebhookTrigger};
 

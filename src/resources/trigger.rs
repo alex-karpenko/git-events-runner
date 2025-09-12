@@ -12,43 +12,44 @@ use std::{
 use chrono::{DateTime, Utc};
 use git2::{Oid, Repository};
 use globwalk::{FileType, GlobWalkerBuilder};
-use k8s_openapi::{chrono::SecondsFormat, NamespaceResourceScope};
+use k8s_openapi::{NamespaceResourceScope, chrono::SecondsFormat};
 use kube::{
+    Api, Client, CustomResource, Resource, ResourceExt,
     api::{Patch, PatchParams},
     core::object::HasStatus,
     runtime::{
         controller::Action as ReconcileAction,
         events::{Event, EventType, Recorder},
     },
-    Api, Client, CustomResource, Resource, ResourceExt,
 };
-use prometheus::{histogram_opts, opts, register, HistogramVec, IntCounterVec};
+use prometheus::{HistogramVec, IntCounterVec, histogram_opts, opts, register};
 use sacs::{
     scheduler::{CancelOpts, TaskScheduler},
     task::{CronOpts, CronSchedule, Task, TaskSchedule},
 };
 use schemars::JsonSchema;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use strum_macros::{Display, EnumString};
 use tokio::{
-    fs::{create_dir_all, remove_dir_all, File},
+    fs::{File, create_dir_all, remove_dir_all},
     io::AsyncReadExt,
     time::Instant,
 };
 use tracing::{debug, debug_span, error, info, instrument};
 
 use crate::{
+    Error, Result,
     cache::ApiCache,
     cli::CliConfig,
     controller::Context,
     resources::{
+        API_GROUP, CURRENT_API_VERSION, CustomApiResource, Reconcilable,
         action::{Action, ActionExecutor, ClusterAction},
         git_repo::{ClusterGitRepo, GitRepo, GitRepoGetter},
-        random_string, CustomApiResource, Reconcilable, API_GROUP, CURRENT_API_VERSION,
+        random_string,
     },
-    Error, Result,
 };
 
 const NEVER_LAST_RUN_STR: &str = "Never";

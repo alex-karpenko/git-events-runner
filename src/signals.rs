@@ -2,7 +2,7 @@
 use std::error::Error;
 use tokio::{
     select,
-    signal::unix::{signal, Signal, SignalKind},
+    signal::unix::{Signal, SignalKind, signal},
     sync::watch,
 };
 use tracing::{debug, info};

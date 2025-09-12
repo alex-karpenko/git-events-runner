@@ -5,9 +5,9 @@ use git2::{CertificateCheckStatus, Cred, FetchOptions, RemoteCallbacks, Reposito
 use k8s_openapi::api::core::v1::Secret;
 use kube::{Api, Client, CustomResource};
 use rustls::{
-    client::{danger::ServerCertVerifier, WebPkiServerVerifier},
-    pki_types::{CertificateDer, ServerName, UnixTime},
     RootCertStore,
+    client::{WebPkiServerVerifier, danger::ServerCertVerifier},
+    pki_types::{CertificateDer, ServerName, UnixTime},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,7 @@ const URI_VALIDATION_REGEX: &str = r#"^git@[\w.-]+:[\w.-]+/[/\w.-]+$|^ssh://([\w
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoSpec {
     /// Full URI of the repo
-    #[schemars(regex = "URI_VALIDATION_REGEX")]
+    #[schemars(regex(pattern = URI_VALIDATION_REGEX))]
     pub repo_uri: String,
     /// TLS config section
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -52,7 +52,7 @@ pub struct GitRepoSpec {
 #[serde(rename_all = "camelCase")]
 pub struct ClusterGitRepoSpec {
     /// Full URI of the repo
-    #[schemars(regex = "URI_VALIDATION_REGEX")]
+    #[schemars(regex(pattern = URI_VALIDATION_REGEX))]
     pub repo_uri: String,
     /// TLS config section
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -453,8 +453,8 @@ async fn get_secret_strings<'a>(
 mod test {
     use super::*;
     use crate::tests::{self, get_test_git_ca};
-    use base64::{prelude::BASE64_STANDARD, Engine as _};
-    use k8s_openapi::{api::core::v1::Secret, ByteString};
+    use base64::{Engine as _, prelude::BASE64_STANDARD};
+    use k8s_openapi::{ByteString, api::core::v1::Secret};
     use kube::api::{Api, DeleteParams, ObjectMeta, PostParams};
     use rstest::*;
     use rstest_reuse::{apply, template};

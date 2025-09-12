@@ -7,7 +7,7 @@ use kube::{Api, Client};
 use std::sync::OnceLock;
 use tracing::debug;
 
-use crate::{web::RequestsRateLimitParams, Error};
+use crate::{Error, web::RequestsRateLimitParams};
 
 const DEFAULT_SOURCE_CLONE_FOLDER: &str = "/tmp/git-events-runner";
 const DEFAULT_CONFIG_MAP_NAME: &str = "git-events-runner-config";
@@ -214,10 +214,10 @@ mod tests {
     use crate::tests;
 
     use insta::assert_debug_snapshot;
-    use k8s_openapi::{api::core::v1::Namespace, ByteString};
+    use k8s_openapi::{ByteString, api::core::v1::Namespace};
     use kube::{
-        api::{DeleteParams, ObjectMeta, PostParams},
         Resource as _,
+        api::{DeleteParams, ObjectMeta, PostParams},
     };
     use std::{collections::BTreeMap, env};
     use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};

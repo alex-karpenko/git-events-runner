@@ -3,27 +3,27 @@
 //! - eliminate cluster overloading
 //! - avoid running outdated (expired) jobs
 use std::collections::HashMap;
-use std::sync::atomic::AtomicUsize;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, SystemTime};
 use std::{
     fmt::Debug,
     sync::{Arc, OnceLock},
 };
 
-use futures::{future::ready, StreamExt};
+use futures::{StreamExt, future::ready};
 use k8s_openapi::api::batch::v1::JobStatus;
-use k8s_openapi::{api::batch::v1::Job, Metadata};
+use k8s_openapi::{Metadata, api::batch::v1::Job};
+use kube::ResourceExt;
 use kube::api::{ObjectMeta, PostParams};
 use kube::runtime::reflector::ObjectRef;
-use kube::ResourceExt;
 use kube::{
-    runtime::{reflector, watcher, WatchStreamExt},
     Api, Client,
+    runtime::{WatchStreamExt, reflector, watcher},
 };
-use prometheus::{histogram_opts, opts, register, Histogram, HistogramVec, IntCounterVec, IntGauge};
+use prometheus::{Histogram, HistogramVec, IntCounterVec, IntGauge, histogram_opts, opts, register};
 use strum::Display;
-use tokio::sync::{mpsc, watch, RwLock};
+use tokio::sync::{RwLock, mpsc, watch};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::cli::CliConfig;
@@ -285,25 +285,25 @@ impl JobsQueue {
                     // Filter duplicates by watching on resource status changes.
                     let key = ObjectRef::new(&name).within(&ns);
                     if let Some(store_status) = &store.get(&key).unwrap_or_default().status {
-                        if let Some(prev_status) = statuses.get(&key) {
-                            if store_status != prev_status {
-                                trace!(status = ?store_status, "job status changed");
-                                // Since we run jobs with parallelism=1 and w/o restarts,
-                                // we look for just `succeed` or `failed` in the status,
-                                // but not for counters under them.
-                                if store_status.succeeded.is_some() {
-                                    info!(namespace = %ns, job = %name, "job completed successfully");
-                                    jobs_queue
-                                        .running_jobs
-                                        .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                                    METRICS.count_and_measure_completed(&job, JobCompletionStatus::Succeed);
-                                } else if store_status.failed.is_some() {
-                                    warn!(namespace = %ns, job = %name, "job failed");
-                                    jobs_queue
-                                        .running_jobs
-                                        .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                                    METRICS.count_and_measure_completed(&job, JobCompletionStatus::Failed);
-                                }
+                        if let Some(prev_status) = statuses.get(&key)
+                            && store_status != prev_status
+                        {
+                            trace!(status = ?store_status, "job status changed");
+                            // Since we run jobs with parallelism=1 and w/o restarts,
+                            // we look for just `succeed` or `failed` in the status,
+                            // but not for counters under them.
+                            if store_status.succeeded.is_some() {
+                                info!(namespace = %ns, job = %name, "job completed successfully");
+                                jobs_queue
+                                    .running_jobs
+                                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                METRICS.count_and_measure_completed(&job, JobCompletionStatus::Succeed);
+                            } else if store_status.failed.is_some() {
+                                warn!(namespace = %ns, job = %name, "job failed");
+                                jobs_queue
+                                    .running_jobs
+                                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                METRICS.count_and_measure_completed(&job, JobCompletionStatus::Failed);
                             }
                         }
 
@@ -312,14 +312,15 @@ impl JobsQueue {
                                 .running_jobs
                                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         };
-                    } else if let Some(status) = statuses.remove(&key) {
-                        if status.succeeded.is_none() && status.failed.is_none() {
-                            warn!(namespace = %ns, job = %name, "unfinished job deleted");
-                            jobs_queue
-                                .running_jobs
-                                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                            METRICS.count_and_measure_completed(&job, JobCompletionStatus::Deleted);
-                        }
+                    } else if let Some(status) = statuses.remove(&key)
+                        && status.succeeded.is_none()
+                        && status.failed.is_none()
+                    {
+                        warn!(namespace = %ns, job = %name, "unfinished job deleted");
+                        jobs_queue
+                            .running_jobs
+                            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                        METRICS.count_and_measure_completed(&job, JobCompletionStatus::Deleted);
                     }
                 }
                 let _ = queue_event_tx.send(());
