@@ -280,7 +280,7 @@ impl RequestsRateLimiter {
                 .unwrap(),
         );
 
-        router.layer(GovernorLayer { config })
+        router.layer(GovernorLayer::new(config))
     }
 }
 
