@@ -9,6 +9,7 @@ use rustls::{
     client::{WebPkiServerVerifier, danger::ServerCertVerifier},
     pki_types::{CertificateDer, ServerName, UnixTime},
 };
+use rustls_pki_types::pem::PemObject;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
@@ -311,7 +312,7 @@ pub trait GitRepoGetter: GitRepoInternals {
                         // if we have our own CA specified:
                         // create root CA store from system one and add our CA to it
                         let mut ca = tls_secrets.get("ca.crt").unwrap().as_bytes();
-                        let ca = rustls_pemfile::certs(&mut ca).flatten();
+                        let ca = CertificateDer::pem_reader_iter(&mut ca).flatten();
                         // TODO: make system trust store global
                         let mut root_cert_store = RootCertStore::empty();
                         root_cert_store.add_parsable_certificates(

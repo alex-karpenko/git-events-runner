@@ -681,20 +681,20 @@ impl WebState {
                     .clone()
                     .unwrap_or(RuntimeConfig::get().trigger.webhook.default_auth_header.clone()),
             ) {
-                // try to get secret from cache
+                // Try to get secret from cache
                 // let secret = self
                 //     .secrets_cache
                 //     .as_ref()
                 let secret = SecretsCache::get(namespace, &auth_config.secret_ref.name, &auth_config.key)
                     .await
-                    .map_err(|_| WebError::AuthorizationError)?; // something went wrong during interaction with secret cache
+                    .map_err(|_| WebError::AuthorizationError)?; // Something went wrong during interaction with secret cache
                 if *secret == *header {
                     Ok(()) // hit!
                 } else {
-                    Err(WebError::Forbidden) // header is present but provided value is incorrect
+                    Err(WebError::Forbidden) // Header is present but provided value is incorrect
                 }
             } else {
-                Err(WebError::Unauthorized) // auth is required by header isn't present in the request
+                Err(WebError::Unauthorized) // Auth is required by header isn't present in the request
             }
         } else {
             Ok(()) // no need to auth
