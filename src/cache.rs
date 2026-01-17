@@ -483,7 +483,7 @@ mod tests {
         // Init secrets cache
         SecretsCache::init_cache(expire_time, client.clone());
 
-        // Try to retrieve non-existent secret
+        // Try to retrieve nonexistent secret
         let res = SecretsCache::query_secrets_cache(NAMESPACE, TEST_SECRET_NAME, TEST_SECRET_KEY).await;
         assert!(res.is_err());
         assert_debug_snapshot!(res.err().unwrap());
@@ -497,7 +497,7 @@ mod tests {
         let _ = data.data.insert(secrets);
         api.create(&pp, &data).await.unwrap_or_default();
 
-        // Try to retrieve non-existent key
+        // Try to retrieve nonexistent key
         let res = SecretsCache::query_secrets_cache(NAMESPACE, TEST_SECRET_NAME, "some-non-existent-key").await;
         assert!(res.is_err());
         assert_debug_snapshot!(res.err().unwrap());

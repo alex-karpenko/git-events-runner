@@ -5,7 +5,7 @@ use futures::{StreamExt, future::ready};
 use k8s_openapi::{Metadata, api::core::v1::ConfigMap};
 use kube::{
     Api, Client,
-    runtime::{WatchStreamExt, predicates, watcher},
+    runtime::{PredicateConfig, WatchStreamExt, predicates, watcher},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
@@ -98,7 +98,7 @@ impl RuntimeConfig {
 
         cm_stream
             .applied_objects()
-            .predicate_filter(predicates::generation) // ignore updates if content isn't unchanged
+            .predicate_filter(predicates::generation, PredicateConfig::default()) // ignore updates if content isn't unchanged
             .for_each(|cm| {
                 if let Ok(cm) = cm {
                     let cm_key = format!(

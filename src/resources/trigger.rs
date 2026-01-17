@@ -9,10 +9,10 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use git2::{Oid, Repository};
 use globwalk::{FileType, GlobWalkerBuilder};
-use k8s_openapi::{NamespaceResourceScope, chrono::SecondsFormat};
+use k8s_openapi::NamespaceResourceScope;
 use kube::{
     Api, Client, CustomResource, Resource, ResourceExt,
     api::{Patch, PatchParams},

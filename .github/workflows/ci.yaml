@@ -41,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         k8s:
-          - v1.30
+          - v1.31
           - latest
     steps:
       - uses: actions/checkout@v4
