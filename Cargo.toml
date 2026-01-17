@@ -1,12 +1,15 @@
 [package]
 authors = ["Oleksii Karpenko <alexkarpenko@yahoo.com>"]
 description = "Kubernetes operator to run Jobs on events from Git"
+documentation = "https://alex-karpenko.github.io/git-events-runner"
 edition = "2024"
-rust-version = "1.89"
+homepage = "https://alex-karpenko.github.io/git-events-runner"
 keywords = ["kubernetes", "operator", "git", "events", "runner"]
 license = "MIT"
 name = "git-events-runner"
+readme = "README.md"
 repository = "https://github.com/alex-karpenko/git-events-runner"
+rust-version = "1.89"
 version = "0.4.9"
 
 [[bin]]
