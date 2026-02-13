@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.10] - 2026-02-13
+### Details
+#### Fixed
+- Update vulnerable dependencies by @alex-karpenko in [#68](https://github.com/alex-karpenko/git-events-runner/pull/68)
+
 ## [0.4.9] - 2026-01-17
 ### Details
 #### Changed
@@ -181,6 +186,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
+[0.4.10]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.9..v0.4.10
 [0.4.9]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.8..v0.4.9
 [0.4.8]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.7..v0.4.8
 [0.4.7]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.6..v0.4.7
