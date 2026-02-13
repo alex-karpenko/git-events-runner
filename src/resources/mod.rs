@@ -8,7 +8,7 @@ use action::{Action, ClusterAction};
 use git_repo::{ClusterGitRepo, GitRepo};
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use kube::{CustomResourceExt, runtime::controller::Action as ReconcileAction};
-use rand::{Rng, distr::Alphanumeric};
+use rand::{RngExt, distr::Alphanumeric};
 use std::sync::Arc;
 use trigger::{ScheduleTrigger, WebhookTrigger};
 
