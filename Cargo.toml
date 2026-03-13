@@ -10,7 +10,7 @@ name = "git-events-runner"
 readme = "README.md"
 repository = "https://github.com/alex-karpenko/git-events-runner"
 rust-version = "1.89"
-version = "0.4.10"
+version = "0.4.11"
 
 [[bin]]
 doc = false
@@ -55,10 +55,10 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 serde_yaml_ng = "0.10.0"
 sha2 = "0.10.9"
-strum = { version = "0.27.2", features = ["derive"] }
-strum_macros = "0.27.2"
+strum = { version = "0.28.0", features = ["derive"] }
+strum_macros = "0.28.0"
 thiserror = "2.0.18"
-tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "fs", "io-util", "sync"] }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "fs", "io-util", "sync"] }
 tonic = { version = "0.14.3" }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
@@ -66,7 +66,7 @@ opentelemetry = { version = "0.31.0", features = ["trace", "logs"] }
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio", "tokio"] }
 opentelemetry-otlp = { version = "0.31.0", features = ["tokio", "trace", "tonic", "grpc-tonic"] }
 tracing-opentelemetry = "0.32.1"
-uuid = { version = "1.20.0", features = ["v4"] }
+uuid = { version = "1.22.0", features = ["v4"] }
 prometheus = { version = "0.14.0", default-features = false }
 tower_governor = { version = "0.8.0", features = ["tracing"] }
 
@@ -76,10 +76,10 @@ ctor = "0.6.3"
 insta = { version = "1.46.3", features = ["glob", "ron", "redactions", "filters", "yaml"] }
 rstest = "0.26.1"
 rstest_reuse = "0.7.0"
-tempfile = "3.25.0"
-testcontainers = { version = "0.27.0", default-features = false }
-# testcontainers-modules = { version = "0.14.0", default-features = false, features = ["gitea"] }
-testcontainers-modules = { default-features = false, features = ["gitea"], git = "https://github.com/alex-karpenko/testcontainers-rs-modules-community", branch = "fix/update-testcontainers-version"}
+tempfile = "3.27.0"
+testcontainers = { version = "0.27.1", default-features = false }
+testcontainers-modules = { version = "0.15.0", default-features = false, features = ["gitea"] }
+# testcontainers-modules = { default-features = false, features = ["gitea"], git = "https://github.com/alex-karpenko/testcontainers-rs-modules-community", branch = "fix/update-testcontainers-version"}
 
 [build-dependencies]
 anyhow = "1.0.101"

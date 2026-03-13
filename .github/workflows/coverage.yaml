@@ -20,7 +20,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         name: Setup toolchain
         with:
-          toolchain: nightly
+          toolchain: stable
           components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
