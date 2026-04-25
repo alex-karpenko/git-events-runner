@@ -10,7 +10,7 @@ name = "git-events-runner"
 readme = "README.md"
 repository = "https://github.com/alex-karpenko/git-events-runner"
 rust-version = "1.89"
-version = "0.4.12"
+version = "0.4.13"
 
 [[bin]]
 doc = false
@@ -23,8 +23,8 @@ name = "gitrepo-cloner"
 path = "src/bin/gitrepo-cloner.rs"
 
 [dependencies]
-anyhow = "1.0.101"
-axum = { version = "0.8.8", default-features = false, features = [
+anyhow = "1.0.102"
+axum = { version = "0.8.9", default-features = false, features = [
     "http1",
     "macros",
     "matched-path",
@@ -35,51 +35,51 @@ axum = { version = "0.8.8", default-features = false, features = [
     "json",
 ] }
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
-chrono = { version = "0.4.43", default-features = false, features = ["std"] }
-clap = { version = "4.5.58", features = ["derive"] }
-futures = "0.3.31"
+chrono = { version = "0.4.44", default-features = false, features = ["std"] }
+clap = { version = "4.6.1", features = ["derive"] }
+futures = "0.3.32"
 git2 = "0.20.4"
 globwalk = "0.9.1"
 hex = "0.4.3"
 humantime = "2.3.0"
-k8s-openapi = { version = "0.27.0", features = ["v1_31", "schemars"] }
-kube = { version = "3.0.1", features = ["runtime", "client", "derive", "unstable-runtime"] }
+k8s-openapi = { version = "0.27.1", features = ["v1_31", "schemars"] }
+kube = { version = "3.1.0", features = ["runtime", "client", "derive", "unstable-runtime"] }
 kube-lease-manager = { version = "0.11.1" }
-rand = "0.10.0"
-rustls = { version = "0.23.36", features = ["std", "tls12", "aws-lc-rs"], default-features = false }
+rand = "0.10.1"
+rustls = { version = "0.23.39", features = ["std", "tls12", "aws-lc-rs"], default-features = false }
 rustls-native-certs = "0.8.3"
-rustls-pki-types = "1.14.0"
-sacs = { version = "0.9.0", features = ["async-trait", "tz"] }
+rustls-pki-types = "1.14.1"
+sacs = { version = "0.9.3", features = ["async-trait", "tz"] }
 schemars = "1.2.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 serde_yaml_ng = "0.10.0"
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 strum = { version = "0.28.0", features = ["derive"] }
 strum_macros = "0.28.0"
 thiserror = "2.0.18"
-tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "fs", "io-util", "sync"] }
-tonic = { version = "0.14.3" }
+tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread", "fs", "io-util", "sync"] }
+tonic = { version = "0.14.5" }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 opentelemetry = { version = "0.31.0", features = ["trace", "logs"] }
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio", "tokio"] }
-opentelemetry-otlp = { version = "0.31.0", features = ["tokio", "trace", "tonic", "grpc-tonic"] }
+opentelemetry-otlp = { version = "0.31.1", features = ["tokio", "trace", "tonic", "grpc-tonic"] }
 tracing-opentelemetry = "0.32.1"
-uuid = { version = "1.22.0", features = ["v4"] }
+uuid = { version = "1.23.1", features = ["v4"] }
 prometheus = { version = "0.14.0", default-features = false }
 tower_governor = { version = "0.8.0", features = ["tracing"] }
 
 [dev-dependencies]
 base64 = "0.22.1"
-ctor = "0.6.3"
-insta = { version = "1.46.3", features = ["glob", "ron", "redactions", "filters", "yaml"] }
+ctor = "0.10.1"
+insta = { version = "1.47.2", features = ["glob", "ron", "redactions", "filters", "yaml"] }
 rstest = "0.26.1"
 rstest_reuse = "0.7.0"
 tempfile = "3.27.0"
-testcontainers = { version = "0.27.1", default-features = false }
+testcontainers = { version = "0.27.3", default-features = false }
 testcontainers-modules = { version = "0.15.0", default-features = false, features = ["gitea"] }
 # testcontainers-modules = { default-features = false, features = ["gitea"], git = "https://github.com/alex-karpenko/testcontainers-rs-modules-community", branch = "fix/update-testcontainers-version"}
 
 [build-dependencies]
-anyhow = "1.0.101"
+anyhow = "1.0.102"
