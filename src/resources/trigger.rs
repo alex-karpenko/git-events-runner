@@ -3,7 +3,6 @@ use std::sync::LazyLock;
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
-    io,
     path::Path,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -991,16 +990,13 @@ async fn calc_file_hash(path: impl Into<&Path>) -> Result<Vec<u8>> {
         .await
         .map_err(Error::TriggerFileAccessError)?;
 
-    calc_buffer_hash(&buf)
+    Ok(calc_buffer_hash(&buf))
 }
 
-fn calc_buffer_hash(buf: &Vec<u8>) -> Result<Vec<u8>> {
+fn calc_buffer_hash(buf: &Vec<u8>) -> Vec<u8> {
     let mut hasher = Sha256::new();
-    let mut buf = buf.as_slice();
-    io::copy(&mut buf, &mut hasher).map_err(Error::TriggerFileAccessError)?;
-    let hash = hasher.finalize().to_vec();
-
-    Ok(hash)
+    hasher.update(buf);
+    hasher.finalize().to_vec()
 }
 
 /// Calculates SHA256 hash of files selected by glob
@@ -1513,7 +1509,7 @@ mod tests {
             let buf: Vec<u8> = random_string(TEST_BUFFER_SIZE).into();
             tmp_file.write_all(&buf).await.unwrap();
 
-            let hash = calc_buffer_hash(&buf).unwrap();
+            let hash = calc_buffer_hash(&buf);
             if i != 1 {
                 hasher.update(hash)
             }
