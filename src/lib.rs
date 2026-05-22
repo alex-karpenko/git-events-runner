@@ -114,7 +114,7 @@ mod tests {
 
     use crate::resources::get_all_crds;
     use containers::k3s::{K3S_API_PORT, K3s};
-    use ctor::dtor;
+    use dtor::dtor;
     use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
     use kube::{Api, Client, api::PostParams};
     use rustls::crypto::aws_lc_rs;
@@ -233,7 +233,7 @@ mod tests {
         Ok(())
     }
 
-    #[dtor]
+    #[dtor(unsafe)]
     fn shutdown_test_containers() {
         static LOCK: Mutex<()> = Mutex::const_new(());
 
