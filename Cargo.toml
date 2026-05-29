@@ -92,7 +92,7 @@ tower_governor = { version = "0.8.0", features = ["tracing"] }
 
 [dev-dependencies]
 base64 = "0.22.1"
-dtor = "1.0.3"
+dtor = "1.0.4"
 insta = { version = "1.47.2", features = [
     "glob",
     "ron",
