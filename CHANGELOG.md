@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.15] - 2026-07-25
+### Details
+#### Changed
+- Update dependencies to fiz known vulnerabilities by @alex-karpenko in [#77](https://github.com/alex-karpenko/git-events-runner/pull/77)
+
+#### Fixed
+- Update mkdocs dependencies by @alex-karpenko in [#78](https://github.com/alex-karpenko/git-events-runner/pull/78)
+- Updates unit tests to use Kubernetes 1.36 (latest k3s version) by @alex-karpenko in [#79](https://github.com/alex-karpenko/git-events-runner/pull/79)
+- Update dependencies to fix knows vulnerabilities by @alex-karpenko in [#80](https://github.com/alex-karpenko/git-events-runner/pull/80)
+
 ## [0.4.13] - 2026-04-25
 ### Details
 #### Fixed
@@ -202,6 +212,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
+[0.4.15]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.13..v0.4.15
 [0.4.13]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.12..v0.4.13
 [0.4.12]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.11..v0.4.12
 [0.4.11]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.10..v0.4.11
