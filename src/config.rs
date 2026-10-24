@@ -145,7 +145,7 @@ impl RuntimeConfig {
             }
         };
 
-        Ok(serde_yaml_ng::to_string(&config)?)
+        Ok(serde_saphyr::to_string(&config)?)
     }
 }
 
@@ -164,7 +164,10 @@ impl TryFrom<ConfigMap> for RuntimeConfig {
 
     fn try_from(value: ConfigMap) -> Result<Self, Self::Error> {
         if let Some(config_data) = value.data.unwrap_or_default().get(CONFIG_MAP_DATA_NAME) {
-            match serde_yaml_ng::from_str::<RuntimeConfig>(config_data) {
+            match serde_saphyr::from_str_with_options::<RuntimeConfig>(
+                config_data,
+                serde_saphyr::options! { with_snippet: false },
+            ) {
                 Ok(config) => Ok(config),
                 Err(err) => {
                     error!(error = %err, "unable to deserialize runtime config");
@@ -380,7 +383,7 @@ mod tests {
             trigger: Default::default(),
         };
 
-        data.insert(CONFIG_MAP_DATA_NAME.into(), serde_yaml_ng::to_string(&value).unwrap());
+        data.insert(CONFIG_MAP_DATA_NAME.into(), serde_saphyr::to_string(&value).unwrap());
         let new_config = ConfigMap {
             metadata: ObjectMeta {
                 name: Some(String::from(TEST_CM_NAME)),

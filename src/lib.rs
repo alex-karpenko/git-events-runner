@@ -92,7 +92,15 @@ pub enum Error {
     ConfigDeserializationError(
         #[source]
         #[from]
-        serde_yaml_ng::Error,
+        serde_saphyr::Error,
+    ),
+
+    /// Unable to serialize runtime config into yaml
+    #[error("Config serialization error: {0}")]
+    ConfigSerializationError(
+        #[source]
+        #[from]
+        serde_saphyr::SerializeError,
     ),
 
     /// Unable to retrieve a resource from cache when it should be present in cache
