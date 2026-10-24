@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-10-24
+### Details
+#### Breaking changes
+- Update default worker image to Ubuntu 26.04 by @alex-karpenko in [#83](https://github.com/alex-karpenko/git-events-runner/pull/83)
+
+#### Fixed
+- Update mkdocs requirements by @alex-karpenko in [#81](https://github.com/alex-karpenko/git-events-runner/pull/81)
+- Dependency maintenance release (v0.4.16) by @alex-karpenko in [#82](https://github.com/alex-karpenko/git-events-runner/pull/82)
+
 ## [0.4.15] - 2026-07-25
 ### Details
 #### Changed
@@ -212,6 +221,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
+[0.5.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.15..v0.5.0
 [0.4.15]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.13..v0.4.15
 [0.4.13]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.12..v0.4.13
 [0.4.12]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.11..v0.4.12
