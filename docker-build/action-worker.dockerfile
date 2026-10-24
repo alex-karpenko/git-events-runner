@@ -1,10 +1,10 @@
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 RUN apt update -qqy && \
     apt upgrade -qqy && \
     apt install -qqy --no-install-recommends \
     #
-    libicu74 tzdata zip unzip curl \
+    libicu78 tzdata zip unzip curl \
     python3 python3-pip python3-boto3 \
     ansible \
     #
