@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -1191,16 +1191,16 @@ Header name may be changed.</p>
 <span class="w">      </span><span class="c1"># known as a `.gitignore` pattern, described in the git documentation:</span>
 <span class="w">      </span><span class="c1"># https://git-scm.com/docs/gitignore#_pattern_format</span>
 <span class="w">      </span><span class="c1">#</span>
-<span class="w">      </span><span class="c1"># Presence, absence or hash of the files matters, but modification time doesn&#39;t.</span>
+<span class="w">      </span><span class="c1"># Presence, absence or hash of the files matters, but modification time doesn't.</span>
 <span class="w">      </span><span class="c1">#</span>
 <span class="w">      </span><span class="c1"># Logic for calling action is:</span>
 <span class="w">      </span><span class="c1"># - if both reference and any matching file were changed/add/removed - call the action,</span>
-<span class="w">      </span><span class="c1"># - if reference was changed, but any files weren&#39;t - don&#39;t call the cation,</span>
-<span class="w">      </span><span class="c1"># - if reference was changed, but no matching files aren&#39;t present - call the action.</span>
+<span class="w">      </span><span class="c1"># - if reference was changed, but any files weren't - don't call the cation,</span>
+<span class="w">      </span><span class="c1"># - if reference was changed, but no matching files aren't present - call the action.</span>
 <span class="w">      </span><span class="nt">files</span><span class="p">:</span>
 <span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">doc/examples/scheduletrigger.yaml</span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;*.md&quot;</span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;!README.md&quot;</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"*.md"</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"!README.md"</span>
 
 <span class="w">  </span><span class="c1"># Mandatory schedule that defines when sources should be checked for changes.</span>
 <span class="w">  </span><span class="c1"># Allowed keys: interval, cron.</span>
@@ -1213,18 +1213,18 @@ Header name may be changed.</p>
 <span class="w">  </span><span class="c1"># It uses seven items expression: seconds, minutes, hours, days (month), months, days (week), years.</span>
 <span class="w">  </span><span class="c1"># Seconds and years can be omitted: if an expression has 5 items, it runs at second 0 every year;</span>
 <span class="w">  </span><span class="c1"># if it has 6 items - the first item defines seconds.</span>
-<span class="w">  </span><span class="c1"># It&#39;s possible to prepend expression with time zone name, like &quot;TZ=Europe/Kyiv 0 10-20 * * MON-FRI&quot;</span>
+<span class="w">  </span><span class="c1"># It's possible to prepend expression with time zone name, like "TZ=Europe/Kyiv 0 10-20 * * MON-FRI"</span>
 <span class="w">  </span><span class="c1"># More information about allowed cron expressions: https://github.com/alex-karpenko/cron-lite/blob/main/README.md#cron-schedule-format</span>
 <span class="w">  </span><span class="nt">schedule</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1m</span>
-<span class="w">    </span><span class="nt">cron</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;*/15</span><span class="nv"> </span><span class="s">9-20</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">1-5&quot;</span>
+<span class="w">    </span><span class="nt">cron</span><span class="p">:</span><span class="w"> </span><span class="s">"*/15</span><span class="nv"> </span><span class="s">9-20</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">1-5"</span>
 
 <span class="w">  </span><span class="c1"># Mandatory definition of the Action to use for this trigger.</span>
 <span class="w">  </span><span class="nt">action</span><span class="p">:</span>
 <span class="w">    </span><span class="c1"># TYpe of the action,</span>
 <span class="w">    </span><span class="c1"># Allowed values: Action, ClusterAction</span>
 <span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Action</span>
-<span class="w">    </span><span class="c1"># Actions&#39; name</span>
+<span class="w">    </span><span class="c1"># Actions' name</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">some-action</span>
 
 <span class="c1"># Current trigger status</span>
@@ -1234,7 +1234,7 @@ Header name may be changed.</p>
 <span class="w">  </span><span class="c1"># - Running: trigger runs sources check loop,</span>
 <span class="w">  </span><span class="c1"># - WrongConfig: misconfiguration of the trigger prevents running.</span>
 <span class="w">  </span><span class="nt">state</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Idle</span>
-<span class="w">  </span><span class="c1"># Timestamp of last triggers&#39; run</span>
+<span class="w">  </span><span class="c1"># Timestamp of last triggers' run</span>
 <span class="w">  </span><span class="nt">lastRun</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2024-05-20T01:02:03Z</span>
 <span class="w">  </span><span class="c1"># Dictionary with results of all sources checks</span>
 <span class="w">  </span><span class="nt">checkedSources</span><span class="p">:</span>
@@ -1243,7 +1243,7 @@ Header name may be changed.</p>
 <span class="w">      </span><span class="nt">commitHash</span><span class="p">:</span>
 <span class="w">      </span><span class="c1"># Last hash of the optional file in the repo</span>
 <span class="w">      </span><span class="nt">fileHash</span><span class="p">:</span>
-<span class="w">      </span><span class="c1"># Timestamp of the last sources&#39; change</span>
+<span class="w">      </span><span class="c1"># Timestamp of the last sources' change</span>
 <span class="w">      </span><span class="nt">changed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2024-05-20T01:02:01Z</span>
 </code></pre></div>
 <h2 id="webhooktrigger">WebhookTrigger<a class="headerlink" href="#webhooktrigger" title="Permanent link">&para;</a></h2>
@@ -1293,20 +1293,20 @@ Header name may be changed.</p>
 <span class="w">      </span><span class="c1"># known as a `.gitignore` pattern, described in the git documentation:</span>
 <span class="w">      </span><span class="c1"># https://git-scm.com/docs/gitignore#_pattern_format</span>
 <span class="w">      </span><span class="c1">#</span>
-<span class="w">      </span><span class="c1"># Presence, absence or hash of the files matters, but modification time doesn&#39;t.</span>
+<span class="w">      </span><span class="c1"># Presence, absence or hash of the files matters, but modification time doesn't.</span>
 <span class="w">      </span><span class="c1">#</span>
 <span class="w">      </span><span class="c1"># Logic for calling action is:</span>
 <span class="w">      </span><span class="c1"># - if both reference and any matching file were changed/add/removed - call the action,</span>
-<span class="w">      </span><span class="c1"># - if reference was changed, but any files weren&#39;t - don&#39;t call the cation,</span>
-<span class="w">      </span><span class="c1"># - if reference was changed, but no matching files aren&#39;t present - call the action.</span>
+<span class="w">      </span><span class="c1"># - if reference was changed, but any files weren't - don't call the cation,</span>
+<span class="w">      </span><span class="c1"># - if reference was changed, but no matching files aren't present - call the action.</span>
 <span class="w">      </span><span class="nt">files</span><span class="p">:</span>
 <span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">doc/examples/scheduletrigger.yaml</span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;*.md&quot;</span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;!README.md&quot;</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"*.md"</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"!README.md"</span>
 
 <span class="w">  </span><span class="c1"># Mandatory definition of the webhook behavior,</span>
 <span class="w">  </span><span class="nt">webhook</span><span class="p">:</span>
-<span class="w">    </span><span class="c1"># If `true`, it&#39;s possible to call checks for all triggers&#39; sources</span>
+<span class="w">    </span><span class="c1"># If `true`, it's possible to call checks for all triggers' sources</span>
 <span class="w">    </span><span class="c1"># by single call to `/namespace/trigger`</span>
 <span class="w">    </span><span class="c1"># as well as call to a single source by `/namespace/trigger/source`</span>
 <span class="w">    </span><span class="c1"># If `false`, single source calls are allowed only.</span>
@@ -1329,7 +1329,7 @@ Header name may be changed.</p>
 <span class="w">    </span><span class="c1"># TYpe of the action,</span>
 <span class="w">    </span><span class="c1"># Allowed values: Action, ClusterAction</span>
 <span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Action</span>
-<span class="w">    </span><span class="c1"># Actions&#39; name</span>
+<span class="w">    </span><span class="c1"># Actions' name</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">some-action</span>
 
 <span class="c1"># Current trigger status</span>
@@ -1339,7 +1339,7 @@ Header name may be changed.</p>
 <span class="w">  </span><span class="c1"># - Running: trigger runs sources check loop,</span>
 <span class="w">  </span><span class="c1"># - WrongConfig: misconfiguration of the trigger prevents running.</span>
 <span class="w">  </span><span class="nt">state</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Idle</span>
-<span class="w">  </span><span class="c1"># Timestamp of last triggers&#39; run</span>
+<span class="w">  </span><span class="c1"># Timestamp of last triggers' run</span>
 <span class="w">  </span><span class="nt">lastRun</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2024-05-20T01:02:03Z</span>
 <span class="w">  </span><span class="c1"># Dictionary with results of all sources checks</span>
 <span class="w">  </span><span class="nt">checkedSources</span><span class="p">:</span>
@@ -1348,7 +1348,7 @@ Header name may be changed.</p>
 <span class="w">      </span><span class="nt">commitHash</span><span class="p">:</span>
 <span class="w">      </span><span class="c1"># Last hash of the optional file in the repo</span>
 <span class="w">      </span><span class="nt">fileHash</span><span class="p">:</span>
-<span class="w">      </span><span class="c1"># Timestamp of the last sources&#39; change</span>
+<span class="w">      </span><span class="c1"># Timestamp of the last sources' change</span>
 <span class="w">      </span><span class="nt">changed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2024-05-20T01:02:01Z</span>
 </code></pre></div>
 
@@ -1404,10 +1404,10 @@ Header name may be changed.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tooltips", "navigation.tabs", "navigation.indexes", "navigation.expand", "search.highlight", "search.share", "search.suggest", "toc.follow", "content.code.copy", "content.code.select"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": ["latest"], "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tooltips", "navigation.tabs", "navigation.indexes", "navigation.expand", "search.highlight", "search.share", "search.suggest", "toc.follow", "content.code.copy", "content.code.select"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": ["latest"], "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
   </body>

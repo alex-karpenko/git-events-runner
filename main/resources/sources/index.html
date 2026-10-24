@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -1148,10 +1148,10 @@ so far.</p>
 <span class="w">  </span><span class="nt">tlsConfig</span><span class="p">:</span>
 <span class="w">    </span><span class="c1"># Skip SSL verification at all, default is `false`</span>
 <span class="w">    </span><span class="nt">noVerifySsl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-<span class="w">    </span><span class="c1"># Optional repo&#39;s endpoint custom CA certificate config</span>
+<span class="w">    </span><span class="c1"># Optional repo's endpoint custom CA certificate config</span>
 <span class="w">    </span><span class="c1"># Allowed for https kind of the `repoUri` only</span>
 <span class="w">    </span><span class="nt">caCert</span><span class="p">:</span>
-<span class="w">      </span><span class="c1"># Reference to the Secret with CA certificate in the GitRepo&#39;s namespace</span>
+<span class="w">      </span><span class="c1"># Reference to the Secret with CA certificate in the GitRepo's namespace</span>
 <span class="w">      </span><span class="nt">secretRef</span><span class="p">:</span>
 <span class="w">        </span><span class="c1"># Name of the secret, mandatory if caCert is defined</span>
 <span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ca-cert-secret</span>
@@ -1165,14 +1165,14 @@ so far.</p>
 <span class="w">    </span><span class="c1"># Allowed values:</span>
 <span class="w">    </span><span class="c1">#   - basic: classic basic auth username and password,</span>
 <span class="w">    </span><span class="c1">#     allowed for https and http (insecure!) schemas only,</span>
-<span class="w">    </span><span class="c1">#     adds Authorization header like &quot;Authorization: Basic &lt;base64 encoded username:password pair&gt;&quot;</span>
+<span class="w">    </span><span class="c1">#     adds Authorization header like "Authorization: Basic &lt;base64 encoded username:password pair&gt;"</span>
 <span class="w">    </span><span class="c1">#</span>
 <span class="w">    </span><span class="c1">#   - ssh: authenticate using ssh private key, usually login should be specified in the URI</span>
 <span class="w">    </span><span class="c1">#     allowed in ssh anf git schemas only</span>
 <span class="w">    </span><span class="c1">#</span>
 <span class="w">    </span><span class="c1">#   - token: custom token in Authorization header,</span>
 <span class="w">    </span><span class="c1">#     allowed for https and http (insecure!) schemas only,</span>
-<span class="w">    </span><span class="c1">#     adds Authorization header like &quot;Authorization: &lt;token&gt;&quot;</span>
+<span class="w">    </span><span class="c1">#     adds Authorization header like "Authorization: &lt;token&gt;"</span>
 <span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic</span>
 <span class="w">    </span><span class="c1"># Reference to the Secret with auth credentials</span>
 <span class="w">    </span><span class="c1"># Mandatory if `authConfig` is defined</span>
@@ -1207,10 +1207,10 @@ so far.</p>
 <span class="w">  </span><span class="nt">tlsConfig</span><span class="p">:</span>
 <span class="w">    </span><span class="c1"># Skip SSL verification at all, default is `false`</span>
 <span class="w">    </span><span class="nt">noVerifySsl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-<span class="w">    </span><span class="c1"># Optional repo&#39;s endpoint custom CA certificate config</span>
+<span class="w">    </span><span class="c1"># Optional repo's endpoint custom CA certificate config</span>
 <span class="w">    </span><span class="c1"># Allowed for https kind of the `repoUri` only</span>
 <span class="w">    </span><span class="nt">caCert</span><span class="p">:</span>
-<span class="w">      </span><span class="c1"># Reference to the Secret with CA certificate in the GitRepo&#39;s namespace</span>
+<span class="w">      </span><span class="c1"># Reference to the Secret with CA certificate in the GitRepo's namespace</span>
 <span class="w">      </span><span class="nt">secretRef</span><span class="p">:</span>
 <span class="w">        </span><span class="c1"># Name of the secret, mandatory if caCert is defined</span>
 <span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ca-cert-secret</span>
@@ -1227,14 +1227,14 @@ so far.</p>
 <span class="w">    </span><span class="c1"># Allowed values:</span>
 <span class="w">    </span><span class="c1">#   - basic: classic basic auth username and password,</span>
 <span class="w">    </span><span class="c1">#     allowed for https and http (insecure!) schemas only,</span>
-<span class="w">    </span><span class="c1">#     adds Authorization header like &quot;Authorization: Basic &lt;base64 encoded username:password pair&gt;&quot;</span>
+<span class="w">    </span><span class="c1">#     adds Authorization header like "Authorization: Basic &lt;base64 encoded username:password pair&gt;"</span>
 <span class="w">    </span><span class="c1">#</span>
 <span class="w">    </span><span class="c1">#   - ssh: authenticate using ssh private key, usually login should be specified in the URI</span>
 <span class="w">    </span><span class="c1">#     allowed in ssh anf git schemas only</span>
 <span class="w">    </span><span class="c1">#</span>
 <span class="w">    </span><span class="c1">#   - token: custom token in Authorization header,</span>
 <span class="w">    </span><span class="c1">#     allowed for https and http (insecure!) schemas only,</span>
-<span class="w">    </span><span class="c1">#     adds Authorization header like &quot;Authorization: &lt;token&gt;&quot;</span>
+<span class="w">    </span><span class="c1">#     adds Authorization header like "Authorization: &lt;token&gt;"</span>
 <span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic</span>
 <span class="w">    </span><span class="c1"># Reference to the Secret with auth credentials</span>
 <span class="w">    </span><span class="c1"># Mandatory if `authConfig` is defined</span>
@@ -1306,10 +1306,10 @@ so far.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tooltips", "navigation.tabs", "navigation.indexes", "navigation.expand", "search.highlight", "search.share", "search.suggest", "toc.follow", "content.code.copy", "content.code.select"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": ["latest"], "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tooltips", "navigation.tabs", "navigation.indexes", "navigation.expand", "search.highlight", "search.share", "search.suggest", "toc.follow", "content.code.copy", "content.code.select"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": ["latest"], "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
   </body>
