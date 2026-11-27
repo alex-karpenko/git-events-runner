@@ -3,4 +3,5 @@
 # Keep in sync with `advisories.ignore` in deny.toml.
 ignore = [
     "RUSTSEC-2026-0440", # astral-tokio-tar is unmaintained (dev-only, via testcontainers)
+    "RUSTSEC-2026-0543", # chrono is unmaintained (dev-only, via testcontainers)
 ]
