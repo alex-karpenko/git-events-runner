@@ -133,9 +133,9 @@ impl Cli {
         }
     }
 
-    /// Parse RRL params using original try_from(&str)
+    /// Parse RRL params using its FromStr impl
     fn rrl_parser(s: &str) -> Result<RequestsRateLimitParams, String> {
-        RequestsRateLimitParams::try_from(s).map_err(|e| e.to_string())
+        s.parse::<RequestsRateLimitParams>().map_err(|e| e.to_string())
     }
 }
 
@@ -253,6 +253,60 @@ mod tests {
     fn default_cli_consistency() {
         let cli = CliConfig::parse_from::<_, &str>([]);
         assert_debug_snapshot!(cli);
+    }
+
+    #[test]
+    fn rrl_parser_maps_from_str_result() {
+        assert_eq!(Cli::rrl_parser("5/1"), Ok("5/1".parse().unwrap()));
+        assert_eq!(
+            Cli::rrl_parser("1/0"),
+            Err(String::from("Incorrect request rate limit parameter: 1/0"))
+        );
+    }
+
+    #[test]
+    fn rrl_args_parsing() {
+        let cli = Cli::try_parse_from([
+            "git-events-runner",
+            "run",
+            "--hooks-rrl-global",
+            "10/60",
+            "--hooks-rrl-trigger",
+            "5/1",
+            "--hooks-rrl-source",
+            "1/10",
+        ])
+        .unwrap();
+
+        let Cli::Run(config) = cli else {
+            panic!("Unexpected subcommand: {cli:?}");
+        };
+        assert_eq!(config.hooks_rrl_global, Some("10/60".parse().unwrap()));
+        assert_eq!(config.hooks_rrl_trigger, Some("5/1".parse().unwrap()));
+        assert_eq!(config.hooks_rrl_source, Some("1/10".parse().unwrap()));
+    }
+
+    #[test]
+    fn rrl_args_invalid_rejected() {
+        let args = ["--hooks-rrl-global", "--hooks-rrl-trigger", "--hooks-rrl-source"];
+        let values = ["0/1", "1/0", "abc", "1/1/1", "1/"];
+
+        for arg in args {
+            for value in values {
+                let err = Cli::try_parse_from(["git-events-runner", "run", arg, value]).unwrap_err();
+
+                assert_eq!(
+                    err.kind(),
+                    clap::error::ErrorKind::ValueValidation,
+                    "Unexpected error kind for {arg} {value}"
+                );
+                assert!(
+                    err.to_string()
+                        .contains(&format!("Incorrect request rate limit parameter: {value}")),
+                    "Unexpected error message for {arg} {value}: {err}"
+                );
+            }
+        }
     }
 
     #[tokio::test]

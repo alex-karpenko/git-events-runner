@@ -21,6 +21,7 @@ use serde::Serialize;
 use std::{
     fmt::Display,
     net::SocketAddr,
+    str::FromStr,
     sync::{Arc, LazyLock},
     time::Duration,
 };
@@ -114,10 +115,10 @@ pub struct RequestRateLimitsConfig {
     pub source: Option<RequestsRateLimitParams>,
 }
 
-impl TryFrom<&str> for RequestsRateLimitParams {
-    type Error = Error;
+impl FromStr for RequestsRateLimitParams {
+    type Err = Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         let splitted: Vec<String> = value.split("/").map(String::from).collect();
         if splitted.len() != 2 {
             return Err(Error::InvalidRequestRateLimit(value.into()));
@@ -1054,7 +1055,7 @@ mod tests {
     #[test]
     fn requests_rate_limit_valid() {
         assert_eq!(
-            RequestsRateLimitParams::try_from("1/1").unwrap(),
+            "1/1".parse::<RequestsRateLimitParams>().unwrap(),
             RequestsRateLimitParams {
                 burst: 1,
                 period: Duration::from_secs(1)
@@ -1062,7 +1063,7 @@ mod tests {
         );
 
         assert_eq!(
-            RequestsRateLimitParams::try_from("1/10").unwrap(),
+            "1/10".parse::<RequestsRateLimitParams>().unwrap(),
             RequestsRateLimitParams {
                 burst: 1,
                 period: Duration::from_secs(10)
@@ -1070,7 +1071,7 @@ mod tests {
         );
 
         assert_eq!(
-            RequestsRateLimitParams::try_from("5/1").unwrap(),
+            "5/1".parse::<RequestsRateLimitParams>().unwrap(),
             RequestsRateLimitParams {
                 burst: 5,
                 period: Duration::from_millis(200)
@@ -1085,10 +1086,74 @@ mod tests {
         for t in tests {
             assert!(
                 matches!(
-                    RequestsRateLimitParams::try_from(t),
+                    t.parse::<RequestsRateLimitParams>(),
                     Err(Error::InvalidRequestRateLimit(_))
                 ),
                 "Unexpected result for string '{t}'"
+            );
+        }
+    }
+
+    #[test]
+    fn requests_rate_limit_from_str_period_calculation() {
+        let tests = [
+            ("10/60", 10, Duration::from_secs(6)),
+            ("4/1", 4, Duration::from_millis(250)),
+            ("3/1", 3, Duration::from_secs_f64(1.0 / 3.0)),
+            ("1/86400", 1, Duration::from_secs(86400)),
+            ("4294967295/1", u32::MAX, Duration::from_secs_f64(1.0 / u32::MAX as f64)),
+        ];
+
+        for (input, burst, period) in tests {
+            assert_eq!(
+                RequestsRateLimitParams::from_str(input).unwrap(),
+                RequestsRateLimitParams { burst, period },
+                "Unexpected result for string '{input}'"
+            );
+        }
+    }
+
+    #[test]
+    fn requests_rate_limit_from_str_invalid_format() {
+        let tests = [
+            " 1/1",
+            "1/1 ",
+            "1 / 1",
+            "1/1/1",
+            "1//1",
+            "1\\1",
+            "1:1",
+            "-1/1",
+            "1/-1",
+            "1.5/1",
+            "1/0.5",
+            "4294967296/1",           // burst overflows u32
+            "1/18446744073709551616", // period overflows u64
+        ];
+
+        for t in tests {
+            assert!(
+                matches!(
+                    RequestsRateLimitParams::from_str(t),
+                    Err(Error::InvalidRequestRateLimit(_))
+                ),
+                "Unexpected result for string '{t}'"
+            );
+        }
+    }
+
+    #[test]
+    fn requests_rate_limit_from_str_error_keeps_input() {
+        for input in ["1/0", "abc", "1/1/1"] {
+            let err = RequestsRateLimitParams::from_str(input).unwrap_err();
+
+            assert!(
+                matches!(&err, Error::InvalidRequestRateLimit(s) if s == input),
+                "Unexpected error for string '{input}': {err:?}"
+            );
+            assert_eq!(
+                err.to_string(),
+                format!("Incorrect request rate limit parameter: {input}")
             );
         }
     }
