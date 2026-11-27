@@ -4,7 +4,6 @@ use super::{
     trigger::{TriggerGitRepoReference, TriggerSourceKind},
 };
 use crate::{Result, config::RuntimeConfig, jobs::JobsQueue};
-use chrono::{DateTime, Local};
 use k8s_openapi::{
     api::{
         batch::v1::{Job, JobSpec},
@@ -18,10 +17,7 @@ use k8s_openapi::{
 use kube::{CustomResource, Resource, ResourceExt, api::ObjectMeta};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    time::{Duration, SystemTime},
-};
+use std::{collections::BTreeMap, time::Duration};
 use strum::{Display, EnumString};
 use tracing::{info, instrument};
 
@@ -200,9 +196,7 @@ trait ActionInternals: Sized + Resource + CustomApiResource {
 
     /// format job name
     fn job_name(&self) -> String {
-        let timestamp = DateTime::<Local>::from(SystemTime::now())
-            .format("%Y%m%d-%H%M%S")
-            .to_string();
+        let timestamp = jiff::ZonedDateTime::now().strftime("%Y%m%d-%H%M%S").to_string();
 
         format!("{}-{}-{}", self.name_any(), timestamp, random_string(2)).to_lowercase()
     }

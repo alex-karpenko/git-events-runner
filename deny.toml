@@ -6,9 +6,6 @@ yanked = "deny"
 # Keep in sync with .cargo/audit.toml.
 ignore = [
     { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained (dev-only, via testcontainers)" },
-    { id = "RUSTSEC-2026-0542", reason = "humantime is unmaintained" },
-    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained" },
-    { id = "RUSTSEC-2026-0555", reason = "chrono-tz is unmaintained (via sacs -> cron-lite)" },
 ]
 
 [licenses]

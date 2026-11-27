@@ -8,9 +8,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use chrono::{DateTime, SecondsFormat, Utc};
 use git2::{Oid, Repository};
 use globwalk::{FileType, GlobWalkerBuilder};
+use jiff::{Span, SpanRelativeTo, Timestamp};
 use k8s_openapi::NamespaceResourceScope;
 use kube::{
     Api, Client, CustomResource, Resource, ResourceExt,
@@ -36,7 +36,7 @@ use tokio::{
     io::AsyncReadExt,
     time::Instant,
 };
-use tracing::{debug, debug_span, error, info, instrument};
+use tracing::{debug, debug_span, error, info, instrument, warn};
 
 use crate::{
     Error, Result,
@@ -52,6 +52,33 @@ use crate::{
 };
 
 const NEVER_LAST_RUN_STR: &str = "Never";
+
+/// Parses human-readable interval (like `10s`, `5m`, `20h`, `5h30m25s`, `2d`, `1w`) into a non-negative duration.
+/// Days are treated as 24 hours; calendar units (months, years) are rejected since they have no fixed length.
+fn parse_interval(interval: &str) -> Option<Duration> {
+    let span: Span = interval.parse().ok()?;
+    let duration = span.to_duration(SpanRelativeTo::days_are_24_hours()).ok()?;
+    Duration::try_from(duration).ok()
+}
+
+/// Parses `lastRun` status value into a time of the last trigger run.
+/// Returns `None` if the trigger has never been run, or if the value can't be parsed
+/// (in that case the trigger is scheduled as if it has never been run).
+fn parse_last_run(last_run: Option<&str>) -> Option<SystemTime> {
+    let last_run = last_run.filter(|lr| *lr != NEVER_LAST_RUN_STR)?;
+    match last_run.parse::<Timestamp>().map(SystemTime::try_from) {
+        Ok(Ok(last_run)) => Some(last_run),
+        _ => {
+            warn!(last_run = %last_run, "unable to parse trigger's lastRun status, assuming it has never been run");
+            None
+        }
+    }
+}
+
+/// Formats timestamp as RFC 3339 string in UTC with whole seconds, like `2024-01-02T03:04:05Z`.
+fn format_rfc3339_secs(timestamp: Timestamp) -> String {
+    format!("{timestamp:.0}")
+}
 
 static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics::default().register());
 
@@ -313,7 +340,7 @@ pub enum TriggerSchedule {
 impl TriggerSchedule {
     fn is_valid(&self) -> bool {
         match self {
-            TriggerSchedule::Interval(interval) => interval.parse::<humantime::Duration>().is_ok(),
+            TriggerSchedule::Interval(interval) => parse_interval(interval).is_some(),
             TriggerSchedule::Cron(cron) => CronSchedule::try_from(cron).is_ok(),
         }
     }
@@ -455,19 +482,9 @@ impl Reconcilable<ScheduleTriggerSpec> for ScheduleTrigger {
             }
 
             // Get a time of last triggers' run if it was run ever.
-            let last_run: Option<SystemTime> = if let Some(status) = self.status() {
-                status
-                    .last_run
-                    .as_ref()
-                    .filter(|lr| (**lr).eq(NEVER_LAST_RUN_STR))
-                    .map(|last_run| {
-                        DateTime::parse_from_rfc3339(last_run)
-                            .expect("Incorrect time format in LastRun field, looks like a BUG.")
-                            .into()
-                    })
-            } else {
-                None
-            };
+            let last_run = self
+                .status()
+                .and_then(|status| parse_last_run(status.last_run.as_deref()));
 
             // Get a new schedule for the new task.
             match self.get_task_schedule(last_run) {
@@ -558,11 +575,10 @@ impl ScheduleTrigger {
         if self.spec.schedule.is_valid() {
             let schedule = match &self.spec.schedule {
                 TriggerSchedule::Interval(interval) => {
-                    let interval: Duration = interval.parse::<humantime::Duration>().map_err(|_| ())?.into();
+                    let interval = parse_interval(interval).ok_or(())?;
                     if let Some(last_run) = last_run {
-                        let since_last_run = SystemTime::now()
-                            .duration_since(last_run)
-                            .expect("wrong time of trigger last run, looks like a BUG");
+                        // Last run in the future (clock skew) is treated as "just run".
+                        let since_last_run = SystemTime::now().duration_since(last_run).unwrap_or_default();
                         let delay = interval.checked_sub(since_last_run).unwrap_or(Duration::from_secs(0));
                         TaskSchedule::IntervalDelayed(interval, delay)
                     } else {
@@ -645,7 +661,7 @@ where
         &self,
         state: Option<TriggerState>,
         checked_sources: Option<HashMap<String, CheckedSourceState>>,
-        last_run: Option<DateTime<Utc>>,
+        last_run: Option<Timestamp>,
         api: &Api<Self>,
     ) -> impl Future<Output = Result<()>> + Send {
         async move {
@@ -667,7 +683,7 @@ where
                 TriggerStatus {
                     state: state.unwrap_or(status.state.clone()),
                     last_run: if let Some(last_run) = last_run {
-                        Some(last_run.to_rfc3339_opts(SecondsFormat::Secs, true))
+                        Some(format_rfc3339_secs(last_run))
                     } else {
                         status.last_run.clone()
                     },
@@ -678,7 +694,7 @@ where
                 TriggerStatus {
                     state: state.unwrap_or_default(),
                     last_run: last_run
-                        .map(|last_run| last_run.to_rfc3339_opts(SecondsFormat::Secs, true))
+                        .map(format_rfc3339_secs)
                         .or(Some(String::from(NEVER_LAST_RUN_STR))),
                     checked_sources: checked_sources.unwrap_or_default(),
                 }
@@ -901,15 +917,14 @@ where
                                 // - Update self.spec... by the latest processed commit
                                 match action_exec_result {
                                     Ok(_) => {
-                                        new_source_state.changed =
-                                            Some(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true));
+                                        new_source_state.changed = Some(format_rfc3339_secs(Timestamp::now()));
                                         let new_source_state: HashMap<String, CheckedSourceState> =
                                             HashMap::from([(source, new_source_state)]);
                                         if let Err(err) = trigger
                                             .update_trigger_status(
                                                 Some(TriggerState::Running),
                                                 Some(new_source_state),
-                                                Some(Utc::now()),
+                                                Some(Timestamp::now()),
                                                 &triggers_api,
                                             )
                                             .await
@@ -941,7 +956,7 @@ where
                     }
                     // change trigger's state to idle and set last_run time in the status
                     if let Err(err) = trigger
-                        .update_trigger_status(Some(TriggerState::Idle), None, Some(Utc::now()), &triggers_api)
+                        .update_trigger_status(Some(TriggerState::Idle), None, Some(Timestamp::now()), &triggers_api)
                         .await
                     {
                         error!(trigger = %trigger_name, error = %err, "updating trigger state");
@@ -1042,6 +1057,104 @@ mod tests {
             .await;
 
         tests::get_test_kube_client().await
+    }
+
+    #[rstest::rstest]
+    #[case("10s", Some(Duration::from_secs(10)))]
+    #[case("5m", Some(Duration::from_secs(5 * 60)))]
+    #[case("20h", Some(Duration::from_secs(20 * 3600)))]
+    #[case("5h30m25s", Some(Duration::from_secs(5 * 3600 + 30 * 60 + 25)))]
+    #[case("5h 30m 25s", Some(Duration::from_secs(5 * 3600 + 30 * 60 + 25)))]
+    #[case("1h30m", Some(Duration::from_secs(90 * 60)))]
+    #[case("250ms", Some(Duration::from_millis(250)))]
+    #[case("2d", Some(Duration::from_secs(2 * 86400)))]
+    #[case("2days", Some(Duration::from_secs(2 * 86400)))]
+    #[case("1w", Some(Duration::from_secs(7 * 86400)))]
+    #[case("1 hour", Some(Duration::from_secs(3600)))]
+    #[case("0s", Some(Duration::ZERO))]
+    #[case("", None)]
+    #[case("5", None)]
+    #[case("abc", None)]
+    #[case("-5m", None)]
+    #[case("1 month", None)]
+    #[case("1y", None)]
+    fn parse_interval_values(#[case] interval: &str, #[case] expected: Option<Duration>) {
+        assert_eq!(parse_interval(interval), expected);
+    }
+
+    #[rstest::rstest]
+    #[case("2024-01-02T03:04:05Z", "2024-01-02T03:04:05Z")]
+    #[case("2024-01-02T03:04:05.987654321Z", "2024-01-02T03:04:05Z")]
+    #[case("2024-01-02T05:04:05+02:00", "2024-01-02T03:04:05Z")]
+    fn format_rfc3339_secs_values(#[case] input: &str, #[case] expected: &str) {
+        let ts: Timestamp = input.parse().unwrap();
+        assert_eq!(format_rfc3339_secs(ts), expected);
+        // round-trip: formatted value must be parseable back
+        assert!(format_rfc3339_secs(ts).parse::<Timestamp>().is_ok());
+    }
+
+    #[rstest::rstest]
+    #[case(None, None)]
+    #[case(Some(NEVER_LAST_RUN_STR), None)]
+    #[case(Some(""), None)]
+    #[case(Some("garbage"), None)]
+    #[case(Some("2024-01-02T03:04:05Z"), Some(1_704_164_645))]
+    #[case(Some("2024-01-02T05:04:05+02:00"), Some(1_704_164_645))]
+    fn parse_last_run_values(#[case] last_run: Option<&str>, #[case] expected_unix_secs: Option<u64>) {
+        let expected = expected_unix_secs.map(|secs| SystemTime::UNIX_EPOCH + Duration::from_secs(secs));
+        assert_eq!(parse_last_run(last_run), expected);
+    }
+
+    #[test]
+    fn task_schedule_interval_without_last_run() {
+        let trigger = ScheduleTrigger::test_trigger_with_interval("t", "ns", "1h");
+        assert_eq!(
+            trigger.get_task_schedule(None),
+            Ok(TaskSchedule::Interval(Duration::from_secs(3600)))
+        );
+    }
+
+    #[test]
+    fn task_schedule_interval_with_last_run() {
+        let interval = Duration::from_secs(3600);
+        let trigger = ScheduleTrigger::test_trigger_with_interval("t", "ns", "1h");
+
+        // Run 10 minutes ago: delay is the rest of the interval (with some slack for test execution time).
+        let last_run = SystemTime::now() - Duration::from_secs(600);
+        let Ok(TaskSchedule::IntervalDelayed(i, delay)) = trigger.get_task_schedule(Some(last_run)) else {
+            panic!("expected IntervalDelayed schedule");
+        };
+        assert_eq!(i, interval);
+        assert!(
+            delay <= Duration::from_secs(3000) && delay > Duration::from_secs(2990),
+            "{delay:?}"
+        );
+
+        // Run long ago: no delay.
+        let last_run = SystemTime::now() - Duration::from_secs(7200);
+        assert_eq!(
+            trigger.get_task_schedule(Some(last_run)),
+            Ok(TaskSchedule::IntervalDelayed(interval, Duration::ZERO))
+        );
+
+        // Run in the future (clock skew): full interval delay, no panic.
+        let last_run = SystemTime::now() + Duration::from_secs(600);
+        assert_eq!(
+            trigger.get_task_schedule(Some(last_run)),
+            Ok(TaskSchedule::IntervalDelayed(interval, interval))
+        );
+    }
+
+    #[rstest::rstest]
+    #[case(None, true)]
+    #[case(Some(SystemTime::now()), false)]
+    fn task_schedule_cron_at_start(#[case] last_run: Option<SystemTime>, #[case] at_start: bool) {
+        let trigger = ScheduleTrigger::test_trigger_with_cron("t", "ns", "0 * * * *");
+        let Ok(TaskSchedule::Cron(_, opts)) = trigger.get_task_schedule(last_run) else {
+            panic!("expected Cron schedule");
+        };
+        assert_eq!(opts.at_start, at_start);
+        assert!(!opts.concurrent);
     }
 
     impl ScheduleTrigger {
@@ -1205,12 +1318,7 @@ mod tests {
         );
 
         trigger
-            .update_trigger_status(
-                None,
-                None,
-                Some(DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z").unwrap().into()),
-                &api,
-            )
+            .update_trigger_status(None, None, Some("2024-01-02T03:04:05Z".parse().unwrap()), &api)
             .await
             .unwrap();
         assert_yaml_snapshot!(
@@ -1428,12 +1536,7 @@ mod tests {
         );
 
         trigger
-            .update_trigger_status(
-                None,
-                None,
-                Some(DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z").unwrap().into()),
-                &api,
-            )
+            .update_trigger_status(None, None, Some("2024-01-02T03:04:05Z".parse().unwrap()), &api)
             .await
             .unwrap();
         assert_yaml_snapshot!(
