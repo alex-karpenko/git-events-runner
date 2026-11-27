@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-11-27
+### Details
+#### Breaking changes
+- Migrate from chrono and humantime to jiff, update sacs to 0.10 by @alex-karpenko in [#87](https://github.com/alex-karpenko/git-events-runner/pull/87)
+
+#### Fixed
+- Update mkdocs dependencies by @alex-karpenko in [#84](https://github.com/alex-karpenko/git-events-runner/pull/84)
+- Update kube to 5.x and test against Kubernetes 1.33–1.37 by @alex-karpenko in [#85](https://github.com/alex-karpenko/git-events-runner/pull/85)
+- Update actions versions and build dependencies by @alex-karpenko in [#86](https://github.com/alex-karpenko/git-events-runner/pull/86)
+
 ## [0.5.0] - 2026-10-24
 ### Details
 #### Breaking changes
@@ -221,6 +231,7 @@ All notable changes to this project will be documented in this file.
 ## New Contributors
 * @alex-karpenko made their first contribution
 
+[0.6.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.5.0..v0.6.0
 [0.5.0]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.15..v0.5.0
 [0.4.15]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.13..v0.4.15
 [0.4.13]: https://github.com/alex-karpenko/git-events-runner/compare/v0.4.12..v0.4.13
