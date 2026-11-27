@@ -2,8 +2,8 @@
 use std::sync::LazyLock;
 use std::{clone::Clone, collections::HashMap, default::Default, fmt::Debug, sync::Arc, time::Duration};
 
-use chrono::{DateTime, Utc};
 use futures::{StreamExt, future::join_all};
+use jiff::Timestamp;
 use k8s_openapi::NamespaceResourceScope;
 use kube::{
     Api, Client, Resource, ResourceExt,
@@ -142,7 +142,7 @@ impl State {
 /// Resource diagnostics state
 pub struct Diagnostics {
     /// Time of the last published event
-    pub last_event: DateTime<Utc>,
+    pub last_event: Timestamp,
     /// Event reporter instance
     pub reporter: Reporter,
 }
@@ -150,7 +150,7 @@ pub struct Diagnostics {
 impl Default for Diagnostics {
     fn default() -> Self {
         Self {
-            last_event: Utc::now(),
+            last_event: Timestamp::now(),
             reporter: "git-events-runner".into(),
         }
     }
@@ -302,7 +302,7 @@ where
     K: Resource<Scope = NamespaceResourceScope>,
 {
     let start = Instant::now();
-    ctx.diagnostics.write().await.last_event = Utc::now();
+    ctx.diagnostics.write().await.last_event = Timestamp::now();
 
     let ns = resource.namespace().unwrap();
     let resource_name = resource.name_any();
