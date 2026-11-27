@@ -1,0 +1,63 @@
+apiVersion: git-events-runner.rs/v1alpha1
+kind: ClusterGitRepo
+metadata:
+  name: git-repo-name
+spec:
+  # The only mandatory field
+  # Allowed schemas: https, http, ssh, git
+  # Examples:
+  #   - https://github.com/alex-karpenko/test-git-events-runner.git
+  #   - http://github.com/alex-karpenko/test-git-events-runner.git
+  #   - git@github.com:alex-karpenko/git-events-runner.git
+  #   - ssh://mylogin@github.com/alex-karpenko/test-git-events-runner
+  repoUri: https://github.com/alex-karpenko/test-git-events-runner.git
+
+  # Optional TLS transport config
+  tlsConfig:
+    # Skip SSL verification at all, default is `false`
+    noVerifySsl: false
+    # Optional repo's endpoint custom CA certificate config
+    # Allowed for https kind of the `repoUri` only
+    caCert:
+      # Reference to the Secret with CA certificate in the GitRepo's namespace
+      secretRef:
+        # Name of the secret, mandatory if caCert is defined
+        name: ca-cert-secret
+        # Optional namespace of the Secret,
+        # default is the namespace of the trigger which uses this resource
+        namespace: default
+      # Key name in the Secret with CA certificate
+      # Optional, default is `ca.crt`
+      key: ca.crt
+
+  # Optional authorization config
+  authConfig:
+    # Auth type, mandatory if `authConfig` is defined
+    # Allowed values:
+    #   - basic: classic basic auth username and password,
+    #     allowed for https and http (insecure!) schemas only,
+    #     adds Authorization header like "Authorization: Basic <base64 encoded username:password pair>"
+    #
+    #   - ssh: authenticate using ssh private key, usually login should be specified in the URI
+    #     allowed in ssh anf git schemas only
+    #
+    #   - token: custom token in Authorization header,
+    #     allowed for https and http (insecure!) schemas only,
+    #     adds Authorization header like "Authorization: <token>"
+    type: basic
+    # Reference to the Secret with auth credentials
+    # Mandatory if `authConfig` is defined
+    secretRef:
+      # Name of the secret, mandatory if `authConfig` is defined
+      name: git-repo-secret
+      # Optional namespace of the Secret,
+      # default is the namespace of the trigger which uses this resource
+      namespace: default
+    # Optional key names in the Secret which contains the necessary credentials
+    # Redefine it if key names differ from the default
+    keys:
+      # Below are defaults
+      username: username # mandatory for a basic auth type
+      password: password # mandatory for a basic auth type
+      token: token       # mandatory for a token auth type
+      privateKey: ssh-privatekey # mandatory for an ssh auth type

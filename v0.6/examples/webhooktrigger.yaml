@@ -1,0 +1,103 @@
+apiVersion: git-events-runner.rs/v1alpha1
+kind: WebhookTrigger
+metadata:
+  name: trigger-example
+  namespace: default
+spec:
+  # Mandatory section,
+  # It specifies a list of the sources to watch and optionally watching config
+  sources:
+    # Kind of the sources,
+    # Allowed values: GitRepo and ClusterGitRepo
+    kind: GitRepo
+    # List of the sources to watch on. Trigger will clone each repo one by one,
+    # and check for changes each repo separately.
+    #
+    # Trigger calls action for each source separately,
+    # so if all three sources (in the example below) were changed -
+    # trigger calls action three times consecutively.
+    names:
+      - source-repo-1
+      - source-repo-2
+      - source-repo-3
+    # Optional watching config
+    watchOn:
+      # Run action if repo reference was changes only,
+      # and ignore it if the current commit is the same
+      # as during the previous run.
+      #
+      # If this field is `false`, trigger will call action each time
+      # it runs regardless of changes in the source.
+      #
+      # Default is `true`
+      onChangeOnly: true
+      # Which referent to watch on
+      # Allowed keys: branch, tag and commit with corresponding values.
+      # These keys are mutually exclusive.
+      # Default is `branch: main`
+      reference:
+        branch: main # default
+        tag: v0.1.0
+        commit: 92abcd3fc4082ed5e53f12b383e14580b83dcff3
+      # Optionally, besides checking for changes in the whole repo,
+      # trigger can check for changes in some specific files, specified by glob patterns,
+      # known as a `.gitignore` pattern, described in the git documentation:
+      # https://git-scm.com/docs/gitignore#_pattern_format
+      #
+      # Presence, absence or hash of the files matters, but modification time doesn't.
+      #
+      # Logic for calling action is:
+      # - if both reference and any matching file were changed/add/removed - call the action,
+      # - if reference was changed, but any files weren't - don't call the cation,
+      # - if reference was changed, but no matching files aren't present - call the action.
+      files:
+        - doc/examples/scheduletrigger.yaml
+        - "*.md"
+        - "!README.md"
+
+  # Mandatory definition of the webhook behavior,
+  webhook:
+    # If `true`, it's possible to call checks for all triggers' sources
+    # by single call to `/namespace/trigger`
+    # as well as call to a single source by `/namespace/trigger/source`
+    # If `false`, single source calls are allowed only.
+    # Default is `false`
+    multiSource: false
+    # Optionals (by strongly recommended) section with webhook authentication config.
+    authConfig:
+      # Mandatory reference to the Secret with auth token.
+      secretRef:
+        # Name of the secret
+        name: webhook-auth
+      # Mandatory key name in the Secret which contains authentication token
+      key: token
+      # Optional HTTP request header with auth token
+      # Default is `x-trigger-auth`
+      header: x-trigger-auth
+
+  # Mandatory definition of the Action to use for this trigger.
+  action:
+    # TYpe of the action,
+    # Allowed values: Action, ClusterAction
+    kind: Action
+    # Actions' name
+    name: some-action
+
+# Current trigger status
+status:
+  # Current state, possible values:
+  # - Idle: indicates that trigger is in waiting for event state,
+  # - Running: trigger runs sources check loop,
+  # - WrongConfig: misconfiguration of the trigger prevents running.
+  state: Idle
+  # Timestamp of last triggers' run
+  lastRun: 2024-05-20T01:02:03Z
+  # Dictionary with results of all sources checks
+  checkedSources:
+    source-repo-1:
+      # Last hash discovered in the source/reference
+      commitHash:
+      # Last hash of the optional file in the repo
+      fileHash:
+      # Timestamp of the last sources' change
+      changed: 2024-05-20T01:02:01Z
