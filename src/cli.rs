@@ -133,9 +133,9 @@ impl Cli {
         }
     }
 
-    /// Parse RRL params using original try_from(&str)
+    /// Parse RRL params using its FromStr impl
     fn rrl_parser(s: &str) -> Result<RequestsRateLimitParams, String> {
-        RequestsRateLimitParams::try_from(s).map_err(|e| e.to_string())
+        s.parse::<RequestsRateLimitParams>().map_err(|e| e.to_string())
     }
 }
 

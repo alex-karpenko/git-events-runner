@@ -21,6 +21,7 @@ use serde::Serialize;
 use std::{
     fmt::Display,
     net::SocketAddr,
+    str::FromStr,
     sync::{Arc, LazyLock},
     time::Duration,
 };
@@ -114,10 +115,10 @@ pub struct RequestRateLimitsConfig {
     pub source: Option<RequestsRateLimitParams>,
 }
 
-impl TryFrom<&str> for RequestsRateLimitParams {
-    type Error = Error;
+impl FromStr for RequestsRateLimitParams {
+    type Err = Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         let splitted: Vec<String> = value.split("/").map(String::from).collect();
         if splitted.len() != 2 {
             return Err(Error::InvalidRequestRateLimit(value.into()));
@@ -1054,7 +1055,7 @@ mod tests {
     #[test]
     fn requests_rate_limit_valid() {
         assert_eq!(
-            RequestsRateLimitParams::try_from("1/1").unwrap(),
+            "1/1".parse::<RequestsRateLimitParams>().unwrap(),
             RequestsRateLimitParams {
                 burst: 1,
                 period: Duration::from_secs(1)
@@ -1062,7 +1063,7 @@ mod tests {
         );
 
         assert_eq!(
-            RequestsRateLimitParams::try_from("1/10").unwrap(),
+            "1/10".parse::<RequestsRateLimitParams>().unwrap(),
             RequestsRateLimitParams {
                 burst: 1,
                 period: Duration::from_secs(10)
@@ -1070,7 +1071,7 @@ mod tests {
         );
 
         assert_eq!(
-            RequestsRateLimitParams::try_from("5/1").unwrap(),
+            "5/1".parse::<RequestsRateLimitParams>().unwrap(),
             RequestsRateLimitParams {
                 burst: 5,
                 period: Duration::from_millis(200)
@@ -1085,7 +1086,7 @@ mod tests {
         for t in tests {
             assert!(
                 matches!(
-                    RequestsRateLimitParams::try_from(t),
+                    t.parse::<RequestsRateLimitParams>(),
                     Err(Error::InvalidRequestRateLimit(_))
                 ),
                 "Unexpected result for string '{t}'"
