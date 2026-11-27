@@ -1095,6 +1095,70 @@ mod tests {
     }
 
     #[test]
+    fn requests_rate_limit_from_str_period_calculation() {
+        let tests = [
+            ("10/60", 10, Duration::from_secs(6)),
+            ("4/1", 4, Duration::from_millis(250)),
+            ("3/1", 3, Duration::from_secs_f64(1.0 / 3.0)),
+            ("1/86400", 1, Duration::from_secs(86400)),
+            ("4294967295/1", u32::MAX, Duration::from_secs_f64(1.0 / u32::MAX as f64)),
+        ];
+
+        for (input, burst, period) in tests {
+            assert_eq!(
+                RequestsRateLimitParams::from_str(input).unwrap(),
+                RequestsRateLimitParams { burst, period },
+                "Unexpected result for string '{input}'"
+            );
+        }
+    }
+
+    #[test]
+    fn requests_rate_limit_from_str_invalid_format() {
+        let tests = [
+            " 1/1",
+            "1/1 ",
+            "1 / 1",
+            "1/1/1",
+            "1//1",
+            "1\\1",
+            "1:1",
+            "-1/1",
+            "1/-1",
+            "1.5/1",
+            "1/0.5",
+            "4294967296/1",           // burst overflows u32
+            "1/18446744073709551616", // period overflows u64
+        ];
+
+        for t in tests {
+            assert!(
+                matches!(
+                    RequestsRateLimitParams::from_str(t),
+                    Err(Error::InvalidRequestRateLimit(_))
+                ),
+                "Unexpected result for string '{t}'"
+            );
+        }
+    }
+
+    #[test]
+    fn requests_rate_limit_from_str_error_keeps_input() {
+        for input in ["1/0", "abc", "1/1/1"] {
+            let err = RequestsRateLimitParams::from_str(input).unwrap_err();
+
+            assert!(
+                matches!(&err, Error::InvalidRequestRateLimit(s) if s == input),
+                "Unexpected error for string '{input}': {err:?}"
+            );
+            assert_eq!(
+                err.to_string(),
+                format!("Incorrect request rate limit parameter: {input}")
+            );
+        }
+    }
+
+    #[test]
     fn rate_limit_key_to_string() {
         assert_eq!(RateLimiterKey::default().to_string(), "");
         assert_eq!(
