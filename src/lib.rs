@@ -121,6 +121,7 @@ mod tests {
     mod containers;
 
     use crate::resources::get_all_crds;
+    use containers::gitea::{GITEA_HTTP_PORT, GITEA_SSH_PORT, Gitea};
     use containers::k3s::{K3S_API_PORT, K3s};
     use dtor::dtor;
     use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
@@ -128,7 +129,6 @@ mod tests {
     use rustls::crypto::aws_lc_rs;
     use std::{env, thread};
     use testcontainers::{ContainerAsync, ImageExt as _, runners::AsyncRunner as _};
-    use testcontainers_modules::gitea::{GITEA_HTTP_PORT, GITEA_SSH_PORT, Gitea};
     use tokio::{
         runtime::Runtime,
         sync::{Mutex, OnceCell, RwLock},
@@ -182,12 +182,12 @@ mod tests {
     async fn get_git_server() -> &'static RwLock<Option<ContainerAsync<Gitea>>> {
         GIT_SERVER_CONTAINER
             .get_or_init(|| async {
-                let public_key = include_str!("../tests/ssh/test-key-ed25519.pub");
+                let public_key = include_str!("../tests/ssh/test-key-ed25519.pub").trim();
                 let container = Gitea::default()
                     .with_tls(true)
                     .with_admin_account("gitea-admin", "gitea-admin", Some(public_key.to_string()))
-                    .with_repo(testcontainers_modules::gitea::GiteaRepo::Public("test-1".to_string()))
-                    .with_repo(testcontainers_modules::gitea::GiteaRepo::Private("test-2".to_string()))
+                    .with_repo(containers::gitea::GiteaRepo::Public("test-1".to_string()))
+                    .with_repo(containers::gitea::GiteaRepo::Private("test-2".to_string()))
                     .with_container_name("git-server")
                     .with_mapped_port(GIT_SSH_SERVER_PORT, GITEA_SSH_PORT)
                     .with_mapped_port(GIT_HTTP_SERVER_PORT, GITEA_HTTP_PORT)
